@@ -14,7 +14,7 @@ Optional parts are given with  --contrasts <file>  --profile <name>  --upstream 
   geth_checks.py gate <run_dir> <pipeline> <samplesheet.csv> <params> [parts]
       Refuse an operator attempt that departs from the approved plan without a reason
       given by the previous error.
-  geth_checks.py record <run_dir> <ok|check|nextflow> <samplesheet.csv> <params.json> [<error.txt>]
+  geth_checks.py record <run_dir> <ok|check|nextflow|analysis> <samplesheet.csv> <params.json> [<error.txt>]
       Store an accepted attempt as the new baseline, with the error that may justify the next change.
   geth_checks.py revision <pipeline>
       Print the pinned revision of a pipeline (exit 1 if Geth does not run it).
@@ -45,7 +45,45 @@ REGISTRY = {
         "revision": "2.0.0", "design": None, "key": "sample", "downstream": True,
         "profiles": ("rnaseq", "rnaseq_deseq2_gprofiler2", "rnaseq_deseq2_gsea", "rnaseq_limma"),
     },
+    # Geth's own single-cell toolbox (bin/sc_downstream.py): the agents design, the toolbox executes.
+    "sc_downstream": {"revision": "1.0.0", "design": ("sample", "h5ad"), "key": "sample", "toolbox": True},
 }
+
+# The single-cell design menu: key -> (type, low or choices, high, required).
+SC_MENU = {
+    "qc.min_genes": ("int", 0, 5000, True),
+    "qc.max_genes": ("int", 0, 50000, False),
+    "qc.min_counts": ("int", 0, 100000, False),
+    "qc.max_counts": ("int", 0, 1000000, False),
+    "qc.max_pct_mt": ("float", 1, 100, True),
+    "qc.min_cells_per_gene": ("int", 0, 100, False),
+    "doublets.method": ("choice", ("scrublet", "none"), None, True),
+    "doublets.expected_rate": ("float", 0.0, 0.3, False),
+    "doublets.threshold": ("float", 0.05, 0.95, False),
+    "normalize.target_sum": ("int", 1000, 1000000, False),
+    "hvg.n_top_genes": ("int", 200, 10000, False),
+    "hvg.flavor": ("choice", ("seurat", "cell_ranger"), None, False),
+    "scale": ("bool", None, None, False),
+    "pca.n_comps": ("int", 5, 100, False),
+    "neighbors.n_neighbors": ("int", 3, 100, False),
+    "neighbors.n_pcs": ("int", 3, 100, False),
+    "leiden.resolutions": ("list_float", 0.05, 3.0, True),
+    "leiden.chosen": ("float", 0.05, 3.0, True),
+    "markers.method": ("choice", ("wilcoxon", "t-test", "logreg"), None, False),
+    "markers.n_genes": ("int", 3, 50, False),
+    "markers.panel": ("list_str", 1, 40, True),
+    "annotation.model": ("model", None, None, True),
+    "annotation.majority_voting": ("bool", None, None, False),
+    "justification": ("str", None, None, False),
+}
+# What the analyst may revise after seeing the diagnostics (once). Input matrix, normalisation,
+# annotation model and marker panel stay as approved.
+SC_TUNABLE = {"qc.min_genes", "qc.max_genes", "qc.min_counts", "qc.max_counts", "qc.max_pct_mt",
+              "qc.min_cells_per_gene", "doublets.expected_rate", "doublets.threshold", "hvg.n_top_genes",
+              "neighbors.n_neighbors", "neighbors.n_pcs", "leiden.resolutions", "leiden.chosen", "justification"}
+SC_DIAGNOSTIC_TERMS = ("cells kept", "removed", "doublet", "cluster", "smallest", "agreement", "celltypist",
+                       "pct_counts_mt", "n_genes", "total_counts", "marker", "resolution")
+REFERENCES = os.environ.get("PERSEUS_VEIL", "/exports/eddie/scratch/sguizard/Perseus_Veil") + "/references"
 BASE_FILES = ("plan_pipeline.txt", "plan_samplesheet.csv", "plan_params.json")
 PART_FILES = {"contrasts": "plan_contrasts.csv", "profile": "plan_profile.txt", "upstream": "plan_upstream.txt"}
 
@@ -61,6 +99,8 @@ def load_schema(pipeline, kind):
 
 
 def param_names(pipeline):
+    if REGISTRY[pipeline].get("toolbox"):
+        return set(SC_MENU)
     schema = load_schema(pipeline, "params")
     groups = (schema.get("$defs") or schema.get("definitions") or {}).values()
     return {k for g in groups for k in g.get("properties", {})}
@@ -274,9 +314,86 @@ def check_de(sheet_text, params, contrasts_text, profile, upstream):
     return problems
 
 
+def sc_value(key, value):
+    """Normalise one design value to its menu type; return (value, problem or None)."""
+    kind, low, high, _ = SC_MENU[key]
+    try:
+        if kind == "int":
+            v = int(value)
+        elif kind == "float":
+            v = float(value)
+        elif kind == "bool":
+            v = value if isinstance(value, bool) else str(value).strip().lower() in ("true", "yes", "1")
+            return v, None
+        elif kind == "list_float":
+            v = [float(x) for x in (value if isinstance(value, list) else str(value).split(",")) if str(x).strip()]
+        elif kind == "list_str":
+            v = [str(x).strip() for x in (value if isinstance(value, list) else str(value).split(",")) if str(x).strip()]
+        else:
+            v = str(value).strip()
+    except (TypeError, ValueError):
+        return value, f"'{key}' must be {kind.replace('_', ' of ')} (got {value!r})"
+    if kind == "choice" and v not in low:
+        return v, f"'{key}' must be one of {list(low)} (got '{v}')"
+    if kind in ("int", "float") and not low <= v <= high:
+        return v, f"'{key}' must be between {low} and {high} (got {v})"
+    if kind == "list_float" and (not v or any(not low <= x <= high for x in v)):
+        return v, f"'{key}' must be a comma-separated list of values between {low} and {high} (got {value!r})"
+    if kind == "list_str" and not low <= len(v) <= high:
+        return v, f"'{key}' must list {low} to {high} genes (got {len(v)})"
+    if kind == "model" and not (v.startswith(REFERENCES + "/") and v.endswith(".pkl") and os.path.isfile(v)):
+        return v, f"'{key}' must be a CellTypist model file from the reference catalogue ({REFERENCES}/...pkl): {v}"
+    return v, None
+
+
+def check_sc_design(sheet_text, params_text):
+    problems = []
+    try:
+        raw = parse_params(params_text)
+    except ValueError as e:
+        return [f"design is not valid key=value lines or a JSON object: {e}"], {}
+    design = {}
+    for key, value in raw.items():
+        if key not in SC_MENU:
+            close = difflib.get_close_matches(key, SC_MENU, n=3)
+            problems.append(f"design key '{key}' is not on the menu" + (f" (closest: {', '.join(close)})" if close else ""))
+            continue
+        if value is None or (isinstance(value, str) and value.strip().lower() in ("", "none", "null")):
+            continue  # an empty optional value means "not used"
+        design[key], problem = sc_value(key, value)
+        if problem:
+            problems.append(problem)
+    for key, (_, _, _, required) in SC_MENU.items():
+        if required and key not in design:
+            problems.append(f"design key '{key}' is required")
+    if "leiden.chosen" in design and isinstance(design.get("leiden.resolutions"), list) \
+            and design["leiden.chosen"] not in design["leiden.resolutions"]:
+        problems.append("'leiden.chosen' must be one of 'leiden.resolutions'")
+    if design.get("neighbors.n_pcs", 0) > design.get("pca.n_comps", 50):
+        problems.append("'neighbors.n_pcs' cannot exceed 'pca.n_comps'")
+    for lo, hi in (("qc.min_genes", "qc.max_genes"), ("qc.min_counts", "qc.max_counts")):
+        if lo in design and hi in design and design[lo] >= design[hi]:
+            problems.append(f"'{lo}' must be smaller than '{hi}'")
+    header, rows = parse_sheet(sheet_text)
+    if header != ["sample", "h5ad"]:
+        problems.append(f"samplesheet must have the columns sample,h5ad (got {','.join(header)})")
+    if len(rows) != 1:
+        problems.append(f"samplesheet must have exactly one row: one sample per analysis (got {len(rows)})")
+    for r in rows:
+        h5ad = r.get("h5ad", "")
+        if not (h5ad.startswith("/") and h5ad.endswith(".h5ad") and os.path.isfile(h5ad)):
+            problems.append(f"h5ad must be an existing .h5ad file given by absolute path: {h5ad}")
+    return problems, design
+
+
 def check_plan(pipeline, sheet_text, params_text, contrasts_text=None, profile=None, upstream=None):
     if pipeline not in REGISTRY:
         return [f"pipeline must be one of {sorted(REGISTRY)} (got '{pipeline}')"], {}
+    if REGISTRY[pipeline].get("toolbox"):
+        problems, design = check_sc_design(sheet_text, params_text)
+        if (contrasts_text or "").strip():
+            problems.append("the single-cell toolbox takes no contrasts")
+        return problems, design
     problems, params = check_params(pipeline, params_text)
     if REGISTRY[pipeline].get("downstream"):
         problems += check_de(sheet_text, params, contrasts_text, (profile or "").strip(), upstream)
@@ -379,6 +496,9 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
     error = state.get("error") or {}
     text = error.get("text", "")
 
+    if REGISTRY[pipeline].get("toolbox"):
+        return problems + sc_gate(plan, params, state)
+
     # 2. Other samplesheet columns may change only if the previous error names them.
     if REGISTRY[pipeline]["design"] is not None:
         _, base_rows = parse_sheet(state["sheet"])
@@ -416,6 +536,31 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
                 problems.append(f"param '{k}' was {what} but the previous error does not mention it"
                                 + ("" if text else " (the approved plan must be launched unchanged first)"))
     return problems
+
+
+def sc_gate(plan, params_text_or_dict, state):
+    """Single-cell toolbox: the first analysis runs the approved design unchanged; one revision of the
+    tunable keys is allowed afterwards, with a justification that cites the diagnostics."""
+    problems, design = check_sc_design("sample,h5ad\nx,/dev/null.h5ad", json.dumps(params_text_or_dict))
+    problems = [p for p in problems if "h5ad" not in p and "samplesheet" not in p]
+    if problems:
+        return problems
+    _, approved = check_sc_design("sample,h5ad\nx,/dev/null.h5ad", json.dumps(plan["params"]))
+    strip = lambda d: {k: v for k, v in d.items() if k != "justification"}
+    done = state.get("analyses", 0)
+    changed = sorted(k for k in set(strip(design)) | set(strip(approved)) if design.get(k) != approved.get(k))
+    if done == 0:
+        return [f"design key '{k}' differs from the approved design; run the approved design first" for k in changed]
+    if done >= 2:
+        return ["only one revision of the approved design is allowed; stop and report"]
+    out = [f"design key '{k}' cannot be revised (not tunable)" for k in changed if k not in SC_TUNABLE]
+    reason = str(design.get("justification", "")).lower()
+    if changed and not any(term in reason for term in SC_DIAGNOSTIC_TERMS):
+        out.append("a revision needs justification=... citing the diagnostics (e.g. cells kept, doublet rate, "
+                   "cluster sizes, CellTypist agreement)")
+    if not changed:
+        out.append("the revision is identical to the previous analysis; stop and report")
+    return out
 
 
 def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_text="", profile="", upstream=""):
@@ -465,7 +610,10 @@ def record(run_dir, kind, sheet_text, params_text, error_text=""):
     plan = approved_plan(run_dir)
     state = load_state(run_dir, plan)
     state["sheet"], state["params"] = sheet_text, parse_params(params_text)
-    if kind == "ok":
+    if kind == "analysis":  # single-cell toolbox: count analyses, keep the diagnostics as the reference
+        state["analyses"] = state.get("analyses", 0) + 1
+        state["error"] = {"kind": "diagnostics", "text": error_text}
+    elif kind == "ok":
         state["error"] = None
     else:
         err = {"kind": kind, "text": error_text}
