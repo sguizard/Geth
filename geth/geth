@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Geth: plan, approve and run an nf-core analysis with Qwen agents on Eddie.
+#
+#   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
+#   geth show <name>                           print the plan (and its automatic check)
+#   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
+#   geth run <name>                            operator + reporter agents run the approved plan
+#   geth status <name>                         outcome, report check and attempts
+set -euo pipefail
+source /exports/cmvm/eddie/eb/groups/alaw3_grp/sguizard/Dev/github/Geth/env.sh
+
+runs="$PERSEUS_VEIL/geth/runs"
+checks="$GETH_HOME/geth/bin/geth_checks.py"
+
+usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+
+run_dir_of() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
+    echo "$runs/$1"
+}
+
+nf() {  # nf <run_dir> <mode> [extra args]
+    local d=$1 mode=$2; shift 2
+    cd "$d"
+    nextflow run "$GETH_HOME/geth/main.nf" -c "$GETH_HOME/geth/nextflow.config" \
+        --mode "$mode" --run_dir "$d" "$@" \
+        -w "$d/geth_work" -with-agent-trace -with-trace "$d/geth_trace_$mode.txt" -ansi-log false \
+        > "$d/geth_$mode.log" 2>&1
+}
+
+show() {
+    local d=$1
+    echo "Question : $(cat "$d/question.txt")"
+    echo "Pipeline : nf-core/$(cat "$d/plan_pipeline.txt")"
+    echo; echo "Rationale:"; sed 's/^/  /' "$d/plan_rationale.txt"
+    echo; echo "Samplesheet (plan_samplesheet.csv):"
+    sed "s#$PERSEUS_VEIL/##g" "$d/plan_samplesheet.csv" | column -s, -t | sed 's/^/  /'
+    echo; echo "Parameters (plan_params.json):"; sed 's/^/  /' "$d/plan_params.json"; echo
+    echo; python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" || true
+}
+
+cmd=${1:-}; shift || true
+case "$cmd" in
+    plan)
+        [ $# -eq 3 ] || usage
+        data_dir=$(readlink -f "$1"); question=$2; d=$(run_dir_of "$3")
+        [ -e "$d" ] && { echo "Run '$3' already exists: choose another name." >&2; exit 1; }
+        mkdir -p "$d"
+        echo "Planning in $d ..."
+        nf "$d" plan --question "$question" --data_dir "$data_dir" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
+        show "$d"
+        echo; echo "Review the plan (edit plan_samplesheet.csv / plan_params.json if needed), then: geth approve $3"
+        ;;
+    show)
+        [ $# -eq 1 ] || usage
+        show "$(run_dir_of "$1")"
+        ;;
+    approve)
+        [ $# -ge 1 ] || usage
+        d=$(run_dir_of "$1")
+        show "$d"
+        if [ "${2:-}" != "--yes" ]; then
+            read -r -p "Approve this plan? [y/N] " answer
+            [[ "$answer" =~ ^[Yy]$ ]] || { echo "Not approved."; exit 1; }
+        fi
+        python3 "$checks" approve "$d" "$(whoami)"
+        ;;
+    run)
+        [ $# -eq 1 ] || usage
+        d=$(run_dir_of "$1")
+        [ -f "$d/APPROVED" ] || { echo "The plan has not been approved: geth approve $1" >&2; exit 1; }
+        echo "Running the approved plan in $d ..."
+        nf "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
+        "$0" status "$1"
+        ;;
+    status)
+        [ $# -eq 1 ] || usage
+        d=$(run_dir_of "$1")
+        [ -f "$d/outcome.txt" ] && cat "$d/outcome.txt" || echo "No outcome yet."
+        [ -f "$d/report_check.txt" ] && cat "$d/report_check.txt"
+        for a in "$d"/attempt_*; do
+            [ -d "$a" ] || continue
+            status=$(grep -hE '^STATUS' "$a"/*.txt 2>/dev/null | head -n 1 || true)
+            if [ -f "$a/nextflow.log" ]; then
+                grep -q 'Pipeline completed successfully' "$a/nextflow.log" && status="launched: success" || status="launched: failed"
+            elif [ -s "$a/gate.txt" ]; then status="refused by the plan-diff gate"
+            elif [ -s "$a/check.txt" ]; then status="failed the plan check"
+            fi
+            echo "$(basename "$a"): ${status:-unknown}"
+        done
+        [ -f "$d/report.md" ] && echo "Report: $d/report.md"
+        ;;
+    *) usage ;;
+esac
