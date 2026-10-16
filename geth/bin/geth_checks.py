@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """Deterministic checks that keep Geth's agents honest.
 
-  geth_checks.py check-plan <pipeline> <samplesheet.csv> <params> [<normalised_params_out>] [--save-checked <run_dir>]
-      Validate a plan against the pinned pipeline's samplesheet and parameter schemas
-      (params as a JSON object or key=value lines). With --save-checked, keep a passing plan.
-  geth_checks.py save-plan <run_dir> <pipeline> <samplesheet.csv> <params> <rationale.txt>
+A plan has parts: pipeline, samplesheet (or observations sheet), params, and for downstream
+analyses a contrasts table, an analysis profile and the upstream run it builds on.
+Optional parts are given with  --contrasts <file>  --profile <name>  --upstream <run_dir>.
+
+  geth_checks.py check-plan <pipeline> <samplesheet.csv> <params> [<normalised_params_out>] [parts] [--save-checked <run_dir>]
+      Validate a plan against the pinned pipeline's schemas (params as a JSON object or key=value lines).
+  geth_checks.py save-plan <run_dir> <pipeline> <samplesheet.csv> <params> <rationale.txt> [parts]
       Write the planner's proposal as plan_* files (falling back to the last checked version).
   geth_checks.py approve <run_dir> <approver>
       Record approval of the plan files in <run_dir> (hashes them into APPROVED).
-  geth_checks.py gate <run_dir> <pipeline> <samplesheet.csv> <params.json>
+  geth_checks.py gate <run_dir> <pipeline> <samplesheet.csv> <params> [parts]
       Refuse an operator attempt that departs from the approved plan without a reason
       given by the previous error.
   geth_checks.py record <run_dir> <ok|check|nextflow> <samplesheet.csv> <params.json> [<error.txt>]
       Store an accepted attempt as the new baseline, with the error that may justify the next change.
+  geth_checks.py revision <pipeline>
+      Print the pinned revision of a pipeline (exit 1 if Geth does not run it).
 
 Exit status 0 = OK, 1 = problems (described on stdout).
 """
@@ -29,10 +34,20 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMAS = os.path.join(HERE, "..", "schemas")
-PINNED = {"rnaseq": "3.27.0", "scrnaseq": "4.2.0"}
-OWNED = ("input", "outdir", "custom_config_base", "custom_config_version")  # set by Geth, never by agents
-IDENTITY = ("sample", "fastq_1", "fastq_2")                                 # define the experimental design
-PLAN_FILES = ("plan_pipeline.txt", "plan_samplesheet.csv", "plan_params.json")
+OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_version")  # set by Geth only
+
+# Pipelines Geth runs. "design" = samplesheet columns that define the experiment and may never change
+# after approval (None = every column). Downstream pipelines also need contrasts and an analysis profile.
+REGISTRY = {
+    "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    "differentialabundance": {
+        "revision": "2.0.0", "design": None, "key": "sample", "downstream": True,
+        "profiles": ("rnaseq", "rnaseq_deseq2_gprofiler2", "rnaseq_deseq2_gsea", "rnaseq_limma"),
+    },
+}
+BASE_FILES = ("plan_pipeline.txt", "plan_samplesheet.csv", "plan_params.json")
+PART_FILES = {"contrasts": "plan_contrasts.csv", "profile": "plan_profile.txt", "upstream": "plan_upstream.txt"}
 
 
 # ---------------------------------------------------------------- parsing
@@ -42,7 +57,7 @@ def pipeline_name(name):
 
 
 def load_schema(pipeline, kind):
-    return json.load(open(os.path.join(SCHEMAS, f"{pipeline}-{PINNED[pipeline]}.{kind}.json")))
+    return json.load(open(os.path.join(SCHEMAS, f"{pipeline}-{REGISTRY[pipeline]['revision']}.{kind}.json")))
 
 
 def param_names(pipeline):
@@ -92,30 +107,42 @@ def parse_sheet(text):
     return header, rows
 
 
-def identity(rows):
-    return sorted(tuple(r.get(c, "") for c in IDENTITY) for r in rows)
+def design_of(pipeline, rows):
+    cols = REGISTRY[pipeline]["design"]
+    return sorted(tuple(sorted(r.items())) if cols is None else tuple(r.get(c, "") for c in cols) for r in rows)
+
+
+def normalised_csv(text):
+    header, rows = parse_sheet(text or "")
+    return header, sorted(tuple(r.get(h, "") for h in header) for r in rows)
 
 
 def sha256(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 
+def read_text(path):
+    return open(path).read() if path and os.path.isfile(path) else ""
+
+
 # ---------------------------------------------------------------- plan validation
 
-def check_plan(pipeline, sheet_text, params_text):
+def check_params(pipeline, params_text):
     problems = []
-    if pipeline not in PINNED:
-        return [f"pipeline must be one of {sorted(PINNED)} (got '{pipeline}')"], {}
     try:
         params = parse_params(params_text)
     except ValueError as e:
-        problems.append(f"params_json is not a valid JSON object: {e}")
-        params = {}
+        return [f"params_json is not a valid JSON object: {e}"], {}
     known = param_names(pipeline)
     for key in sorted(set(params) - known):
         close = difflib.get_close_matches(key, known, n=3)
-        problems.append(f"param '{key}' does not exist in nf-core/{pipeline} {PINNED[pipeline]}"
+        problems.append(f"param '{key}' does not exist in nf-core/{pipeline} {REGISTRY[pipeline]['revision']}"
                         + (f" (closest: {', '.join(close)})" if close else ""))
+    return problems, params
+
+
+def check_fastq_sheet(pipeline, sheet_text, params):
+    problems = []
     if "genome" in params and ("fasta" in params or "gtf" in params):
         problems.append("set either 'genome' or 'fasta'/'gtf', not both")
     for key in ("fasta", "gtf", "gff", "transcript_fasta"):
@@ -165,18 +192,114 @@ def check_plan(pipeline, sheet_text, params_text):
         for sample, kinds in layout.items():
             if len(kinds) > 1:
                 problems.append(f"samplesheet: sample '{sample}' mixes single-end and paired-end rows")
+    return problems
+
+
+def matrix_samples(path):
+    with open(path) as fh:
+        header = fh.readline().rstrip("\n").split("\t")
+    return [h for h in header if h not in ("gene_id", "gene_name", "transcript_id", "")]
+
+
+def check_de(sheet_text, params, contrasts_text, profile, upstream):
+    entry = REGISTRY["differentialabundance"]
+    problems = []
+    if profile not in entry["profiles"]:
+        problems.append(f"analysis profile must be one of {list(entry['profiles'])} (got '{profile}')")
+    for key in ("matrix", "gtf"):
+        if not params.get(key):
+            problems.append(f"param '{key}' is required")
+    for key in ("matrix", "feature_length_matrix", "gtf"):
+        value = params.get(key)
+        if isinstance(value, str) and value and not os.path.isfile(value):
+            problems.append(f"param '{key}' points to a file that does not exist: {value}")
+
+    header, rows = parse_sheet(sheet_text)
+    if "sample" not in header:
+        problems.append(f"observations sheet: column 'sample' is missing (header is: {','.join(header)})")
+    samples = [r.get("sample", "") for r in rows]
+    for s in sorted({s for s in samples if samples.count(s) > 1}):
+        problems.append(f"observations sheet: sample '{s}' appears more than once")
+    for i, r in enumerate(rows, start=2):
+        for col in header:
+            if not r.get(col):
+                problems.append(f"observations sheet line {i}: '{col}' is empty")
+    matrix = params.get("matrix")
+    if isinstance(matrix, str) and os.path.isfile(matrix):
+        in_matrix = matrix_samples(matrix)
+        for s in sorted(set(samples) - set(in_matrix)):
+            problems.append(f"observations sheet: sample '{s}' is not a column of the count matrix")
+        for s in sorted(set(in_matrix) - set(samples)):
+            problems.append(f"count matrix column '{s}' has no row in the observations sheet")
+        lengths = params.get("feature_length_matrix")
+        if isinstance(lengths, str) and os.path.isfile(lengths) and matrix_samples(lengths) != in_matrix:
+            problems.append("feature_length_matrix columns differ from the count matrix columns")
+
+    c_header, contrasts = parse_sheet(contrasts_text or "")
+    for col in ("id", "variable", "reference", "target"):
+        if col not in c_header:
+            problems.append(f"contrasts: required column '{col}' is missing (header is: {','.join(c_header)})")
+    if not contrasts:
+        problems.append("contrasts: at least one contrast is required")
+    ids = [c.get("id", "") for c in contrasts]
+    for i, c in enumerate(contrasts, start=2):
+        cid, var = c.get("id", ""), c.get("variable", "")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", cid or "") or ids.count(cid) > 1:
+            problems.append(f"contrasts line {i}: id '{cid}' must be unique and use only letters, digits, '_', '.', '-'")
+        if var not in header or var == "sample":
+            problems.append(f"contrasts line {i}: variable '{var}' is not a column of the observations sheet")
+            continue
+        levels = [r.get(var) for r in rows]
+        for side in ("reference", "target"):
+            level = c.get(side, "")
+            n = levels.count(level)
+            if n < 2:
+                problems.append(f"contrasts line {i}: {side} level '{level}' of '{var}' has {n} sample(s); at least 2 needed"
+                                f" (levels present: {', '.join(sorted(set(levels)))})")
+        if c.get("reference") == c.get("target"):
+            problems.append(f"contrasts line {i}: reference and target are the same")
+        for block in filter(None, (c.get("blocking") or "").split(";")):
+            if block not in header:
+                problems.append(f"contrasts line {i}: blocking variable '{block}' is not a column of the observations sheet")
+            elif block == var:
+                problems.append(f"contrasts line {i}: blocking variable '{block}' is the contrast variable itself")
+
+    if upstream:
+        try:
+            up_params = parse_params(read_text(os.path.join(upstream, "plan_params.json")))
+        except ValueError:
+            up_params = {}
+        if up_params.get("gtf") and params.get("gtf") != up_params["gtf"]:
+            problems.append(f"param 'gtf' must be the annotation used by the upstream run: {up_params['gtf']}")
+    return problems
+
+
+def check_plan(pipeline, sheet_text, params_text, contrasts_text=None, profile=None, upstream=None):
+    if pipeline not in REGISTRY:
+        return [f"pipeline must be one of {sorted(REGISTRY)} (got '{pipeline}')"], {}
+    problems, params = check_params(pipeline, params_text)
+    if REGISTRY[pipeline].get("downstream"):
+        problems += check_de(sheet_text, params, contrasts_text, (profile or "").strip(), upstream)
+    else:
+        problems += check_fastq_sheet(pipeline, sheet_text, params)
+        if (contrasts_text or "").strip():
+            problems.append(f"nf-core/{pipeline} takes no contrasts")
     return problems, params
 
 
-# ---------------------------------------------------------------- approval and the plan-diff gate
+# ---------------------------------------------------------------- plan files, approval and the plan-diff gate
+
+def plan_files(run_dir):
+    return list(BASE_FILES) + [f for f in PART_FILES.values() if os.path.isfile(os.path.join(run_dir, f))]
+
 
 def approve(run_dir, approver):
-    missing = [f for f in PLAN_FILES if not os.path.isfile(os.path.join(run_dir, f))]
+    missing = [f for f in BASE_FILES if not os.path.isfile(os.path.join(run_dir, f))]
     if missing:
         print(f"Cannot approve: missing plan files {missing}")
         return 1
     record = {"approved_by": approver, "approved_at": time.strftime("%F %T"),
-              "sha256": {f: sha256(os.path.join(run_dir, f)) for f in PLAN_FILES}}
+              "sha256": {f: sha256(os.path.join(run_dir, f)) for f in plan_files(run_dir)}}
     json.dump(record, open(os.path.join(run_dir, "APPROVED"), "w"), indent=2)
     state = os.path.join(run_dir, "gate_state.json")
     if os.path.exists(state):
@@ -186,75 +309,86 @@ def approve(run_dir, approver):
 
 
 def approved_plan(run_dir):
-    """Return (pipeline, sheet_text, params) of the approved plan, or raise ValueError."""
+    """Return the approved plan as a dict, or raise ValueError."""
     path = os.path.join(run_dir, "APPROVED")
     if not os.path.isfile(path):
         raise ValueError("the plan has not been approved by a person (run `geth approve`)")
     hashes = json.load(open(path))["sha256"]
-    for f in PLAN_FILES:
-        if sha256(os.path.join(run_dir, f)) != hashes.get(f):
+    for f in set(plan_files(run_dir)) | set(hashes):
+        p = os.path.join(run_dir, f)
+        if not os.path.isfile(p) or sha256(p) != hashes.get(f):
             raise ValueError(f"{f} changed after approval; it must be approved again")
-    read = lambda f: open(os.path.join(run_dir, f)).read()
+    read = lambda f: read_text(os.path.join(run_dir, f))
     try:
-        plan_params = parse_params(read("plan_params.json"))
+        params = parse_params(read("plan_params.json"))
     except ValueError as e:
         raise ValueError(f"the approved plan_params.json is not valid ({e}); a person must fix the plan and "
                          f"approve it again. Stop and report this.") from None
-    return pipeline_name(read("plan_pipeline.txt")), read("plan_samplesheet.csv"), plan_params
+    return {"pipeline": pipeline_name(read("plan_pipeline.txt")), "sheet": read("plan_samplesheet.csv"),
+            "params": params, "contrasts": read(PART_FILES["contrasts"]), "profile": read(PART_FILES["profile"]).strip()}
 
 
-def load_state(run_dir, plan_sheet, plan_params):
+def load_state(run_dir, plan):
     path = os.path.join(run_dir, "gate_state.json")
     if os.path.isfile(path):
         return json.load(open(path))
-    return {"sheet": plan_sheet, "params": plan_params, "error": None}
+    return {"sheet": plan["sheet"], "params": plan["params"], "error": None}
 
 
 def mentioned(name, text):
     return re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text or "") is not None
 
 
-def gate(run_dir, pipeline, sheet_text, params_text):
+def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=""):
     try:
-        plan_pipeline, plan_sheet, plan_params = approved_plan(run_dir)
+        plan = approved_plan(run_dir)
         params = parse_params(params_text)
     except ValueError as e:
         return [str(e)]
     problems = []
-    if pipeline != plan_pipeline:
-        problems.append(f"pipeline must stay '{plan_pipeline}' as approved (got '{pipeline}')")
+    if pipeline != plan["pipeline"]:
+        problems.append(f"pipeline must stay '{plan['pipeline']}' as approved (got '{pipeline}')")
+        return problems
+    key = REGISTRY[pipeline]["key"]
 
-    # 1. Experimental design: sample names and files must match the approved plan exactly.
-    _, plan_rows = parse_sheet(plan_sheet)
+    # 1. Experimental design: frozen exactly as approved.
+    _, plan_rows = parse_sheet(plan["sheet"])
     _, rows = parse_sheet(sheet_text)
-    if identity(rows) != identity(plan_rows):
-        before = {r.get("fastq_1"): r for r in plan_rows}
-        after = {r.get("fastq_1"): r for r in rows}
-        for fq in sorted(set(before) | set(after)):
-            b, a = before.get(fq), after.get(fq)
-            name = os.path.basename(fq or "?")
+    if design_of(pipeline, rows) != design_of(pipeline, plan_rows):
+        cols = REGISTRY[pipeline]["design"]
+        before = {r.get(key): r for r in plan_rows}
+        after = {r.get(key): r for r in rows}
+        for k in sorted(set(before) | set(after)):
+            b, a = before.get(k), after.get(k)
+            name = os.path.basename(k or "?")
             if b is None:
-                problems.append(f"design change: file {name} was added")
+                problems.append(f"design change: {name} was added")
             elif a is None:
-                problems.append(f"design change: file {name} was removed")
+                problems.append(f"design change: {name} was removed")
             else:
-                for col in IDENTITY:
+                for col in (cols or sorted(set(a) | set(b))):
                     if b.get(col, "") != a.get(col, ""):
                         problems.append(f"design change: {col} of {name} changed from '{b.get(col, '')}' to '{a.get(col, '')}'")
+    if REGISTRY[pipeline].get("downstream"):
+        if normalised_csv(contrasts_text) != normalised_csv(plan["contrasts"]):
+            problems.append("design change: the contrasts differ from the approved plan")
+        if (profile or "").strip() != plan["profile"]:
+            problems.append(f"design change: analysis profile must stay '{plan['profile']}' (got '{profile}')")
 
-    state = load_state(run_dir, plan_sheet, plan_params)
+    state = load_state(run_dir, plan)
     error = state.get("error") or {}
     text = error.get("text", "")
 
     # 2. Other samplesheet columns may change only if the previous error names them.
-    _, base_rows = parse_sheet(state["sheet"])
-    base = {r.get("fastq_1"): r for r in base_rows}
-    for row in rows:
-        old = base.get(row.get("fastq_1"), {})
-        for col in sorted((set(row) | set(old)) - set(IDENTITY)):
-            if row.get(col, "") != old.get(col, "") and not mentioned(col, text):
-                problems.append(f"samplesheet column '{col}' changed for {os.path.basename(row.get('fastq_1', '?'))} "
-                                f"('{old.get(col, '')}' -> '{row.get(col, '')}') but the previous error does not mention it")
+    if REGISTRY[pipeline]["design"] is not None:
+        _, base_rows = parse_sheet(state["sheet"])
+        base = {r.get(key): r for r in base_rows}
+        for row in rows:
+            old = base.get(row.get(key), {})
+            for col in sorted((set(row) | set(old)) - set(REGISTRY[pipeline]["design"])):
+                if row.get(col, "") != old.get(col, "") and not mentioned(col, text):
+                    problems.append(f"samplesheet column '{col}' changed for {os.path.basename(row.get(key, '?'))} "
+                                    f"('{old.get(col, '')}' -> '{row.get(col, '')}') but the previous error does not mention it")
 
     # 3. Params may change only where the previous error points.
     old = state["params"]
@@ -284,42 +418,52 @@ def gate(run_dir, pipeline, sheet_text, params_text):
     return problems
 
 
-def save_plan(run_dir, pipeline, sheet_text, params_text, rationale):
+def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_text="", profile="", upstream=""):
     """Write the planner's proposal as plan_* files. If it fails the plan check but an earlier version
     passed CHECK_PLAN during planning, keep that checked version instead (and say so)."""
     pipeline = pipeline_name(pipeline)
-    problems, params = check_plan(pipeline, sheet_text, params_text)
+    problems, params = check_plan(pipeline, sheet_text, params_text, contrasts_text, profile, upstream)
     note = ""
     checked = os.path.join(run_dir, ".checked")
     if problems and os.path.isdir(checked):
-        read = lambda f: open(os.path.join(checked, f)).read()
-        c_pipeline, c_sheet, c_params = pipeline_name(read("plan_pipeline.txt")), read("plan_samplesheet.csv"), read("plan_params.json")
-        c_problems, c_parsed = check_plan(c_pipeline, c_sheet, c_params)
+        read = lambda f: read_text(os.path.join(checked, f))
+        c = {"pipeline": pipeline_name(read("plan_pipeline.txt")), "sheet": read("plan_samplesheet.csv"),
+             "params": read("plan_params.json"), "contrasts": read(PART_FILES["contrasts"]),
+             "profile": read(PART_FILES["profile"]).strip()}
+        c_problems, c_parsed = check_plan(c["pipeline"], c["sheet"], c["params"], c["contrasts"], c["profile"], upstream)
         if not c_problems:
             note = ("\n\nNote from Geth: the planner's final answer did not pass the plan check ("
                     + "; ".join(problems) + "). The last version that passed CHECK_PLAN during planning is used.")
-            pipeline, sheet_text, params, problems = c_pipeline, c_sheet, c_parsed, []
+            pipeline, sheet_text, params, problems = c["pipeline"], c["sheet"], c_parsed, []
+            contrasts_text, profile = c["contrasts"], c["profile"]
     write = lambda f, s: open(os.path.join(run_dir, f), "w").write(s.strip() + "\n")
     write("plan_pipeline.txt", pipeline)
     write("plan_samplesheet.csv", sheet_text)
     write("plan_params.json", json.dumps(params, indent=2) if params or not problems else params_text)
     write("plan_rationale.txt", rationale.strip() + note)
+    if REGISTRY.get(pipeline, {}).get("downstream"):
+        write(PART_FILES["contrasts"], contrasts_text or "")
+        write(PART_FILES["profile"], profile or "")
+        if upstream:
+            write(PART_FILES["upstream"], upstream)
     result = "PLAN CHECK: OK" if not problems else f"PLAN CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems)
     write("plan_check.txt", result + ("\n(checked version used)" if note else ""))
     return result + ("\n(checked version used)" if note else "")
 
 
-def save_checked(run_dir, pipeline, sheet_text, params):
+def save_checked(run_dir, pipeline, sheet_text, params, contrasts_text="", profile=""):
     checked = os.path.join(run_dir, ".checked")
     os.makedirs(checked, exist_ok=True)
     open(os.path.join(checked, "plan_pipeline.txt"), "w").write(pipeline + "\n")
     open(os.path.join(checked, "plan_samplesheet.csv"), "w").write(sheet_text.strip() + "\n")
     json.dump(params, open(os.path.join(checked, "plan_params.json"), "w"), indent=2)
+    open(os.path.join(checked, PART_FILES["contrasts"]), "w").write((contrasts_text or "").strip() + "\n")
+    open(os.path.join(checked, PART_FILES["profile"]), "w").write((profile or "").strip() + "\n")
 
 
 def record(run_dir, kind, sheet_text, params_text, error_text=""):
-    _, plan_sheet, plan_params = approved_plan(run_dir)
-    state = load_state(run_dir, plan_sheet, plan_params)
+    plan = approved_plan(run_dir)
+    state = load_state(run_dir, plan)
     state["sheet"], state["params"] = sheet_text, parse_params(params_text)
     if kind == "ok":
         state["error"] = None
@@ -335,17 +479,29 @@ def record(run_dir, kind, sheet_text, params_text, error_text=""):
 
 # ---------------------------------------------------------------- CLI
 
+def take(argv, flag):
+    """Remove `flag value` from argv; return (value or None, argv)."""
+    if flag in argv:
+        i = argv.index(flag)
+        return argv[i + 1], argv[:i] + argv[i + 2:]
+    return None, argv
+
+
+def parts(argv):
+    contrasts, argv = take(argv, "--contrasts")
+    profile, argv = take(argv, "--profile")
+    upstream, argv = take(argv, "--upstream")
+    return {"contrasts_text": read_text(contrasts), "profile": profile or "", "upstream": upstream or ""}, argv
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "check-plan":
-        save_dir = None
-        if "--save-checked" in argv:
-            i = argv.index("--save-checked")
-            save_dir = argv[i + 1]
-            argv = argv[:i] + argv[i + 2:]
+        save_dir, argv = take(argv, "--save-checked")
+        extra, argv = parts(argv)
         pipeline = pipeline_name(argv[2])
         sheet_text = open(argv[3]).read()
-        problems, params = check_plan(pipeline, sheet_text, open(argv[4]).read())
+        problems, params = check_plan(pipeline, sheet_text, open(argv[4]).read(), **extra)
         if problems:
             print(f"PLAN CHECK: {len(problems)} problem(s)")
             print("\n".join(f"- {p}" for p in problems))
@@ -353,16 +509,19 @@ def main(argv):
         if len(argv) > 5:
             json.dump(params, open(argv[5], "w"), indent=2)
         if save_dir:
-            save_checked(save_dir, pipeline, sheet_text, params)
+            save_checked(save_dir, pipeline, sheet_text, params, extra["contrasts_text"], extra["profile"])
         print("PLAN CHECK: OK")
         return 0
     if cmd == "save-plan":
-        print(save_plan(argv[2], argv[3], open(argv[4]).read(), open(argv[5]).read(), open(argv[6]).read()))
+        extra, argv = parts(argv)
+        print(save_plan(argv[2], argv[3], open(argv[4]).read(), open(argv[5]).read(), open(argv[6]).read(), **extra))
         return 0
     if cmd == "approve":
         return approve(argv[2], argv[3] if len(argv) > 3 else getpass.getuser())
     if cmd == "gate":
-        problems = gate(argv[2], pipeline_name(argv[3]), open(argv[4]).read(), open(argv[5]).read())
+        extra, argv = parts(argv)
+        problems = gate(argv[2], pipeline_name(argv[3]), open(argv[4]).read(), open(argv[5]).read(),
+                        extra["contrasts_text"], extra["profile"])
         if problems:
             print("\n".join(f"- {p}" for p in problems))
             return 1
@@ -370,6 +529,13 @@ def main(argv):
     if cmd == "record":
         error_text = open(argv[6]).read() if len(argv) > 6 else ""
         record(argv[2], argv[3], open(argv[4]).read(), open(argv[5]).read(), error_text)
+        return 0
+    if cmd == "revision":
+        name = pipeline_name(argv[2]) if len(argv) > 2 else ""
+        if name not in REGISTRY:
+            print(f"pipeline must be one of {sorted(REGISTRY)} (got '{name}')")
+            return 1
+        print(REGISTRY[name]["revision"])
         return 0
     print(__doc__)
     return 2

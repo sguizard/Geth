@@ -2,6 +2,7 @@
 # Geth: plan, approve and run an nf-core analysis with Qwen agents on Eddie.
 #
 #   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
+#   geth plan --from <run> "<question>" <name> follow-up analysis (e.g. differential expression) of a run
 #   geth show <name>                           print the plan (and its automatic check)
 #   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
 #   geth run <name> [--detach]                 operator + reporter agents run the approved plan
@@ -12,7 +13,7 @@ source /exports/cmvm/eddie/eb/groups/alaw3_grp/sguizard/Dev/github/Geth/env.sh
 runs="$PERSEUS_VEIL/geth/runs"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
@@ -28,28 +29,62 @@ nf() {  # nf <run_dir> <mode> [extra args]
         > "$d/geth_$mode.log" 2>&1
 }
 
+plan_parts() {  # extra plan parts for geth_checks.py (downstream analyses)
+    local d=$1
+    [ -f "$d/plan_contrasts.csv" ] && printf -- '--contrasts\n%s\n' "$d/plan_contrasts.csv"
+    [ -f "$d/plan_profile.txt" ] && printf -- '--profile\n%s\n' "$(cat "$d/plan_profile.txt")"
+    [ -f "$d/plan_upstream.txt" ] && printf -- '--upstream\n%s\n' "$(cat "$d/plan_upstream.txt")"
+    return 0
+}
+
+check() {
+    local d=$1
+    mapfile -t parts < <(plan_parts "$d")
+    python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" "${parts[@]}"
+}
+
 show() {
     local d=$1
     echo "Question : $(cat "$d/question.txt")"
     echo "Pipeline : nf-core/$(cat "$d/plan_pipeline.txt")"
+    [ -f "$d/plan_upstream.txt" ] && echo "Upstream : $(cat "$d/plan_upstream.txt")"
+    [ -f "$d/plan_profile.txt" ] && echo "Profile  : $(cat "$d/plan_profile.txt")"
     echo; echo "Rationale:"; sed 's/^/  /' "$d/plan_rationale.txt"
     echo; echo "Samplesheet (plan_samplesheet.csv):"
     sed "s#$PERSEUS_VEIL/##g" "$d/plan_samplesheet.csv" | column -s, -t | sed 's/^/  /'
-    echo; echo "Parameters (plan_params.json):"; sed 's/^/  /' "$d/plan_params.json"; echo
-    echo; python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" || true
+    if [ -f "$d/plan_contrasts.csv" ]; then
+        echo; echo "Contrasts (plan_contrasts.csv):"; column -s, -t < "$d/plan_contrasts.csv" | sed 's/^/  /'
+    fi
+    echo; echo "Parameters (plan_params.json):"; sed "s#$PERSEUS_VEIL/##g" "$d/plan_params.json" | sed 's/^/  /'; echo
+    echo; check "$d" || true
 }
 
 cmd=${1:-}; shift || true
 case "$cmd" in
     plan)
-        [ $# -eq 3 ] || usage
-        data_dir=$(readlink -f "$1"); question=$2; d=$(run_dir_of "$3")
-        [ -e "$d" ] && { echo "Run '$3' already exists: choose another name." >&2; exit 1; }
+        upstream_args=()
+        if [ "${1:-}" = "--from" ]; then
+            [ $# -eq 4 ] || usage
+            up=$(run_dir_of "$2"); shift 2
+            [ -f "$up/APPROVED" ] && [ -f "$up/outcome.txt" ] && grep -q 'succeeded: true' "$up/outcome.txt" \
+                || { echo "Run '$(basename "$up")' has not finished successfully: nothing to build on." >&2; exit 1; }
+            if [ -f "$up/data_dir.txt" ]; then
+                data_dir=$(cat "$up/data_dir.txt")
+            else  # runs planned before data_dir.txt existed: the folder above the FASTQ folder
+                data_dir=$(dirname "$(dirname "$(python3 -c 'import csv,sys; print(next(csv.DictReader(open(sys.argv[1])))["fastq_1"])' "$up/plan_samplesheet.csv")")")
+            fi
+            upstream_args=(--upstream_run "$up")
+        else
+            [ $# -eq 3 ] || usage
+            data_dir=$(readlink -f "$1"); shift
+        fi
+        question=$1; d=$(run_dir_of "$2")
+        [ -e "$d" ] && { echo "Run '$2' already exists: choose another name." >&2; exit 1; }
         mkdir -p "$d"
         echo "Planning in $d ..."
-        nf "$d" plan --question "$question" --data_dir "$data_dir" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
+        nf "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
         show "$d"
-        echo; echo "Review the plan (edit plan_samplesheet.csv / plan_params.json if needed), then: geth approve $3"
+        echo; echo "Review the plan (edit the plan_* files if needed), then: geth approve $2"
         ;;
     show)
         [ $# -eq 1 ] || usage
@@ -59,8 +94,8 @@ case "$cmd" in
         [ $# -ge 1 ] || usage
         d=$(run_dir_of "$1")
         show "$d"
-        if ! python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" > /dev/null; then
-            echo "The plan does not pass the plan check: fix plan_samplesheet.csv / plan_params.json, then approve." >&2
+        if ! check "$d" > /dev/null; then
+            echo "The plan does not pass the plan check: fix the plan_* files, then approve." >&2
             exit 1
         fi
         if [ "${2:-}" != "--yes" ]; then

@@ -1,7 +1,9 @@
 /*
- * Geth v1: Qwen agents plan, run, fix and report an nf-core analysis on Eddie.
+ * Geth: Qwen agents plan, run, fix and report an nf-core analysis on Eddie.
  *
- *   --mode plan : planner inspects the data folder and writes plan_* files into run_dir
+ *   --mode plan : planner inspects the data folder (and, for a follow-up analysis such as
+ *                 differential expression, the upstream run given by --upstream_run) and
+ *                 writes plan_* files into run_dir
  *   (a person reviews and approves the plan: `geth approve`)
  *   --mode run  : operator launches the approved plan (gated retries), reporter writes report.md,
  *                 every number in the report is checked against the results
@@ -15,6 +17,8 @@ record PlanProposal {
     pipeline: String
     samplesheet_lines: List<String>
     params: List<String>
+    contrasts_lines: List<String>
+    profile: String
     rationale: String
 }
 
@@ -23,6 +27,8 @@ record AnalysisPlan {
     pipeline: String
     samplesheet_csv: String
     params_json: String
+    contrasts_csv: String
+    profile: String
     rationale: String
 }
 
@@ -104,6 +110,8 @@ process CHECK_PLAN {
     pipeline: String
     samplesheet_csv: String
     params_json: String
+    contrasts_csv: String
+    profile: String
 
     output:
     report: String = stdout()
@@ -116,7 +124,11 @@ GETH_EOF
 cat > params.json <<'GETH_EOF'
 ${params_json.trim()}
 GETH_EOF
-geth_checks.py check-plan "${pipeline}" samplesheet.csv params.json --save-checked "${params.run_dir}" || true
+cat > contrasts.csv <<'GETH_EOF'
+${contrasts_csv.trim()}
+GETH_EOF
+geth_checks.py check-plan "${pipeline}" samplesheet.csv params.json --save-checked "${params.run_dir}" \
+    --contrasts contrasts.csv --profile "${profile.trim()}" ${params.upstream_run ? "--upstream ${params.upstream_run}" : ''} || true
     """
 }
 
@@ -129,6 +141,8 @@ process RUN_NFCORE {
     pipeline: String
     samplesheet_csv: String
     params_json: String
+    contrasts_csv: String
+    profile: String
 
     output:
     digest: String = stdout()
@@ -141,7 +155,10 @@ GETH_EOF
 cat > params.json <<'GETH_EOF'
 ${params_json.trim()}
 GETH_EOF
-run_nfcore.sh "${params.run_dir}" "${pipeline}" samplesheet.csv params.json
+cat > contrasts.csv <<'GETH_EOF'
+${contrasts_csv.trim()}
+GETH_EOF
+run_nfcore.sh "${params.run_dir}" "${pipeline}" samplesheet.csv params.json contrasts.csv "${profile.trim()}"
     """
 }
 
@@ -167,21 +184,27 @@ agent planner {
     model "openai/${params.model}"
     instruction '''You are Geth, a bioinformatics analysis planner. You turn a scientist's request and a
         sequencing data folder into a run plan for exactly one nf-core pipeline: "rnaseq" (bulk RNA-seq,
-        nf-core/rnaseq) or "scrnaseq" (single-cell RNA-seq, nf-core/scrnaseq).
-        Always inspect the folder first: list it, then read every README/metadata text file in it.
+        nf-core/rnaseq) or "scrnaseq" (single-cell RNA-seq, nf-core/scrnaseq) for new sequencing data, or
+        "differentialabundance" (nf-core/differentialabundance) for differential expression on the results
+        of a finished nf-core/rnaseq run (an upstream run).
+        Always inspect the folders first: list them, then read every README/metadata text file in them;
+        for a follow-up analysis also read the upstream run's question.txt, plan_samplesheet.csv,
+        plan_params.json and plan_rationale.txt, and list its results folder.
         Load the skill of the pipeline you choose and follow its rules exactly.
         Use absolute paths. Only use files that appear in the listing; never invent files.
         If the folder holds no reference genome and annotation, call LIST_REFERENCES and use the entry for the
         right species; if none matches, say so in the rationale instead of guessing.
         Before answering, call CHECK_PLAN with your pipeline, samplesheet and parameters (as key=value lines),
+        plus the contrasts CSV and analysis profile for differentialabundance (empty strings otherwise),
         fix every problem it reports, and repeat until it prints "PLAN CHECK: OK".'''
     tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_PLAN'
-    skills 'nfcore-rnaseq', 'nfcore-scrnaseq'
+    skills 'nfcore-rnaseq', 'nfcore-scrnaseq', 'nfcore-differentialabundance'
     maxIterations 25
 
     input:
     question: String
     data_dir: String
+    upstream: String
 
     output:
     plan: PlanProposal
@@ -190,12 +213,15 @@ agent planner {
     """
     Request: ${question}
     Data folder: ${data_dir}
+    Upstream run: ${upstream}
 
-    In your final answer give exactly the plan that passed CHECK_PLAN: the pipeline ("rnaseq" or "scrnaseq");
-    the samplesheet as a list of CSV lines, header line first; the pipeline parameters as a list of
-    key=value entries, one per parameter (do not include "input" or "outdir"); and a short rationale that
-    explains how files were grouped into samples, which files were left out and why, and why each
-    parameter is set.
+    In your final answer give exactly the plan that passed CHECK_PLAN: the pipeline ("rnaseq", "scrnaseq"
+    or "differentialabundance"); the samplesheet (for differentialabundance: the observations sheet) as a
+    list of CSV lines, header line first; the pipeline parameters as a list of key=value entries, one per
+    parameter (do not include "input", "outdir" or "contrasts"); for differentialabundance the contrasts
+    as a list of CSV lines, header line first, and the analysis profile (otherwise an empty list and an
+    empty string); and a short rationale that explains how files or samples were grouped, which were
+    left out and why, the contrasts and their direction, and why each parameter is set.
     """
 }
 
@@ -219,7 +245,8 @@ agent operator {
 
     prompt:
     """
-    Execute the approved plan now: call RUN_NFCORE with its pipeline, samplesheet_csv and params_json.
+    Execute the approved plan now: call RUN_NFCORE with its pipeline, samplesheet_csv, params_json,
+    contrasts_csv and profile (pass empty strings where the plan has none).
     In your final answer state: whether the run succeeded, how many RUN_NFCORE calls you made,
     the OUTDIR printed by the tool (or "none"), every change you made to the plan (or none),
     and the last error (or "none").
@@ -276,7 +303,11 @@ GETH_EOF
 cat > rationale.txt <<'GETH_EOF'
 ${plan.rationale}
 GETH_EOF
-geth_checks.py save-plan "${params.run_dir}" "${plan.pipeline}" samplesheet.csv params.txt rationale.txt
+cat > contrasts.csv <<'GETH_EOF'
+${plan.contrasts_lines.join('\n')}
+GETH_EOF
+geth_checks.py save-plan "${params.run_dir}" "${plan.pipeline}" samplesheet.csv params.txt rationale.txt \
+    --contrasts contrasts.csv --profile "${plan.profile.trim()}" ${params.upstream_run ? "--upstream ${params.upstream_run}" : ''}
     """
 }
 
@@ -326,8 +357,14 @@ workflow {
     if( params.mode == 'plan' ) {
         if( !params.question || !params.data_dir )
             error "--mode plan needs --question and --data_dir"
+        if( params.upstream_run && !file(params.upstream_run).resolve('APPROVED').exists() )
+            error "Upstream run ${params.upstream_run} has no approved plan"
         file(params.run_dir).resolve('question.txt').text = params.question + '\n'
-        SAVE_PLAN(planner(params.question, params.data_dir)).view()
+        file(params.run_dir).resolve('data_dir.txt').text = params.data_dir + '\n'
+        def upstream = params.upstream_run
+            ? "${params.upstream_run} (nf-core/${file(params.upstream_run).resolve('plan_pipeline.txt').text.trim()} results in ${params.upstream_run}/results)"
+            : 'none (this is a new analysis of sequencing data)'
+        SAVE_PLAN(planner(params.question, params.data_dir, upstream)).view()
     }
     else if( params.mode == 'run' ) {
         def d = file(params.run_dir)
@@ -338,6 +375,8 @@ workflow {
             pipeline: d.resolve('plan_pipeline.txt').text.trim(),
             samplesheet_csv: d.resolve('plan_samplesheet.csv').text,
             params_json: d.resolve('plan_params.json').text,
+            contrasts_csv: d.resolve('plan_contrasts.csv').exists() ? d.resolve('plan_contrasts.csv').text : '',
+            profile: d.resolve('plan_profile.txt').exists() ? d.resolve('plan_profile.txt').text.trim() : '',
             rationale: d.resolve('plan_rationale.txt').text))
         def outcome = operator(plan)
         SAVE_OUTCOME(outcome)

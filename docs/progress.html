@@ -148,14 +148,14 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill ok">v1.1 validated on real-size data</span>
+    <span class="pill run">phase 7: downstream analysis</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (bulk RNA-seq, scRNA-seq) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model.</p>
   <div class="meta">
     <span>Updated 2026-10-16</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>nf-core/rnaseq 3.27.0 · nf-core/scrnaseq 4.2.0</span>
-    <span>repo sguizard/Geth · master @ 87879ec</span>
+    <span>repo sguizard/Geth · release v1.2.0</span>
   </div>
 </header>
 
@@ -250,8 +250,13 @@ a { color: var(--accent); }
     <li class="phase now">
       <div class="node"><span class="dot">7</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Downstream analysis</h3><span class="pill next">next</span></div>
-        <p>Differential expression (nf-core/differentialabundance) validated on airway, where the dexamethasone response is known (DUSP1, FKBP5, KLF15, PER1, TSC22D3 up); single-cell clustering on PBMC 1k v3; reuse of built indexes (the GRCh38 STAR index took 26 min and 65 GB per run).</p>
+        <div class="phase-head"><h3>Downstream analysis</h3><span class="pill run">in progress</span></div>
+        <ul class="check">
+          <li class="done">A · Bulk DE (v1.2.0): <code>geth plan --from airway_1</code> → nf-core/differentialabundance 2.0.0. 3/3 plans perfect (dex vs untreated, blocked on donor); the approved run matched the hand-made baseline exactly (650 DE genes, Jaccard 1.0), 7/7 known dexamethasone genes up, 12 min from approval to checked report</li>
+          <li class="done">B · GPU access confirmed: <code>gpu</code> queue, project roslin_alaw3_grp, NVIDIA L40S, PyTorch sees CUDA inside the CellBender container</li>
+          <li class="doing">B · CellBender on GPU inside nf-core/scrnaseq, PBMC rerun with ambient-RNA removal</li>
+          <li>C · Agents design the single-cell downstream analysis (QC, doublets, clustering, CellTypist annotation) on a vetted Scanpy toolbox; person approves the design</li>
+        </ul>
       </div>
     </li>
     <li class="phase">
@@ -342,6 +347,23 @@ a { color: var(--accent); }
     </table>
   </div>
 
+  <h3>Bulk differential expression on airway (Geth v1.2)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Gene</th><th>Known dexamethasone response</th><th>log2FC (dex vs untreated)</th><th>padj</th></tr></thead>
+      <tbody>
+        <tr><td>DUSP1</td><td>up</td><td class="n">+2.94</td><td class="n">1.7e-132</td></tr>
+        <tr><td>KLF15</td><td>up</td><td class="n">+4.39</td><td class="n">7.6e-73</td></tr>
+        <tr><td>PER1</td><td>up</td><td class="n">+3.09</td><td class="n">6.8e-71</td></tr>
+        <tr><td>CRISPLD2</td><td>up</td><td class="n">+2.60</td><td class="n">1.8e-44</td></tr>
+        <tr><td>ZBTB16</td><td>up</td><td class="n">+7.08</td><td class="n">5.9e-29</td></tr>
+        <tr><td>FKBP5</td><td>up</td><td class="n">+3.86</td><td class="n">2.7e-25</td></tr>
+        <tr><td>TSC22D3</td><td>up</td><td class="n">+3.01</td><td class="n">8.9e-19</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>650 genes at padj &lt; 0.05 and |log2FC| ≥ 1 (369 up, 281 down), the same set as the run designed by hand.</p>
+
   <h3>Platform checks</h3>
   <div class="table-wrap">
     <table>
@@ -404,6 +426,8 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-16">2026-10-16</time><span>Feasibility verdict: GO.</span></li>
     <li><time datetime="2026-10-16">2026-10-16</time><span>Mistral Small 4 dropped; Geth runs on Qwen 3.5 397B only.</span></li>
     <li><time datetime="2026-10-16">2026-10-16</time><span>Real-size tests use public human data: airway (bulk) and PBMC 1k v3 (single-cell) on GRCh38.</span></li>
+    <li><time datetime="2026-10-16">2026-10-16</time><span>Git flow adopted: master holds tagged releases (v0.1.0, v1.0.0, v1.1.0, v1.2.0), work goes through develop and feature branches.</span></li>
+    <li><time datetime="2026-10-16">2026-10-16</time><span>Phase 7 plan approved: bulk DE first, then CellBender on the gpu queue, then agent-designed single-cell downstream analysis.</span></li>
   </ul>
 </section>
 
