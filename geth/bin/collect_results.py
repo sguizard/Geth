@@ -131,10 +131,64 @@ def scrnaseq(run_dir, outdir):
     return parts
 
 
+def de_tables(outdir):
+    """Per contrast: (contrast id, full results table, annotated table or None)."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(outdir, "tables", "differential", "*", "*.results.tsv"))):
+        name = os.path.basename(path)
+        contrast = name.split(".deseq2.")[0].split(".limma.")[0]
+        annotated = glob.glob(os.path.join(os.path.dirname(path), f"{contrast}_*annotated.tsv"))
+        found.append((contrast, path, annotated[0] if annotated else None))
+    return found
+
+
+def sci(x):
+    return "n/a" if x is None else f"{x:.2g}"
+
+
+def differentialabundance(run_dir, outdir):
+    parts = []
+    contrasts_file = os.path.join(run_dir, "plan_contrasts.csv")
+    if os.path.isfile(contrasts_file):
+        with open(contrasts_file) as fh:
+            rows = list(csv.DictReader(fh))
+        parts.append("### Contrasts\n" + table(["id", "variable", "reference", "target", "blocking"],
+                                                [[r.get(k, "") for k in ("id", "variable", "reference", "target", "blocking")] for r in rows])
+                     + "\nlog2 fold change = target vs reference (positive = higher in the target).")
+    for contrast, path, annotated in de_tables(outdir):
+        with open(annotated or path) as fh:
+            rows = list(csv.DictReader(fh, delimiter="\t"))
+        fc_col = "log2FoldChange" if rows and "log2FoldChange" in rows[0] else "logFC"
+        q_col = "padj" if rows and "padj" in rows[0] else "adj.P.Val"
+        tested = [r for r in rows if num(r.get(q_col)) is not None and num(r.get(fc_col)) is not None]
+        sig = [r for r in tested if num(r[q_col]) < 0.05 and abs(num(r[fc_col])) >= 1]
+        up = sum(num(r[fc_col]) > 0 for r in sig)
+        top = sorted(sig, key=lambda r: num(r[q_col]))[:15]
+        parts.append(f"### Contrast {contrast}\n"
+                     f"File: `{os.path.relpath(path, outdir)}`\n\n"
+                     + table(["Genes tested", "DE genes (padj < 0.05, abs. log2FC >= 1)", "Up in target", "Down in target"],
+                             [[count(len(tested)), count(len(sig)), count(up), count(len(sig) - up)]])
+                     + "\n\nTop 15 DE genes by adjusted p-value:\n\n"
+                     + table(["Gene", "Gene ID", "log2FC", "padj"],
+                             [[r.get("gene_name") or r.get("gene_id", ""), r.get("gene_id", ""),
+                               f"{num(r[fc_col]):.2f}", sci(num(r[q_col]))] for r in top]))
+    if len(parts) <= 1:
+        parts.append("No differential expression tables found.")
+    reports = sorted(glob.glob(os.path.join(outdir, "**", "*.html"), recursive=True))
+    reports = [r for r in reports if "shinyngs" not in r and "pipeline_info" not in r]
+    if reports:
+        parts.append("Reports: " + ", ".join(f"`{os.path.relpath(r, outdir)}`" for r in reports[:3]))
+    return parts
+
+
 def raw_values(run_dir):
     """Every number in the raw QC tables, so a correctly quoted value passes at any precision."""
     outdir = os.path.join(run_dir, "results")
     values = [v for st in general_stats(outdir).values() for v in st.values() if v is not None]
+    for _, path, annotated in de_tables(outdir):
+        with open(annotated or path) as fh:
+            for r in csv.DictReader(fh, delimiter="\t"):
+                values += [num(r.get(k)) for k in ("log2FoldChange", "padj", "logFC", "adj.P.Val", "baseMean")]
     for summary in glob.glob(os.path.join(outdir, "**", "Summary.csv"), recursive=True):
         with open(summary) as fh:
             values += [num(line.rstrip("\n").split(",", 1)[1]) for line in fh if "," in line]
@@ -147,6 +201,8 @@ def collect(run_dir, pipeline):
     if not os.path.isdir(outdir):
         return f"No results folder at {outdir} (the run probably failed before publishing outputs)."
     parts = [f"Results folder: `{outdir}`"]
+    if pipeline == "differentialabundance":
+        return "\n\n".join(parts + differentialabundance(run_dir, outdir))
     parts += rnaseq(run_dir, outdir) if pipeline == "rnaseq" else scrnaseq(run_dir, outdir)
     reports = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_report.html"), recursive=True))
     parts.append("MultiQC report: " + (f"`{reports[0]}`" if reports else "not found"))
