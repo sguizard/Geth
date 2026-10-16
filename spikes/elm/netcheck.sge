@@ -1,0 +1,19 @@
+#!/bin/bash
+# Spike 1: can a compute node reach ELM (and the wider internet)?
+# No API key needed: an HTTP 401 from /models proves the endpoint is reachable.
+#$ -N geth_netcheck
+#$ -P roslin_alaw3_grp
+#$ -l h_rt=00:05:00
+#$ -l h_vmem=1G
+#$ -cwd
+#$ -j y
+
+echo "host: $(hostname)  queue: $QUEUE  job: $JOB_ID"
+for url in https://elm.edina.ac.uk/api/v1/models \
+           https://github.com \
+           https://depot.galaxyproject.org/singularity/ \
+           https://community-cr-prod.seqera.io/v2/; do
+    code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$url")
+    echo "$url -> ${code:-timeout}"
+done
+env | grep -iE '^(https?_proxy|no_proxy)=' || echo "no proxy variables set"
