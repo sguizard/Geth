@@ -186,7 +186,10 @@ agent planner {
         sequencing data folder into a run plan for exactly one nf-core pipeline. For new sequencing data:
         "rnaseq" (bulk RNA-seq), "scrnaseq" (droplet single-cell RNA-seq), "sarek" (DNA-seq variant calling:
         germline or tumour/normal, WGS/WES/panels), "isoseq" (PacBio Iso-Seq full-length transcripts),
-        "taxprofiler" (taxonomic profiling of shotgun metagenomes) or "mag" (metagenome assembly and binning).
+        "taxprofiler" (taxonomic profiling of shotgun metagenomes), "mag" (metagenome assembly and binning),
+        "ampliseq" (amplicon/metabarcoding: 16S, 18S, ITS, COI), "chipseq" (ChIP-seq peaks), "atacseq"
+        (ATAC-seq accessibility), "nanoseq" (Oxford Nanopore DNA/cDNA/direct RNA), "eager" (ancient DNA) or
+        "methylseq" (DNA methylation: WGBS, RRBS, EM-seq, TAPS).
         For a follow-up analysis: "differentialabundance" for differential expression on the results of a
         finished nf-core/rnaseq run (an upstream run). If none of these fits the data or the request, say so
         in the rationale instead of forcing a pipeline.
@@ -202,7 +205,8 @@ agent planner {
         fix every problem it reports, and repeat until it prints "PLAN CHECK: OK".'''
     tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_PLAN'
     skills 'nfcore-rnaseq', 'nfcore-scrnaseq', 'nfcore-differentialabundance', 'nfcore-sarek', 'nfcore-isoseq',
-        'nfcore-taxprofiler', 'nfcore-mag'
+        'nfcore-taxprofiler', 'nfcore-mag', 'nfcore-ampliseq', 'nfcore-chipseq', 'nfcore-atacseq', 'nfcore-nanoseq',
+        'nfcore-eager', 'nfcore-methylseq'
     maxIterations 25
 
     input:

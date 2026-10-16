@@ -49,6 +49,18 @@ REGISTRY = {
                     "key": ("fastq_1", "fasta"), "required_params": ("databases",)},
     "mag": {"revision": "5.5.0", "design": ("sample", "run", "group", "short_reads_1", "short_reads_2", "long_reads"),
             "key": ("short_reads_1", "long_reads")},
+    "ampliseq": {"revision": "3.0.0", "design": ("sample", "run", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    "chipseq": {"revision": "2.1.0", "key": "fastq_1",
+                "design": ("sample", "replicate", "antibody", "control", "control_replicate", "fastq_1", "fastq_2")},
+    "atacseq": {"revision": "2.1.2", "key": "fastq_1",
+                "design": ("sample", "replicate", "control", "control_replicate", "fastq_1", "fastq_2")},
+    "nanoseq": {"revision": "3.1.0", "design": ("group", "replicate", "barcode", "input_file"),
+                "key": ("input_file", "barcode"), "required_params": ("protocol",)},
+    "methylseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    # eager 2.5.3 is DSL1: run with an older Nextflow (and Java 17), TSV input, max_* resource params.
+    "eager": {"revision": "2.5.3", "key": ("R1", "BAM"), "nextflow": "22.10.8",
+              "java_home": "/usr/lib/jvm/java-17-openjdk", "input_format": "tsv", "legacy_limits": True,
+              "design": ("Sample_Name", "Library_ID", "Lane", "SeqType", "Strandedness", "UDG_Treatment", "R1", "R2", "BAM")},
     "differentialabundance": {
         "revision": "2.0.0", "design": None, "key": "sample", "downstream": True,
         "profiles": ("rnaseq", "rnaseq_deseq2_gprofiler2", "rnaseq_deseq2_gsea", "rnaseq_limma"),
@@ -64,7 +76,35 @@ def pipeline_name(name):
     return name.strip().replace("nf-core/", "")
 
 
+# Samplesheet rules for pipelines whose release has no (or an outdated) assets/schema_input.json.
+NA = ("", "NA")
+INPUT_SPECS = {
+    "nanoseq": {"required": ["group", "replicate"], "properties": {
+        "group": {"type": "string", "pattern": r"^\S+$"},
+        "replicate": {"type": "integer"},
+        "barcode": {"type": "integer"},
+        "input_file": {"type": "string", "format": "path", "pattern": r"^\S+(\.f(ast)?q\.gz|\.bam|/?)$"},
+        "fasta": {"type": "string", "pattern": r"^\S+$"},
+        "gtf": {"type": "string", "format": "file-path", "pattern": r"^\S+\.gtf(\.gz)?$"}}},
+    "eager": {"required": ["Sample_Name", "Library_ID", "Lane", "Colour_Chemistry", "SeqType", "Organism",
+                           "Strandedness", "UDG_Treatment", "R1", "R2", "BAM"], "properties": {
+        "Sample_Name": {"type": "string", "pattern": r"^[^\s.]+$"},
+        "Library_ID": {"type": "string", "pattern": r"^[^\s.]+$"},
+        "Lane": {"type": "integer"},
+        "Colour_Chemistry": {"type": "string", "enum": ["2", "4"]},
+        "SeqType": {"type": "string", "enum": ["PE", "SE"]},
+        "Organism": {"type": "string"},
+        "Strandedness": {"type": "string", "enum": ["single", "double"]},
+        "UDG_Treatment": {"type": "string", "enum": ["none", "half", "full"]},
+        "R1": {"type": "string", "format": "file-path", "pattern": r"^(NA|\S+\.f(ast)?q(\.gz)?)$"},
+        "R2": {"type": "string", "format": "file-path", "pattern": r"^(NA|\S+\.f(ast)?q(\.gz)?)$"},
+        "BAM": {"type": "string", "format": "file-path", "pattern": r"^(NA|\S+\.bam)$"}}},
+}
+
+
 def load_schema(pipeline, kind):
+    if kind == "input" and pipeline in INPUT_SPECS:
+        return {"items": INPUT_SPECS[pipeline]}
     return json.load(open(os.path.join(SCHEMAS, f"{pipeline}-{REGISTRY[pipeline]['revision']}.{kind}.json")))
 
 
@@ -212,6 +252,8 @@ def check_fastq_sheet(pipeline, sheet_text, params):
     for i, row in enumerate(rows, start=2):
         for col, spec in props.items():
             value = row.get(col, "")
+            if pipeline == "eager" and value == "NA" and col not in ("Sample_Name", "Library_ID"):
+                continue  # eager's TSV writes NA for unused fields
             if not value or (pipeline == "isoseq" and col == "pbi" and value == "none"):
                 if col in required and not (col == "fastq_2" and pipeline == "rnaseq"):
                     problems.append(f"samplesheet line {i}: '{col}' is empty")
@@ -222,6 +264,8 @@ def check_fastq_sheet(pipeline, sheet_text, params):
                 problems.append(f"samplesheet line {i}: '{col}' value '{value}' is not valid ({spec.get('errorMessage', 'pattern ' + spec['pattern'])})")
             if spec.get("type") == "integer" and not value.isdigit():
                 problems.append(f"samplesheet line {i}: '{col}' must be an integer (got '{value}')")
+            if spec.get("format") == "path" and not (value.startswith("/") and os.path.exists(value)):
+                problems.append(f"samplesheet line {i}: '{col}' must be an existing absolute path (got '{value}')")
             if spec.get("format") == "file-path":
                 if not value.startswith("/"):
                     problems.append(f"samplesheet line {i}: '{col}' must be an absolute path (got '{value}')")
@@ -326,7 +370,131 @@ def check_mag(rows, params):
     return problems
 
 
-EXTRA_CHECKS = {"sarek": check_sarek, "isoseq": check_isoseq, "taxprofiler": check_taxprofiler, "mag": check_mag}
+def check_replicates(rows, name):
+    """Replicates of each sample must be numbered 1..N without gaps."""
+    problems = []
+    reps = {}
+    for r in rows:
+        if str(r.get("replicate", "")).isdigit():
+            reps.setdefault(r.get("sample"), set()).add(int(r["replicate"]))
+    for sample, numbers in sorted(reps.items()):
+        if sorted(numbers) != list(range(1, len(numbers) + 1)):
+            problems.append(f"{name}: replicates of '{sample}' must be numbered 1..N without gaps (got {sorted(numbers)})")
+    return problems
+
+
+def check_controls(rows, name, need_antibody):
+    problems = []
+    known = {(r.get("sample"), r.get("replicate")) for r in rows}
+    for i, r in enumerate(rows, start=2):
+        ctrl, crep = r.get("control", ""), r.get("control_replicate", "")
+        if ctrl and (ctrl, crep) not in known:
+            problems.append(f"{name} line {i}: control '{ctrl}' replicate '{crep}' is not a row of the samplesheet")
+        if need_antibody and ctrl and not r.get("antibody"):
+            problems.append(f"{name} line {i}: an IP sample with a control needs its 'antibody'")
+        if need_antibody and not ctrl and r.get("antibody") and any(x.get("control") for x in rows):
+            problems.append(f"{name} line {i}: IP sample '{r.get('sample')}' has no control while others do")
+    controls = {r.get("control") for r in rows if r.get("control")}
+    for i, r in enumerate(rows, start=2):
+        if r.get("sample") in controls and (r.get("antibody") or r.get("control")):
+            problems.append(f"{name} line {i}: control sample '{r.get('sample')}' must have empty antibody and control")
+    return problems
+
+
+def check_chipseq(rows, params):
+    problems = check_replicates(rows, "samplesheet") + check_controls(rows, "samplesheet", True)
+    if not params.get("genome") and not params.get("macs_gsize"):
+        problems.append("'macs_gsize' (effective genome size) is required with a custom genome")
+    return problems
+
+
+def check_atacseq(rows, params):
+    problems = check_replicates(rows, "samplesheet")
+    if params.get("with_control") is True:
+        problems += check_controls(rows, "samplesheet", False)
+    elif any(r.get("control") for r in rows):
+        problems.append("control columns are filled: set 'with_control=true' (or empty them)")
+    if not params.get("genome") and not params.get("macs_gsize"):
+        problems.append("'macs_gsize' (effective genome size) is required with a custom genome")
+    return problems
+
+
+def check_ampliseq(rows, params):
+    problems = []
+    for i, r in enumerate(rows, start=2):
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", r.get("sample", "")):
+            problems.append(f"samplesheet line {i}: sample '{r.get('sample')}' must start with a letter and use only letters, digits and '_'")
+    if params.get("skip_cutadapt") is not True and not (params.get("primer_fwd") and params.get("primer_rev")):
+        problems.append("'primer_fwd' and 'primer_rev' are required (or skip_cutadapt=true if primers are already removed)")
+    paired = {bool(r.get("fastq_2")) for r in rows}
+    if paired == {False} and params.get("sequencing_type", "illumina_pe") == "illumina_pe":
+        problems.append("single-end reads: set 'sequencing_type' to illumina_se (or the right technology)")
+    return problems
+
+
+def check_nanoseq(rows, params):
+    problems = []
+    demux = params.get("skip_demultiplexing") is not True
+    for i, r in enumerate(rows, start=2):
+        if demux and (r.get("input_file") or not r.get("barcode")):
+            problems.append(f"samplesheet line {i}: demultiplexing needs 'barcode' and an empty 'input_file' "
+                            "(or set skip_demultiplexing=true for per-sample files)")
+        if not demux and (not r.get("input_file") or r.get("barcode")):
+            problems.append(f"samplesheet line {i}: with skip_demultiplexing=true give 'input_file' and leave 'barcode' empty")
+        fasta = r.get("fasta", "")
+        if fasta.startswith("/") and not os.path.isfile(fasta):
+            problems.append(f"samplesheet line {i}: fasta file does not exist: {fasta}")
+    if demux and not (params.get("input_path") and params.get("barcode_kit")):
+        problems.append("demultiplexing needs 'input_path' (pooled reads) and 'barcode_kit'")
+    if params.get("protocol") not in ("DNA", "cDNA", "directRNA"):
+        problems.append("'protocol' must be DNA, cDNA or directRNA")
+    return problems
+
+
+def check_eager(rows, params):
+    problems = []
+    libs = {}
+    lanes = [(r.get("Library_ID"), r.get("Lane")) for r in rows]
+    for i, r in enumerate(rows, start=2):
+        libs.setdefault(r.get("Library_ID"), set()).add(r.get("Sample_Name"))
+        has_fq, has_bam = r.get("R1", "NA") not in NA, r.get("BAM", "NA") not in NA
+        if has_fq == has_bam:
+            problems.append(f"samplesheet line {i}: give either R1 (FASTQ) or BAM, not both or neither")
+        if r.get("SeqType") == "PE" and r.get("R2", "NA") in NA:
+            problems.append(f"samplesheet line {i}: SeqType PE needs R2")
+        if r.get("SeqType") == "SE" and r.get("R2", "NA") not in NA:
+            problems.append(f"samplesheet line {i}: SeqType SE must have R2=NA")
+        if has_bam and r.get("SeqType") != "SE":
+            problems.append(f"samplesheet line {i}: BAM input must have SeqType SE")
+    for lib, samples in libs.items():
+        if len(samples) > 1:
+            problems.append(f"samplesheet: Library_ID '{lib}' is used by several samples ({', '.join(sorted(samples))})")
+    for dup in sorted({x for x in lanes if lanes.count(x) > 1 and x[0]}):
+        problems.append(f"samplesheet: lane {dup[1]} of library '{dup[0]}' appears more than once")
+    for key in ("single_end", "udg_type", "single_stranded", "colour_chemistry"):
+        if key in params:
+            problems.append(f"param '{key}' must not be set: the samplesheet (TSV) defines it per library")
+    if "fasta" not in params and "genome" not in params:
+        problems.append("set 'fasta' (a reference from the catalogue) or 'genome'")
+    return problems
+
+
+def check_methylseq(rows, params):
+    problems = []
+    presets = [k for k in ("pbat", "rrbs", "em_seq", "single_cell", "zymo", "accel") if params.get(k) is True]
+    if len(presets) > 1:
+        problems.append(f"set at most one library-prep preset (got {', '.join(presets)})")
+    if params.get("taps") is True and params.get("aligner", "bismark") != "bwamem":
+        problems.append("TAPS data ('taps=true') needs aligner=bwamem")
+    for idx in ("bismark_index", "bwameth_index"):
+        if params.get(idx) and not params.get("fasta"):
+            problems.append(f"'{idx}' needs the matching 'fasta'")
+    return problems
+
+
+EXTRA_CHECKS = {"sarek": check_sarek, "isoseq": check_isoseq, "taxprofiler": check_taxprofiler, "mag": check_mag,
+                "chipseq": check_chipseq, "atacseq": check_atacseq, "ampliseq": check_ampliseq,
+                "nanoseq": check_nanoseq, "eager": check_eager, "methylseq": check_methylseq}
 
 
 def matrix_samples(path):
@@ -661,6 +829,13 @@ def main(argv):
     if cmd == "record":
         error_text = open(argv[6]).read() if len(argv) > 6 else ""
         record(argv[2], argv[3], open(argv[4]).read(), open(argv[5]).read(), error_text)
+        return 0
+    if cmd == "runtime":  # shell assignments for run_nfcore.sh
+        entry = REGISTRY.get(pipeline_name(argv[2]) if len(argv) > 2 else "", {})
+        print(f"pipeline_nxf_ver={entry.get('nextflow', '')}")
+        print(f"pipeline_java_home={entry.get('java_home', '')}")
+        print(f"pipeline_input_format={entry.get('input_format', 'csv')}")
+        print(f"pipeline_legacy_limits={'1' if entry.get('legacy_limits') else ''}")
         return 0
     if cmd == "revision":
         name = pipeline_name(argv[2]) if len(argv) > 2 else ""

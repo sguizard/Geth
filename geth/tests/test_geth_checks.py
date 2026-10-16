@@ -228,5 +228,68 @@ class NewPipelines(unittest.TestCase):
             self.assertIn(expected, text)
 
 
+class MorePipelines(NewPipelines):
+    """ampliseq, chipseq, atacseq, nanoseq, eager, methylseq (reuses the dummy files of NewPipelines)."""
+
+    def test_ampliseq(self):
+        sheet = ("sample,fastq_1,fastq_2,run\n"
+                 f"soil_A,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},run1\n"
+                 f"soil_B,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')},run2\n")
+        ok = {"primer_fwd": "GTGYCAGCMGCCGCGGTAA", "primer_rev": "GGACTACNVGGGTWTCTAAT", "dada_ref_taxonomy": "silva=138.2"}
+        self.assertEqual(self.check("ampliseq", sheet, ok), [])
+        text = "\n".join(self.check("ampliseq", sheet.replace("soil_B", "2-soil"), {"dada_ref_taxonomy": "silva=138.2"}))
+        self.assertIn("must start with a letter", text)
+        self.assertIn("'primer_fwd' and 'primer_rev' are required", text)
+
+    def test_chipseq(self):
+        head = "sample,fastq_1,fastq_2,replicate,antibody,control,control_replicate\n"
+        sheet = (head + f"H3K27ac,{self.f('T_L1_R1.fastq.gz')},{self.f('T_L1_R2.fastq.gz')},1,H3K27ac,INPUT,1\n"
+                 f"H3K27ac,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},2,H3K27ac,INPUT,1\n"
+                 f"INPUT,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')},1,,,\n")
+        ok = {"fasta": self.f("genome.fa"), "macs_gsize": 2.7e9, "read_length": 150}
+        self.assertEqual(self.check("chipseq", sheet, ok), [])
+        bad = sheet.replace(",2,H3K27ac,INPUT,1", ",3,H3K27ac,INPUT,2")
+        text = "\n".join(self.check("chipseq", bad, {"fasta": self.f("genome.fa"), "read_length": 120}))
+        for expected in ("numbered 1..N", "replicate '2' is not a row", "'macs_gsize'", "'read_length' must be one of"):
+            self.assertIn(expected, text)
+
+    def test_atacseq(self):
+        sheet = ("sample,fastq_1,fastq_2,replicate\n"
+                 f"WT,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},1\n"
+                 f"WT,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')},2\n")
+        ok = {"fasta": self.f("genome.fa"), "macs_gsize": 2.7e9, "read_length": 50, "narrow_peak": True, "mito_name": "MT"}
+        self.assertEqual(self.check("atacseq", sheet, ok), [])
+        self.assertTrue(any("numbered 1..N" in p for p in self.check("atacseq", sheet.replace(",2\n", ",3\n"), ok)))
+
+    def test_nanoseq(self):
+        sheet = ("group,replicate,barcode,input_file,fasta,gtf\n"
+                 f"ctrl,1,,{self.f('ont.fastq.gz')},{self.f('genome.fa')},\n")
+        ok = {"protocol": "cDNA", "skip_demultiplexing": True, "skip_quantification": True}
+        self.assertEqual(self.check("nanoseq", sheet, ok), [])
+        text = "\n".join(self.check("nanoseq", sheet, {"protocol": "RNA"}))
+        self.assertIn("demultiplexing needs 'barcode'", text)
+        self.assertIn("'protocol' must be DNA, cDNA or directRNA", text)
+
+    def test_eager(self):
+        head = "Sample_Name,Library_ID,Lane,Colour_Chemistry,SeqType,Organism,Strandedness,UDG_Treatment,R1,R2,BAM\n"
+        sheet = (head + f"IND1,IND1_L1,1,4,PE,Homo sapiens,double,half,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},NA\n"
+                 f"IND1,IND1_L1,2,2,SE,Homo sapiens,double,half,{self.f('S2_R1.fastq.gz')},NA,NA\n")
+        ok = {"fasta": self.f("genome.fa"), "mapper": "bwaaln", "dedupper": "markduplicates"}
+        self.assertEqual(self.check("eager", sheet, ok), [])
+        bad = sheet.replace(",SE,Homo sapiens,double,half,", ",PE,Homo sapiens,double,quarter,").replace("IND1,IND1_L1,2", "IND2,IND1_L1,1")
+        text = "\n".join(self.check("eager", bad, dict(ok, udg_type="half")))
+        for expected in ("SeqType PE needs R2", "'UDG_Treatment' must be one of", "used by several samples", "'udg_type' must not be set"):
+            self.assertIn(expected, text)
+
+    def test_methylseq(self):
+        sheet = f"sample,fastq_1,fastq_2\nliver,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')}\n"
+        self.assertEqual(self.check("methylseq", sheet, {"fasta": self.f("genome.fa"), "em_seq": True}), [])
+        text = "\n".join(self.check("methylseq", sheet, {"fasta": self.f("genome.fa"), "rrbs": True, "pbat": True, "taps": True}))
+        self.assertIn("at most one library-prep preset", text)
+        self.assertIn("aligner=bwamem", text)
+
+    test_sarek = test_isoseq = test_taxprofiler = test_mag = None  # covered by NewPipelines
+
+
 if __name__ == "__main__":
     unittest.main()

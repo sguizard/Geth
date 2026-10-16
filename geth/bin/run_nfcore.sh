@@ -64,12 +64,27 @@ if [ -n "$analysis_profile" ]; then
 fi
 if [ "$input_bytes" -lt 2000000000 ]; then resources=test; else resources=production; fi
 
+# Per-pipeline runtime: older pipelines pin their Nextflow (and Java), eager reads a TSV and takes max_* params.
+eval "$(python3 "$checks" runtime "$pipeline")"
+nested_env=()
+[ -n "$pipeline_nxf_ver" ] && nested_env+=(NXF_VER="$pipeline_nxf_ver")
+[ -n "$pipeline_java_home" ] && nested_env+=(JAVA_HOME="$pipeline_java_home" NXF_JAVA_HOME="$pipeline_java_home")
+input="$attempt/samplesheet.csv"
+if [ "$pipeline_input_format" = tsv ]; then
+    python3 -c 'import csv, sys; csv.writer(sys.stdout, delimiter="\t", lineterminator="\n").writerows(csv.reader(open(sys.argv[1])))' \
+        "$attempt/samplesheet.csv" > "$attempt/samplesheet.tsv"
+    input="$attempt/samplesheet.tsv"
+fi
+if [ -n "$pipeline_legacy_limits" ] && [ "$resources" = test ]; then
+    extra+=(--max_cpus 4 --max_memory 16.GB --max_time 4.h)
+fi
+
 # Separate launch dir: the Geth driver itself runs in $run_dir, and -resume must not pick its session.
 mkdir -p "$run_dir/nfcore"
 cd "$run_dir/nfcore"
-nextflow run "nf-core/$pipeline" -r "$revision" -profile "$profiles" "${extra[@]}" \
+env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" -profile "$profiles" "${extra[@]}" \
     -c "$GETH_HOME/geth/conf/$resources.config" \
-    -params-file "$attempt/params.json" --input "$attempt/samplesheet.csv" \
+    -params-file "$attempt/params.json" --input "$input" \
     --outdir "$run_dir/results" -w "$run_dir/work" -resume -ansi-log false \
     > "$attempt/nextflow.log" 2>&1
 rc=$?
