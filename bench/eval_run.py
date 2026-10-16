@@ -32,7 +32,7 @@ def main():
     refused = [a for a in attempts if os.path.getsize(os.path.join(a, "gate.txt")) > 0] if attempts else []
     preserved = bool(launched) and all(design(os.path.join(a, "samplesheet.csv")) == approved for a in launched)
     success = bool(launched) and "Pipeline completed successfully" in open(os.path.join(launched[-1], "nextflow.log")).read()
-    outputs = glob.glob(os.path.join(run_dir, "results", "*", "salmon.merged.gene_counts.tsv")) if kind == "bulk" \
+    outputs = glob.glob(os.path.join(run_dir, "results", "*", "salmon.merged.gene_counts.tsv")) if kind in ("bulk", "airway") \
         else glob.glob(os.path.join(run_dir, "results", "**", "*filtered_matrix.h5ad"), recursive=True)
     check = open(os.path.join(run_dir, "report_check.txt")).read().strip() if os.path.isfile(os.path.join(run_dir, "report_check.txt")) else ""
     m = re.search(r"(\d+)/(\d+) numbers traced", check)

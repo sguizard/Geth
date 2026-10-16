@@ -148,14 +148,14 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill run">v1 hardening in progress</span>
+    <span class="pill run">real-size runs in progress</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (bulk RNA-seq, scRNA-seq) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model.</p>
   <div class="meta">
     <span>Updated 2026-10-16</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>nf-core/rnaseq 3.27.0 · nf-core/scrnaseq 4.2.0</span>
-    <span>repo sguizard/Geth · master @ cb86184</span>
+    <span>repo sguizard/Geth · master @ 87879ec</span>
   </div>
 </header>
 
@@ -214,10 +214,10 @@ a { color: var(--accent); }
         <p>Feasible with Qwen 3.5. Mistral Small 4 dropped after silently corrupting an experimental design.</p>
       </div>
     </li>
-    <li class="phase now">
+    <li class="phase done">
       <div class="node"><span class="dot">5</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>v1 hardening</h3><span class="pill run">in progress</span></div>
+        <div class="phase-head"><h3>v1 hardening</h3><span class="pill ok">done</span></div>
         <ul class="check">
           <li class="done">Commit the feasibility spikes</li>
           <li class="done">Qwen-only configuration</li>
@@ -226,15 +226,24 @@ a { color: var(--accent); }
           <li class="done">Planner checks its own plan (<code>CHECK_PLAN</code>) before answering</li>
           <li class="done">Results as rounded, labelled tables + automatic number check of the report</li>
           <li class="done">Smoke test: bulk run planned, approved and run in 8.2 min; 1 attempt; 45/45 report numbers traced</li>
-          <li class="doing">3 repeats per dataset with all guards on</li>
+          <li class="done">v1.0 benchmark, 3 repeats per dataset: bulk 3/3 perfect; scRNA 1/3 (2 plans mangled in the final hand-off, caught before launch)</li>
+          <li class="done">v1.1: plan handed over as lists, last checked plan used as fallback, <code>geth approve</code> refuses failing plans, <code>.gz</code> content check, reference catalogue, real-size resources, <code>geth run --detach</code></li>
+          <li class="done">v1.1 benchmark: 4/4 perfect runs (3 scRNA + 1 bulk): correct plans, 1 attempt each, every report number traced</li>
         </ul>
       </div>
     </li>
-    <li class="phase">
+    <li class="phase now">
       <div class="node"><span class="dot">6</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Real-size data</h3><span class="pill next">next</span></div>
-        <p>One public dataset per pipeline sized for hours of compute: queue waits, memory and time failures, full references.</p>
+        <div class="phase-head"><h3>Real-size data</h3><span class="pill run">in progress</span></div>
+        <p>Public human data on GRCh38 (Ensembl 116): <strong>airway</strong> bulk RNA-seq (GSE52778, 8 samples, untreated vs dexamethasone, 24 GB) and 10x <strong>PBMC 1k v3</strong> (~1,000 cells, 5.2 GB).</p>
+        <ul class="check">
+          <li class="done">Data and reference downloaded on the staging queue, checksums verified</li>
+          <li class="done">airway plan 12/12: one sample per run, 4 stray unpaired-read files left out, GRCh38 picked from the reference catalogue</li>
+          <li class="done">PBMC plan 12/12: two lanes merged, index reads left out, 10x v3, GRCh38</li>
+          <li class="done">Both plans approved by a person; CellBender kept off for PBMC</li>
+          <li class="doing">Both runs on SGE (started 19:56)</li>
+        </ul>
       </div>
     </li>
     <li class="phase">
@@ -309,6 +318,18 @@ a { color: var(--accent); }
     </table>
   </div>
 
+  <h3>Geth v1.0 benchmark: plan → approve → run, all guards on (Qwen only)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Dataset</th><th>Correct plan</th><th>Pipeline success</th><th>Design kept</th><th>Honest outcome</th><th>Report numbers traced</th><th>Time per run</th></tr></thead>
+      <tbody>
+        <tr><td>Bulk yeast × 3</td><td class="n">3/3</td><td class="n">3/3</td><td class="n">3/3</td><td class="n">3/3</td><td class="n">138/139</td><td class="n">7.1–9.3 min</td></tr>
+        <tr><td>scRNA mouse × 3</td><td class="n">1/3</td><td class="n">1/3</td><td class="n">no wrong launch</td><td class="n">3/3</td><td class="n">36/38 (successful run)</td><td class="n">4.5–8.7 min</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Untraced report numbers were all background claims (“~6000 yeast genes”, “target 20,000 reads per cell”) and are now flagged in the report itself. Both scRNA failures were stopped before launch; the operator reported them honestly.</p>
+
   <h3>Platform checks</h3>
   <div class="table-wrap">
     <table>
@@ -347,6 +368,11 @@ a { color: var(--accent); }
       <p class="fix"><strong>Facts first:</strong> prompts name every field to report; results tool emits rounded, labelled tables; report numbers are cross-checked.</p>
     </div>
     <div class="lesson">
+      <span class="pill warn" style="justify-self:start">v1.0</span>
+      <p class="seen">The planner checked a correct scRNA plan, but the structured final answer turned its JSON parameters into <code>protocol,aligner,…</code>. JSON nested inside a text field does not survive the hand-off.</p>
+      <p class="fix"><strong>v1.1:</strong> parameters and samplesheet are handed over as lists; the last plan that passed <code>CHECK_PLAN</code> is kept as fallback; approval refuses any plan that fails the check.</p>
+    </div>
+    <div class="lesson">
       <span class="pill next" style="justify-self:start">platform</span>
       <p class="seen">Agent preview limits: tool inputs cannot be <code>Path</code>; a failing tool kills the agent; compute nodes cannot submit SGE jobs.</p>
       <p class="fix"><strong>Workarounds:</strong> absolute paths as text on the shared filesystem; tools always exit 0 and report errors as text; the driver runs on node1q01 (≤ 4 CPUs).</p>
@@ -365,6 +391,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-16">2026-10-16</time><span>Use the nf-core roslin profile and its shared apptainer cache (read and write granted).</span></li>
     <li><time datetime="2026-10-16">2026-10-16</time><span>Feasibility verdict: GO.</span></li>
     <li><time datetime="2026-10-16">2026-10-16</time><span>Mistral Small 4 dropped; Geth runs on Qwen 3.5 397B only.</span></li>
+    <li><time datetime="2026-10-16">2026-10-16</time><span>Real-size tests use public human data: airway (bulk) and PBMC 1k v3 (single-cell) on GRCh38.</span></li>
   </ul>
 </section>
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score a Geth plan (plan_*.{csv,json,txt} in a run dir) against the known truth of a test dataset.
 
-Usage: eval_plan.py <run_dir> <bulk|sc>   -> prints one JSON line with every check and a score.
+Usage: eval_plan.py <run_dir> <bulk|sc|airway|pbmc>   -> prints one JSON line with every check and a score.
 """
 import csv
 import io
@@ -86,11 +86,59 @@ def sc(rows, params, pipeline):
     return c
 
 
+DATA = "/exports/eddie/scratch/sguizard/Perseus_Veil/data"
+GRCH38 = "/exports/eddie/scratch/sguizard/Perseus_Veil/references/homo_sapiens_GRCh38_ens116"
+GRCH38_FASTA = f"{GRCH38}/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+GRCH38_GTF = f"{GRCH38}/Homo_sapiens.GRCh38.116.gtf.gz"
+AIRWAY_DEX = {"SRR1039508": False, "SRR1039509": True, "SRR1039512": False, "SRR1039513": True,
+              "SRR1039516": False, "SRR1039517": True, "SRR1039520": False, "SRR1039521": True}
+
+
+def airway(rows, params, pipeline):
+    c = {"pipeline": pipeline == "rnaseq",
+         "columns": bool(rows) and {"sample", "fastq_1", "fastq_2", "strandedness"} <= set(rows[0].keys()),
+         "n_rows_8": len(rows) == 8}
+    name = {run_of(r.get("fastq_1")): r.get("sample", "") for r in rows}
+    c["one_sample_per_run"] = len(set(name.values())) == 8 and set(name) == set(AIRWAY_DEX)
+    c["paired_files_only"] = bool(rows) and all(
+        re.search(r"_1\.fastq\.gz$", r.get("fastq_1", "")) and re.search(r"_2\.fastq\.gz$", r.get("fastq_2") or "")
+        for r in rows)  # the extra unpaired SRRxxx.fastq.gz files must be left out
+    c["treatment_in_names"] = all(("dex" in name.get(run, "").lower()) == dex for run, dex in AIRWAY_DEX.items())
+    c["strandedness_ok"] = bool(rows) and all(r.get("strandedness") in ("auto", "unstranded") for r in rows)
+    c["paths_exist"] = bool(rows) and all(os.path.isfile(r[k]) for r in rows for k in ("fastq_1", "fastq_2") if r.get(k))
+    p = params if isinstance(params, dict) else {}
+    c["params_json_object"] = isinstance(params, dict)
+    c["fasta_gtf"] = p.get("fasta") == GRCH38_FASTA and p.get("gtf") == GRCH38_GTF
+    c["no_genome_key"] = "genome" not in p
+    return c
+
+
+def pbmc(rows, params, pipeline):
+    c = {"pipeline": pipeline == "scrnaseq",
+         "columns": bool(rows) and {"sample", "fastq_1", "fastq_2"} <= set(rows[0].keys()),
+         "n_rows_2": len(rows) == 2,
+         "lanes_merged": len({r.get("sample") for r in rows}) == 1,
+         "r1_r2_order": bool(rows) and all("_R1_" in (r.get("fastq_1") or "") and "_R2_" in (r.get("fastq_2") or "")
+                                           for r in rows),
+         "index_reads_excluded": not any("_I1_" in v for r in rows for v in r.values() if v),
+         "paths_exist": bool(rows) and all(os.path.isfile(r.get(k) or "") for r in rows for k in ("fastq_1", "fastq_2"))}
+    p = params if isinstance(params, dict) else {}
+    c["params_json_object"] = isinstance(params, dict)
+    c["protocol_10XV3"] = str(p.get("protocol", "")).upper() == "10XV3"
+    c["fasta_gtf"] = p.get("fasta") == GRCH38_FASTA and p.get("gtf") == GRCH38_GTF
+    c["aligner_valid"] = p.get("aligner", "simpleaf") in ("star", "simpleaf", "kallisto", "cellranger")
+    return c
+
+
+SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc}
+PIPELINE = {"bulk": "rnaseq", "airway": "rnaseq", "sc": "scrnaseq", "pbmc": "scrnaseq"}
+
+
 def main():
     run_dir, kind = sys.argv[1], sys.argv[2]
     rows, params, pipeline = load(run_dir)
-    checks = (bulk if kind == "bulk" else sc)(rows, params, pipeline)
-    expected = "rnaseq" if kind == "bulk" else "scrnaseq"
+    checks = SCORERS[kind](rows, params, pipeline)
+    expected = PIPELINE[kind]
     unknown = sorted(set(params or {}) - known_params(expected)) if isinstance(params, dict) else []
     checks["params_known"] = not unknown
     print(json.dumps({"run": os.path.basename(run_dir), "score": f"{sum(checks.values())}/{len(checks)}",
