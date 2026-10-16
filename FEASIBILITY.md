@@ -34,8 +34,25 @@ Mistral-Small-4 is only fit for narrow, mechanical steps.
   judgement, and so the risk, is highest.
 - ELM availability/rate limits under sustained use (no rate-limit headers observed).
 
+## Results since the decision (Qwen 3.5 only)
+| Version | Data | Runs | Correct plan | Pipeline success | Design kept | Report numbers traced |
+|---|---|---|---|---|---|---|
+| v1.0 | test bulk yeast | 3 | 3/3 | 3/3 | 3/3 | 138/139 |
+| v1.0 | test scRNA mouse chr19 | 3 | 1/3 | 1/3 | no wrong launch | 36/38 |
+| v1.1 | test scRNA + bulk | 4 | 4/4 | 4/4 | 4/4 | 146/146 |
+| v1.1 | **airway** (GSE52778, 8 samples, GRCh38) | 1 | 12/12 checks | ✅ 287 tasks, 2 h 08 from approval to report, 23 CPU-h | ✅ | 64/64 |
+| v1.1 | **PBMC 1k v3** (10x, GRCh38) | 1 | 12/12 checks | ✅ 15 tasks, 67 min, 1,120 cells | ✅ | 28/28 |
+
+v1.0 scRNA failures: the structured hand-off mangled JSON parameters nested in a text field; fixed in v1.1
+by handing lists to Geth and keeping the last checked plan. Real-size planner behaviour: stray unpaired-read
+files left out, lanes merged, index reads ignored, reference picked from the catalogue, all unprompted.
+A Salmon index job killed by SGE (exit 140) was retried by nf-core itself; no agent action was needed.
+
 ## Proposed next steps
-1. Implement the plan-diff gate + plan approval step; rerun the 4 full runs × 3 repeats (Qwen and Mistral).
-2. Add one real (anonymised/public) dataset per pipeline, sized for a few hours of compute.
-3. Add a DE stage (nf-core/differentialabundance) for bulk, then revisit the Frontier-style "agent writes the
-   pipeline" idea only once v1 is reliable.
+1. ~~Plan-diff gate + plan approval; repeats~~ done (v1, v1.1).
+2. ~~One real-size public dataset per pipeline~~ done (airway, PBMC 1k v3).
+3. Differential expression for bulk (nf-core/differentialabundance) validated on airway, where the
+   dexamethasone response is well known (e.g. DUSP1, FKBP5, KLF15, PER1, TSC22D3 up).
+4. Single-cell clustering/annotation on PBMC 1k v3 (known cell types).
+5. Reuse built indexes across runs (STAR index for GRCh38 took 26 min and 65 GB per run).
+6. Frontier-style "agent writes the pipeline" only once 3-4 are reliable.

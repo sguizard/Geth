@@ -148,7 +148,7 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill run">real-size runs in progress</span>
+    <span class="pill ok">v1.1 validated on real-size data</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (bulk RNA-seq, scRNA-seq) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model.</p>
   <div class="meta">
@@ -232,25 +232,26 @@ a { color: var(--accent); }
         </ul>
       </div>
     </li>
-    <li class="phase now">
+    <li class="phase done">
       <div class="node"><span class="dot">6</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Real-size data</h3><span class="pill run">in progress</span></div>
+        <div class="phase-head"><h3>Real-size data</h3><span class="pill ok">done</span></div>
         <p>Public human data on GRCh38 (Ensembl 116): <strong>airway</strong> bulk RNA-seq (GSE52778, 8 samples, untreated vs dexamethasone, 24 GB) and 10x <strong>PBMC 1k v3</strong> (~1,000 cells, 5.2 GB).</p>
         <ul class="check">
           <li class="done">Data and reference downloaded on the staging queue, checksums verified</li>
           <li class="done">airway plan 12/12: one sample per run, 4 stray unpaired-read files left out, GRCh38 picked from the reference catalogue</li>
           <li class="done">PBMC plan 12/12: two lanes merged, index reads left out, 10x v3, GRCh38</li>
           <li class="done">Both plans approved by a person; CellBender kept off for PBMC</li>
-          <li class="doing">Both runs on SGE (started 19:56)</li>
+          <li class="done">PBMC 1k v3 done in 67 min from approval to checked report: 1 attempt, 15 tasks, 0 failed; 1,120 cells, median 2,264 genes and 7,345 UMIs per cell; 28/28 report numbers traced</li>
+          <li class="done">airway done in 2 h 08 min from approval to checked report: 1 attempt, 287 tasks, 23 CPU-hours; mapping 92.5–94.3%; 64/64 report numbers traced. One Salmon index job hit an SGE limit and was retried by nf-core itself, no agent action needed</li>
         </ul>
       </div>
     </li>
-    <li class="phase">
+    <li class="phase now">
       <div class="node"><span class="dot">7</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Downstream analysis</h3><span class="pill next">later</span></div>
-        <p>Differential expression (nf-core/differentialabundance) and single-cell clustering, where scientific judgement matters most.</p>
+        <div class="phase-head"><h3>Downstream analysis</h3><span class="pill next">next</span></div>
+        <p>Differential expression (nf-core/differentialabundance) validated on airway, where the dexamethasone response is known (DUSP1, FKBP5, KLF15, PER1, TSC22D3 up); single-cell clustering on PBMC 1k v3; reuse of built indexes (the GRCh38 STAR index took 26 min and 65 GB per run).</p>
       </div>
     </li>
     <li class="phase">
@@ -329,6 +330,17 @@ a { color: var(--accent); }
     </table>
   </div>
   <p>Untraced report numbers were all background claims (“~6000 yeast genes”, “target 20,000 reads per cell”) and are now flagged in the report itself. Both scRNA failures were stopped before launch; the operator reported them honestly.</p>
+
+  <h3>Real-size runs (Geth v1.1, human GRCh38, approved by a person)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Dataset</th><th>Plan</th><th>Attempts</th><th>Tasks</th><th>Approval → report</th><th>Key results</th><th>Report numbers traced</th></tr></thead>
+      <tbody>
+        <tr><td>airway bulk RNA-seq, 8 samples, 24 GB</td><td class="n">12/12</td><td class="n">1</td><td class="n">287</td><td class="n">2 h 08 min</td><td>mapping 92.5–94.3%; 15.5–31.4 M reads assigned per sample</td><td class="n">64/64</td></tr>
+        <tr><td>PBMC 1k v3 10x, 5.2 GB</td><td class="n">12/12</td><td class="n">1</td><td class="n">15</td><td class="n">67 min</td><td>1,120 cells; median 2,264 genes, 7,345 UMIs per cell</td><td class="n">28/28</td></tr>
+      </tbody>
+    </table>
+  </div>
 
   <h3>Platform checks</h3>
   <div class="table-wrap">
