@@ -5,6 +5,7 @@ Usage: collect_results.py <run_dir> <pipeline>
 Numbers are converted, rounded and labelled here, so the reporter can copy them without arithmetic.
 """
 import csv
+import json
 import glob
 import os
 import sys
@@ -181,10 +182,66 @@ def differentialabundance(run_dir, outdir):
     return parts
 
 
+def latest_analysis(run_dir):
+    """diagnostics.json of the last successful single-cell analysis (analysis_N/)."""
+    found = sorted(glob.glob(os.path.join(run_dir, "analysis_*", "diagnostics.json")),
+                   key=lambda p: int(p.split("analysis_")[1].split("/")[0]))
+    return found[-1] if found else None
+
+
+def sc_downstream(run_dir):
+    path = latest_analysis(run_dir)
+    if not path:
+        return ["No successful single-cell analysis found."]
+    with open(path) as fh:
+        d = json.load(fh)
+    out = os.path.dirname(path)
+    parts = [f"Final analysis: `{out}` (input `{d['input']}`)",
+             "### Cells\n" + table(["Step", "Cells removed", "Cells kept"],
+                                   [["input", "", count(d["cells_input"])]]
+                                   + [[s["filter"], count(s["removed"]), count(s["kept"])] for s in d["qc_steps"]])
+             + f"\n\nCells kept: {count(d['cells_kept'])} of {count(d['cells_input'])} ({pct(100 * d['cells_kept_fraction'])}%). "
+             f"Doublets removed: {count(d['doublets']['detected'])} ({pct(100 * d['doublets']['rate'])}%). "
+             f"Genes kept: {count(d['genes_kept'])}.",
+             "### Clustering\n" + table(["Leiden resolution", "Clusters", "Smallest cluster (cells)"],
+                                        [[r, v["clusters"], v["smallest_cluster"]] for r, v in d["leiden"].items()])
+             + f"\n\nChosen resolution: {d['design']['leiden.chosen']}. "
+             f"{pct(100 * d['celltypist_cluster_agreement'])}% of cells carry their cluster's majority CellTypist label "
+             f"(model `{os.path.basename(str(d['design']['annotation.model']))}`).",
+             "### Clusters\n" + table(["Cluster", "Cells", "CellTypist majority label", "Agreement (%)", "Top markers"],
+                                      [[c["cluster"], count(c["cells"]), c["celltypist_label"],
+                                        pct(100 * c["celltypist_agreement"], 0),
+                                        ", ".join(m["gene"] for m in c["top_markers"][:5])] for c in d["clusters"]]),
+             "### CellTypist composition (per-cell labels)\n" + table(
+                 ["Cell type", "Cells", "Share (%)"],
+                 [[k, count(v), pct(100 * v / d["cells_kept"])] for k, v in list(d["celltypist_composition"].items())[:15]])]
+    figures = sorted(glob.glob(os.path.join(out, "*.png")))
+    if figures:
+        parts.append("Figures: " + ", ".join(f"`{f}`" for f in figures))
+    return parts
+
+
 def raw_values(run_dir):
     """Every number in the raw QC tables, so a correctly quoted value passes at any precision."""
     outdir = os.path.join(run_dir, "results")
     values = [v for st in general_stats(outdir).values() for v in st.values() if v is not None]
+    diag = latest_analysis(run_dir)
+    if diag:
+        def walk(x):
+            if isinstance(x, dict):
+                for v in x.values():
+                    yield from walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    yield from walk(v)
+            elif isinstance(x, (int, float)) and not isinstance(x, bool):
+                yield float(x)
+        with open(diag) as fh:
+            d = json.load(fh)
+        values += list(walk(d))
+        values += [100 * d["cells_kept_fraction"], 100 * d["doublets"]["rate"], 100 * d["celltypist_cluster_agreement"]]
+        values += [100 * c["celltypist_agreement"] for c in d["clusters"]]
+        values += [100 * v / d["cells_kept"] for v in d["celltypist_composition"].values()]
     for _, path, annotated in de_tables(outdir):
         with open(annotated or path) as fh:
             for r in csv.DictReader(fh, delimiter="\t"):
@@ -198,8 +255,10 @@ def raw_values(run_dir):
 def collect(run_dir, pipeline):
     outdir = os.path.join(run_dir, "results")
     pipeline = pipeline.replace("nf-core/", "").strip()
-    if not os.path.isdir(outdir):
+    if not os.path.isdir(outdir) and pipeline != "sc_downstream":
         return f"No results folder at {outdir} (the run probably failed before publishing outputs)."
+    if pipeline == "sc_downstream":
+        return "\n\n".join(sc_downstream(run_dir))
     parts = [f"Results folder: `{outdir}`"]
     if pipeline == "differentialabundance":
         return "\n\n".join(parts + differentialabundance(run_dir, outdir))
