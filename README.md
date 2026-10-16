@@ -11,6 +11,7 @@ Progress page: <https://claude.ai/artifact/T3ApkP9kZzudYe7X1vFAnH> (source: `doc
 ```bash
 source env.sh
 geth/geth plan <data_dir> "<question>" <name>   # planner agent writes a plan into $PERSEUS_VEIL/geth/runs/<name>
+geth/geth plan --from <run> "<question>" <name> # follow-up analysis of a finished run (differential expression)
 geth/geth show <name>                           # review it; edit plan_samplesheet.csv / plan_params.json if needed
 geth/geth approve <name>                        # a person approves (refused if the plan fails the plan check)
 geth/geth run <name> [--detach]                 # operator + reporter agents; --detach for multi-hour runs
@@ -22,7 +23,7 @@ Data folders and the reference catalogue (`$PERSEUS_VEIL/references`, filled wit
 ## How it works
 | Step | Agent / gate | What it does |
 |---|---|---|
-| plan | **planner** (tools: list/read files, reference catalogue, `CHECK_PLAN`; nf-core skills) | picks rnaseq or scrnaseq, writes samplesheet + params + rationale |
+| plan | **planner** (tools: list/read files, reference catalogue, `CHECK_PLAN`; nf-core skills) | picks rnaseq or scrnaseq for new data, or differentialabundance on a finished rnaseq run; writes samplesheet (or observations + contrasts + analysis profile), params and rationale |
 | | plan check (`geth_checks.py`) | samplesheet and params against the pinned pipeline schemas; files exist and are really gzip; the last checked plan is kept as fallback |
 | approve | **a person** | approval hashes the plan files; any later edit needs a new approval |
 | run | **operator** (tool `RUN_NFCORE`) | launches the approved plan; on failure changes only what the error names |
@@ -31,7 +32,8 @@ Data folders and the reference catalogue (`$PERSEUS_VEIL/references`, filled wit
 | report | **reporter** (tool `COLLECT_RESULTS`) | Markdown report from rounded, labelled result tables |
 | | report check | every number and link must trace to the results, otherwise the report carries a warning |
 
-Pinned: Nextflow 26.10.2, nf-agent 0.2.0, nf-core/rnaseq 3.27.0, nf-core/scrnaseq 4.2.0.
+Pinned: Nextflow 26.10.2, nf-agent 0.2.0, nf-core/rnaseq 3.27.0, nf-core/scrnaseq 4.2.0,
+nf-core/differentialabundance 2.0.0. Regression tests: `python3 geth/tests/test_geth_checks.py`.
 
 ## Layout
 | Path | What |
