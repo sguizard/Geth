@@ -54,8 +54,8 @@ fi
 
 # Resources: small test data gets capped requests (fast scheduling); real data gets nf-core's own.
 input_bytes=$(python3 -c 'import csv, os, sys
-print(sum(os.path.getsize(r[k]) for r in csv.DictReader(open(sys.argv[1])) for k in ("fastq_1", "fastq_2") if r.get(k)))' \
-    "$attempt/samplesheet.csv")
+print(sum(os.path.getsize(v) for r in csv.DictReader(open(sys.argv[1])) for v in r.values()
+          if v and v.startswith("/") and os.path.isfile(v)))' "$attempt/samplesheet.csv")
 profiles=roslin
 extra=()
 if [ -n "$analysis_profile" ]; then

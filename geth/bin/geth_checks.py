@@ -41,6 +41,14 @@ OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_ve
 REGISTRY = {
     "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
     "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    "sarek": {"revision": "3.10.0", "design": ("patient", "sample", "status", "lane", "fastq_1", "fastq_2", "bam", "cram"),
+              "key": ("fastq_1", "bam", "cram", "spring_1", "vcf")},
+    "isoseq": {"revision": "3.0.1", "design": ("sample", "seq_data", "start_from"), "key": "seq_data",
+               "required_params": ("aligner", "fasta")},
+    "taxprofiler": {"revision": "2.0.1", "design": ("sample", "run_accession", "fastq_1", "fastq_2", "fasta"),
+                    "key": ("fastq_1", "fasta"), "required_params": ("databases",)},
+    "mag": {"revision": "5.5.0", "design": ("sample", "run", "group", "short_reads_1", "short_reads_2", "long_reads"),
+            "key": ("short_reads_1", "long_reads")},
     "differentialabundance": {
         "revision": "2.0.0", "design": None, "key": "sample", "downstream": True,
         "profiles": ("rnaseq", "rnaseq_deseq2_gprofiler2", "rnaseq_deseq2_gsea", "rnaseq_limma"),
@@ -107,6 +115,27 @@ def parse_sheet(text):
     return header, rows
 
 
+def row_key(pipeline, row):
+    """The file that identifies a samplesheet row (first non-empty of the pipeline's key columns)."""
+    keys = REGISTRY[pipeline]["key"]
+    for k in (keys if isinstance(keys, tuple) else (keys,)):
+        if row.get(k):
+            return row[k]
+    return ""
+
+
+def param_specs(pipeline):
+    schema = load_schema(pipeline, "params")
+    groups = (schema.get("$defs") or schema.get("definitions") or {}).values()
+    specs = {k: v for g in groups for k, v in g.get("properties", {}).items()}
+    required = {k for g in groups for k in g.get("required", [])}
+    return specs, required
+
+
+def is_remote(value):
+    return isinstance(value, str) and value.startswith(("http://", "https://", "s3://", "gs://", "az://"))
+
+
 def design_of(pipeline, rows):
     cols = REGISTRY[pipeline]["design"]
     return sorted(tuple(sorted(r.items())) if cols is None else tuple(r.get(c, "") for c in cols) for r in rows)
@@ -138,16 +167,35 @@ def check_params(pipeline, params_text):
         close = difflib.get_close_matches(key, known, n=3)
         problems.append(f"param '{key}' does not exist in nf-core/{pipeline} {REGISTRY[pipeline]['revision']}"
                         + (f" (closest: {', '.join(close)})" if close else ""))
+    if REGISTRY[pipeline].get("toolbox"):
+        return problems, params
+    specs, _ = param_specs(pipeline)
+    # Schema "required" flags include params filled by defaults or profiles: Geth lists the real ones.
+    for key in REGISTRY[pipeline].get("required_params", ()):
+        if params.get(key) in (None, ""):
+            problems.append(f"param '{key}' is required by nf-core/{pipeline}")
+    for key, value in params.items():
+        spec = specs.get(key, {})
+        if value is None or isinstance(value, bool):
+            continue
+        if "enum" in spec and value not in spec["enum"]:
+            problems.append(f"param '{key}' must be one of {spec['enum']} (got {value!r})")
+        if "pattern" in spec and isinstance(value, str):
+            try:
+                if not re.search(spec["pattern"], value):
+                    problems.append(f"param '{key}' value {value!r} is not valid for nf-core/{pipeline}")
+            except re.error:
+                pass
+        if spec.get("format") in ("file-path", "directory-path", "path") and isinstance(value, str) and value \
+                and not is_remote(value) and not os.path.exists(value):
+            problems.append(f"param '{key}' points to a file that does not exist: {value}")
     return problems, params
 
 
 def check_fastq_sheet(pipeline, sheet_text, params):
     problems = []
-    if "genome" in params and ("fasta" in params or "gtf" in params):
+    if pipeline in ("rnaseq", "scrnaseq") and "genome" in params and ("fasta" in params or "gtf" in params):
         problems.append("set either 'genome' or 'fasta'/'gtf', not both")
-    for key in ("fasta", "gtf", "gff", "transcript_fasta"):
-        if isinstance(params.get(key), str) and not os.path.isfile(params[key]):
-            problems.append(f"param '{key}' points to a file that does not exist: {params[key]}")
 
     schema = load_schema(pipeline, "input")["items"]
     props, required = schema["properties"], schema.get("required", [])
@@ -164,11 +212,11 @@ def check_fastq_sheet(pipeline, sheet_text, params):
     for i, row in enumerate(rows, start=2):
         for col, spec in props.items():
             value = row.get(col, "")
-            if not value:
+            if not value or (pipeline == "isoseq" and col == "pbi" and value == "none"):
                 if col in required and not (col == "fastq_2" and pipeline == "rnaseq"):
                     problems.append(f"samplesheet line {i}: '{col}' is empty")
                 continue
-            if "enum" in spec and value not in spec["enum"]:
+            if "enum" in spec and value not in [str(e) for e in spec["enum"]]:  # CSV values are text
                 problems.append(f"samplesheet line {i}: '{col}' must be one of {spec['enum']} (got '{value}')")
             if "pattern" in spec and not re.search(spec["pattern"], value):
                 problems.append(f"samplesheet line {i}: '{col}' value '{value}' is not valid ({spec.get('errorMessage', 'pattern ' + spec['pattern'])})")
@@ -181,10 +229,10 @@ def check_fastq_sheet(pipeline, sheet_text, params):
                     problems.append(f"samplesheet line {i}: '{col}' file does not exist: {value}")
                 elif value.endswith(".gz") and open(value, "rb").read(2) != b"\x1f\x8b":
                     problems.append(f"samplesheet line {i}: '{col}' is named .gz but is not gzip-compressed: {value}")
-        fq1 = row.get("fastq_1", "")
-        if fq1 and fq1 in seen:
-            problems.append(f"samplesheet line {i}: fastq_1 already used on line {seen[fq1]}")
-        seen[fq1] = i
+        key = row_key(pipeline, row)
+        if key and key in seen:
+            problems.append(f"samplesheet line {i}: {os.path.basename(key)} already used on line {seen[key]}")
+        seen[key] = i
     if pipeline == "rnaseq":
         layout = {}
         for row in rows:
@@ -192,7 +240,93 @@ def check_fastq_sheet(pipeline, sheet_text, params):
         for sample, kinds in layout.items():
             if len(kinds) > 1:
                 problems.append(f"samplesheet: sample '{sample}' mixes single-end and paired-end rows")
+    problems += EXTRA_CHECKS.get(pipeline, lambda r, p: [])(rows, params)
     return problems
+
+
+def check_sarek(rows, params):
+    problems = []
+    step = params.get("step", "mapping")
+    if step == "mapping":
+        for i, r in enumerate(rows, start=2):
+            if not r.get("lane"):
+                problems.append(f"samplesheet line {i}: 'lane' is required to start from FASTQ (step=mapping)")
+        lanes = [(r.get("patient"), r.get("sample"), r.get("lane")) for r in rows]
+        for dup in sorted({l for l in lanes if lanes.count(l) > 1}):
+            problems.append(f"samplesheet: lane '{dup[2]}' of sample '{dup[1]}' appears more than once")
+    tools = set(filter(None, str(params.get("tools", "")).split(",")))
+    tumours = {r.get("patient") for r in rows if str(r.get("status")) == "1"}
+    normals = {r.get("patient") for r in rows if str(r.get("status", "0")) in ("0", "")}
+    paired_only = tools & {"ascat", "muse", "msisensorpro", "controlfreec"}
+    if tools & {"mutect2", "ascat", "muse", "msisensorpro", "controlfreec", "lofreq", "msisensor2"} and not tumours:
+        problems.append("somatic callers were requested but no sample has status 1 (tumour)")
+    for patient in sorted(tumours - normals) if paired_only else []:
+        problems.append(f"patient '{patient}' has a tumour but no normal sample; {', '.join(sorted(paired_only))} need tumour/normal pairs")
+    if "fasta" not in params and "genome" not in params:
+        problems.append("set 'fasta' (a reference from the catalogue) or 'genome'")
+    return problems
+
+
+def check_isoseq(rows, params):
+    problems = []
+    for i, r in enumerate(rows, start=2):
+        pbi, start = r.get("pbi", ""), r.get("start_from", "")
+        if start == "ccs" and not (pbi and pbi != "none" and os.path.isfile(pbi)):
+            problems.append(f"samplesheet line {i}: a subreads BAM (start_from=ccs) needs its .pbi index file in 'pbi'")
+        if start != "ccs" and pbi not in ("", "none"):
+            problems.append(f"samplesheet line {i}: 'pbi' must be 'none' unless start_from is ccs")
+    if params.get("aligner") == "ultra" and not params.get("gtf"):
+        problems.append("aligner 'ultra' needs a 'gtf' annotation")
+    if any(r.get("start_from") in ("ccs", "lima", "refine") for r in rows) and not params.get("primers"):
+        problems.append("'primers' (FASTA of the Iso-Seq primers) is required unless every row starts from mapping")
+    return problems
+
+
+def check_taxprofiler(rows, params):
+    problems = []
+    runs = [(r.get("sample"), r.get("run_accession")) for r in rows]
+    for dup in sorted({x for x in runs if runs.count(x) > 1}):
+        problems.append(f"samplesheet: run_accession '{dup[1]}' is used twice for sample '{dup[0]}'")
+    for i, r in enumerate(rows, start=2):
+        if r.get("fasta") and (r.get("fastq_1") or r.get("fastq_2")):
+            problems.append(f"samplesheet line {i}: a row has either FASTQ files or a FASTA file, not both")
+    db = params.get("databases")
+    if isinstance(db, str) and os.path.isfile(db):
+        with open(db) as fh:
+            tools = {row.get("tool", "").strip() for row in csv.DictReader(fh)}
+        for key, value in params.items():
+            if key.startswith("run_") and value is True and key not in ("run_profile_standardisation", "run_krona", "run_merging"):
+                tool = key[4:]
+                if tool not in tools and not (tool == "bracken" and "kraken2" in tools and "bracken" in tools):
+                    problems.append(f"'{key}' is on but the databases sheet has no '{tool}' database")
+        if "bracken" in tools and params.get("run_bracken") is True and params.get("run_kraken2") is not True:
+            problems.append("'run_bracken' needs 'run_kraken2' too")
+    if not any(k.startswith("run_") and v is True and k not in ("run_profile_standardisation", "run_krona")
+               for k, v in params.items()):
+        problems.append("no profiler enabled: set at least one run_<tool>=true matching the databases sheet")
+    return problems
+
+
+def check_mag(rows, params):
+    problems = []
+    for i, r in enumerate(rows, start=2):
+        if r.get("short_reads_1") and not r.get("short_reads_platform"):
+            problems.append(f"samplesheet line {i}: 'short_reads_platform' is required with short reads")
+        if r.get("long_reads") and not r.get("long_reads_platform"):
+            problems.append(f"samplesheet line {i}: 'long_reads_platform' is required with long reads")
+        if not r.get("group"):
+            problems.append(f"samplesheet line {i}: 'group' is empty")
+    short = [bool(r.get("short_reads_2")) for r in rows if r.get("short_reads_1")]
+    if short and len(set(short)) > 1:
+        problems.append("samplesheet mixes single-end and paired-end short reads (not supported by nf-core/mag)")
+    if short and not any(short) and params.get("single_end") is not True:
+        problems.append("short reads are single-end: set 'single_end=true'")
+    if params.get("coassemble_group") is True and params.get("binning_map_mode") != "group":
+        problems.append("'coassemble_group' needs 'binning_map_mode=group'")
+    return problems
+
+
+EXTRA_CHECKS = {"sarek": check_sarek, "isoseq": check_isoseq, "taxprofiler": check_taxprofiler, "mag": check_mag}
 
 
 def matrix_samples(path):
@@ -349,15 +483,13 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
     if pipeline != plan["pipeline"]:
         problems.append(f"pipeline must stay '{plan['pipeline']}' as approved (got '{pipeline}')")
         return problems
-    key = REGISTRY[pipeline]["key"]
-
     # 1. Experimental design: frozen exactly as approved.
     _, plan_rows = parse_sheet(plan["sheet"])
     _, rows = parse_sheet(sheet_text)
     if design_of(pipeline, rows) != design_of(pipeline, plan_rows):
         cols = REGISTRY[pipeline]["design"]
-        before = {r.get(key): r for r in plan_rows}
-        after = {r.get(key): r for r in rows}
+        before = {row_key(pipeline, r): r for r in plan_rows}
+        after = {row_key(pipeline, r): r for r in rows}
         for k in sorted(set(before) | set(after)):
             b, a = before.get(k), after.get(k)
             name = os.path.basename(k or "?")
@@ -382,12 +514,12 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
     # 2. Other samplesheet columns may change only if the previous error names them.
     if REGISTRY[pipeline]["design"] is not None:
         _, base_rows = parse_sheet(state["sheet"])
-        base = {r.get(key): r for r in base_rows}
+        base = {row_key(pipeline, r): r for r in base_rows}
         for row in rows:
-            old = base.get(row.get(key), {})
+            old = base.get(row_key(pipeline, row), {})
             for col in sorted((set(row) | set(old)) - set(REGISTRY[pipeline]["design"])):
                 if row.get(col, "") != old.get(col, "") and not mentioned(col, text):
-                    problems.append(f"samplesheet column '{col}' changed for {os.path.basename(row.get(key, '?'))} "
+                    problems.append(f"samplesheet column '{col}' changed for {os.path.basename(row_key(pipeline, row) or '?')} "
                                     f"('{old.get(col, '')}' -> '{row.get(col, '')}') but the previous error does not mention it")
 
     # 3. Params may change only where the previous error points.

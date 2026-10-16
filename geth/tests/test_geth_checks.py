@@ -150,5 +150,83 @@ class DifferentialAbundance(unittest.TestCase):
             run.close()
 
 
+class NewPipelines(unittest.TestCase):
+    """sarek, isoseq, taxprofiler, mag: valid sheets pass, typical mistakes are caught."""
+
+    @classmethod
+    def setUpClass(cls):
+        import gzip
+        cls.d = tempfile.mkdtemp(prefix="geth_pipes_")
+        for name in ("N_L1_R1.fastq.gz", "N_L1_R2.fastq.gz", "N_L2_R1.fastq.gz", "N_L2_R2.fastq.gz",
+                     "T_L1_R1.fastq.gz", "T_L1_R2.fastq.gz", "S1_R1.fastq.gz", "S1_R2.fastq.gz", "S2_R1.fastq.gz",
+                     "ont.fastq.gz"):
+            with gzip.open(os.path.join(cls.d, name), "wt") as fh:
+                fh.write("@r\nACGT\n+\nIIII\n")
+        for name in ("genome.fa", "primers.fa", "run.subreads.bam", "run.subreads.bam.pbi", "run.ccs.bam"):
+            open(os.path.join(cls.d, name), "w").write(">x\nACGT\n")
+        open(os.path.join(cls.d, "databases.csv"), "w").write(
+            "tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,/x/k2.tar.gz\nbracken,k2,;-r 150,short,/x/k2.tar.gz\n")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.d)
+
+    def f(self, name):
+        return os.path.join(self.d, name)
+
+    def check(self, pipeline, sheet, params):
+        return gc.check_plan(pipeline, sheet, json.dumps(params))[0]
+
+    def test_sarek(self):
+        sheet = ("patient,sex,status,sample,lane,fastq_1,fastq_2\n"
+                 f"P1,XX,0,P1_N,L1,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')}\n"
+                 f"P1,XX,0,P1_N,L2,{self.f('N_L2_R1.fastq.gz')},{self.f('N_L2_R2.fastq.gz')}\n"
+                 f"P1,XX,1,P1_T,L1,{self.f('T_L1_R1.fastq.gz')},{self.f('T_L1_R2.fastq.gz')}\n")
+        ok = {"tools": "mutect2,strelka,manta", "fasta": self.f("genome.fa"), "igenomes_ignore": True,
+              "skip_tools": "baserecalibrator"}
+        self.assertEqual(self.check("sarek", sheet, ok), [])
+        no_lane = sheet.replace(",L2,", ",,")
+        self.assertTrue(any("'lane' is required" in p for p in self.check("sarek", no_lane, ok)))
+        germline_only = sheet.replace("P1,XX,1,P1_T", "P1,XX,0,P1_T")
+        self.assertTrue(any("no sample has status 1" in p for p in self.check("sarek", germline_only, ok)))
+        self.assertTrue(any("'tools' value" in p for p in self.check("sarek", sheet, dict(ok, tools="haplotypecaller,gatk4"))))
+
+    def test_isoseq(self):
+        sheet = ("sample,seq_data,pbi,start_from\n"
+                 f"brain,{self.f('run.subreads.bam')},{self.f('run.subreads.bam.pbi')},ccs\n"
+                 f"brain,{self.f('run.ccs.bam')},none,lima\n")
+        ok = {"aligner": "minimap2", "fasta": self.f("genome.fa"), "primers": self.f("primers.fa")}
+        self.assertEqual(self.check("isoseq", sheet, ok), [])
+        problems = self.check("isoseq", sheet.replace(self.f("run.subreads.bam.pbi"), "none"),
+                              {"aligner": "ultra", "fasta": self.f("genome.fa")})
+        text = "\n".join(problems)
+        for expected in ("needs its .pbi", "needs a 'gtf'", "'primers'"):
+            self.assertIn(expected, text)
+
+    def test_taxprofiler(self):
+        sheet = ("sample,run_accession,instrument_platform,fastq_1,fastq_2,fasta\n"
+                 f"S1,S1_run1,ILLUMINA,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},\n"
+                 f"S2,S2,ILLUMINA,{self.f('S2_R1.fastq.gz')},,\n")
+        ok = {"databases": self.f("databases.csv"), "run_kraken2": True, "run_bracken": True,
+              "perform_shortread_qc": True, "run_profile_standardisation": True}
+        self.assertEqual(self.check("taxprofiler", sheet, ok), [])
+        problems = self.check("taxprofiler", sheet.replace("S2,S2,", "S1,S1_run1,"), dict(ok, run_metaphlan=True))
+        text = "\n".join(problems)
+        self.assertIn("used twice", text)
+        self.assertIn("no 'metaphlan' database", text)
+        self.assertTrue(any("'databases' is required" in p for p in self.check("taxprofiler", sheet, {"run_kraken2": True})))
+
+    def test_mag(self):
+        sheet = ("sample,run,group,short_reads_1,short_reads_2,short_reads_platform,long_reads,long_reads_platform\n"
+                 f"S1,1,G1,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},ILLUMINA,{self.f('ont.fastq.gz')},OXFORD_NANOPORE_HQ\n"
+                 f"S2,1,G1,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')},ILLUMINA,,\n")
+        ok = {"skip_gtdbtk": True, "skip_spades": True}
+        self.assertEqual(self.check("mag", sheet, ok), [])
+        bad = sheet.replace(",OXFORD_NANOPORE_HQ", ",").replace(f"{self.f('N_L1_R2.fastq.gz')}", "")
+        text = "\n".join(self.check("mag", bad, dict(ok, coassemble_group=True)))
+        for expected in ("'long_reads_platform' is required", "mixes single-end and paired-end", "binning_map_mode=group"):
+            self.assertIn(expected, text)
+
+
 if __name__ == "__main__":
     unittest.main()
