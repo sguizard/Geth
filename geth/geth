@@ -4,7 +4,7 @@
 #   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
 #   geth show <name>                           print the plan (and its automatic check)
 #   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
-#   geth run <name>                            operator + reporter agents run the approved plan
+#   geth run <name> [--detach]                 operator + reporter agents run the approved plan
 #   geth status <name>                         outcome, report check and attempts
 set -euo pipefail
 source /exports/cmvm/eddie/eb/groups/alaw3_grp/sguizard/Dev/github/Geth/env.sh
@@ -59,6 +59,10 @@ case "$cmd" in
         [ $# -ge 1 ] || usage
         d=$(run_dir_of "$1")
         show "$d"
+        if ! python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" > /dev/null; then
+            echo "The plan does not pass the plan check: fix plan_samplesheet.csv / plan_params.json, then approve." >&2
+            exit 1
+        fi
         if [ "${2:-}" != "--yes" ]; then
             read -r -p "Approve this plan? [y/N] " answer
             [[ "$answer" =~ ^[Yy]$ ]] || { echo "Not approved."; exit 1; }
@@ -66,9 +70,15 @@ case "$cmd" in
         python3 "$checks" approve "$d" "$(whoami)"
         ;;
     run)
-        [ $# -eq 1 ] || usage
+        [ $# -ge 1 ] || usage
         d=$(run_dir_of "$1")
         [ -f "$d/APPROVED" ] || { echo "The plan has not been approved: geth approve $1" >&2; exit 1; }
+        if [ "${2:-}" = "--detach" ]; then
+            # Long runs: survive the end of this shell or session.
+            setsid nohup "$0" run "$1" > "$d/geth_run.out" 2>&1 < /dev/null &
+            echo "Started in the background (pid $!). Follow it with: geth status $1   (log: $d/geth_run.out)"
+            exit 0
+        fi
         echo "Running the approved plan in $d ..."
         nf "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
         "$0" status "$1"

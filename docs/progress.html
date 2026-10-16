@@ -95,8 +95,8 @@ header { display: grid; gap: 16px; }
 .phase-body ul { margin: 2px 0 0; padding-left: 18px; color: var(--muted); display: grid; gap: 2px; }
 .phase.now .phase-body { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px; margin-bottom: 22px; }
 .check { list-style: none; padding-left: 0 !important; }
-.check li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; }
-.check li::before { content: "○"; color: var(--muted); font-family: var(--font-mono); }
+.check li { position: relative; padding-left: 24px; }
+.check li::before { content: "○"; position: absolute; left: 0; top: 0; color: var(--muted); font-family: var(--font-mono); }
 .check li.done::before { content: "●"; color: var(--ok); }
 .check li.doing::before { content: "◐"; color: var(--accent); }
 
@@ -155,7 +155,7 @@ a { color: var(--accent); }
     <span>Updated 2026-10-16</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>nf-core/rnaseq 3.27.0 · nf-core/scrnaseq 4.2.0</span>
-    <span>repo sguizard/Geth · master @ 60f1aca</span>
+    <span>repo sguizard/Geth · master @ cb86184</span>
   </div>
 </header>
 
@@ -220,11 +220,13 @@ a { color: var(--accent); }
         <div class="phase-head"><h3>v1 hardening</h3><span class="pill run">in progress</span></div>
         <ul class="check">
           <li class="done">Commit the feasibility spikes</li>
-          <li class="doing">Qwen-only configuration</li>
-          <li class="doing">Human plan approval: plan first, run only an approved plan</li>
-          <li class="doing">Plan-diff gate: refuse retries that change sample grouping or unrelated params</li>
-          <li class="doing">Results as rounded, labelled tables + automatic number check of the report</li>
-          <li>3 repeats per dataset with all guards on</li>
+          <li class="done">Qwen-only configuration</li>
+          <li class="done">Human plan approval: <code>geth plan</code> → <code>geth approve</code> → <code>geth run</code></li>
+          <li class="done">Plan-diff gate: refuses retries that change sample grouping or unrelated params (replayed on the real Mistral failures: all refused)</li>
+          <li class="done">Planner checks its own plan (<code>CHECK_PLAN</code>) before answering</li>
+          <li class="done">Results as rounded, labelled tables + automatic number check of the report</li>
+          <li class="done">Smoke test: bulk run planned, approved and run in 8.2 min; 1 attempt; 45/45 report numbers traced</li>
+          <li class="doing">3 repeats per dataset with all guards on</li>
         </ul>
       </div>
     </li>

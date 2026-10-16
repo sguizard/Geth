@@ -49,17 +49,23 @@ if ! python3 "$checks" check-plan "$pipeline" "$attempt/samplesheet.csv" "$attem
     exit 0
 fi
 
+# Resources: small test data gets capped requests (fast scheduling); real data gets nf-core's own.
+input_bytes=$(python3 -c 'import csv, os, sys
+print(sum(os.path.getsize(r[k]) for r in csv.DictReader(open(sys.argv[1])) for k in ("fastq_1", "fastq_2") if r.get(k)))' \
+    "$attempt/samplesheet.csv")
+if [ "$input_bytes" -lt 2000000000 ]; then resources=test; else resources=production; fi
+
 # Separate launch dir: the Geth driver itself runs in $run_dir, and -resume must not pick its session.
 mkdir -p "$run_dir/nfcore"
 cd "$run_dir/nfcore"
 nextflow run "nf-core/$pipeline" -r "$revision" -profile roslin \
-    -c "$GETH_HOME/geth/conf/nested.config" \
+    -c "$GETH_HOME/geth/conf/$resources.config" \
     -params-file "$attempt/params.json" --input "$attempt/samplesheet.csv" \
     --outdir "$run_dir/results" -w "$run_dir/work" -resume -ansi-log false \
     > "$attempt/nextflow.log" 2>&1
 rc=$?
 
-echo "PIPELINE: nf-core/$pipeline $revision"
+echo "PIPELINE: nf-core/$pipeline $revision (resources: $resources)"
 if [ $rc -eq 0 ]; then
     python3 "$checks" record "$run_dir" ok "$attempt/samplesheet.csv" "$attempt/params.submitted.json"
     echo "STATUS: SUCCESS"

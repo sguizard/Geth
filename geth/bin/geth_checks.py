@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Deterministic checks that keep Geth's agents honest.
 
-  geth_checks.py check-plan <pipeline> <samplesheet.csv> <params.json> [<normalised_params_out>]
-      Validate a plan against the pinned pipeline's samplesheet and parameter schemas.
+  geth_checks.py check-plan <pipeline> <samplesheet.csv> <params> [<normalised_params_out>] [--save-checked <run_dir>]
+      Validate a plan against the pinned pipeline's samplesheet and parameter schemas
+      (params as a JSON object or key=value lines). With --save-checked, keep a passing plan.
+  geth_checks.py save-plan <run_dir> <pipeline> <samplesheet.csv> <params> <rationale.txt>
+      Write the planner's proposal as plan_* files (falling back to the last checked version).
   geth_checks.py approve <run_dir> <approver>
       Record approval of the plan files in <run_dir> (hashes them into APPROVED).
   geth_checks.py gate <run_dir> <pipeline> <samplesheet.csv> <params.json>
@@ -48,10 +51,37 @@ def param_names(pipeline):
     return {k for g in groups for k in g.get("properties", {})}
 
 
+def typed(value):
+    value = value.strip().strip('"').strip("'")
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    for cast in (int, float):
+        try:
+            return cast(value)
+        except ValueError:
+            pass
+    return value
+
+
 def parse_params(text):
-    params = json.loads(text) if text.strip() else {}
-    if not isinstance(params, dict):
-        raise ValueError("params must be a JSON object")
+    """Params as a JSON object, or as key=value lines (how agents hand them over most reliably)."""
+    text = text.strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        params = json.loads(text)
+        if not isinstance(params, dict):
+            raise ValueError("params must be a JSON object")
+    else:
+        params = {}
+        for line in text.splitlines():
+            line = line.strip().rstrip(",")
+            if not line:
+                continue
+            if "=" not in line:
+                raise ValueError(f"params line '{line}' is not key=value")
+            key, value = line.split("=", 1)
+            params[key.strip()] = typed(value)
     return {k: v for k, v in params.items() if k not in OWNED}
 
 
@@ -122,6 +152,8 @@ def check_plan(pipeline, sheet_text, params_text):
                     problems.append(f"samplesheet line {i}: '{col}' must be an absolute path (got '{value}')")
                 elif not os.path.isfile(value):
                     problems.append(f"samplesheet line {i}: '{col}' file does not exist: {value}")
+                elif value.endswith(".gz") and open(value, "rb").read(2) != b"\x1f\x8b":
+                    problems.append(f"samplesheet line {i}: '{col}' is named .gz but is not gzip-compressed: {value}")
         fq1 = row.get("fastq_1", "")
         if fq1 and fq1 in seen:
             problems.append(f"samplesheet line {i}: fastq_1 already used on line {seen[fq1]}")
@@ -163,7 +195,12 @@ def approved_plan(run_dir):
         if sha256(os.path.join(run_dir, f)) != hashes.get(f):
             raise ValueError(f"{f} changed after approval; it must be approved again")
     read = lambda f: open(os.path.join(run_dir, f)).read()
-    return pipeline_name(read("plan_pipeline.txt")), read("plan_samplesheet.csv"), parse_params(read("plan_params.json"))
+    try:
+        plan_params = parse_params(read("plan_params.json"))
+    except ValueError as e:
+        raise ValueError(f"the approved plan_params.json is not valid ({e}); a person must fix the plan and "
+                         f"approve it again. Stop and report this.") from None
+    return pipeline_name(read("plan_pipeline.txt")), read("plan_samplesheet.csv"), plan_params
 
 
 def load_state(run_dir, plan_sheet, plan_params):
@@ -247,6 +284,39 @@ def gate(run_dir, pipeline, sheet_text, params_text):
     return problems
 
 
+def save_plan(run_dir, pipeline, sheet_text, params_text, rationale):
+    """Write the planner's proposal as plan_* files. If it fails the plan check but an earlier version
+    passed CHECK_PLAN during planning, keep that checked version instead (and say so)."""
+    pipeline = pipeline_name(pipeline)
+    problems, params = check_plan(pipeline, sheet_text, params_text)
+    note = ""
+    checked = os.path.join(run_dir, ".checked")
+    if problems and os.path.isdir(checked):
+        read = lambda f: open(os.path.join(checked, f)).read()
+        c_pipeline, c_sheet, c_params = pipeline_name(read("plan_pipeline.txt")), read("plan_samplesheet.csv"), read("plan_params.json")
+        c_problems, c_parsed = check_plan(c_pipeline, c_sheet, c_params)
+        if not c_problems:
+            note = ("\n\nNote from Geth: the planner's final answer did not pass the plan check ("
+                    + "; ".join(problems) + "). The last version that passed CHECK_PLAN during planning is used.")
+            pipeline, sheet_text, params, problems = c_pipeline, c_sheet, c_parsed, []
+    write = lambda f, s: open(os.path.join(run_dir, f), "w").write(s.strip() + "\n")
+    write("plan_pipeline.txt", pipeline)
+    write("plan_samplesheet.csv", sheet_text)
+    write("plan_params.json", json.dumps(params, indent=2) if params or not problems else params_text)
+    write("plan_rationale.txt", rationale.strip() + note)
+    result = "PLAN CHECK: OK" if not problems else f"PLAN CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems)
+    write("plan_check.txt", result + ("\n(checked version used)" if note else ""))
+    return result + ("\n(checked version used)" if note else "")
+
+
+def save_checked(run_dir, pipeline, sheet_text, params):
+    checked = os.path.join(run_dir, ".checked")
+    os.makedirs(checked, exist_ok=True)
+    open(os.path.join(checked, "plan_pipeline.txt"), "w").write(pipeline + "\n")
+    open(os.path.join(checked, "plan_samplesheet.csv"), "w").write(sheet_text.strip() + "\n")
+    json.dump(params, open(os.path.join(checked, "plan_params.json"), "w"), indent=2)
+
+
 def record(run_dir, kind, sheet_text, params_text, error_text=""):
     _, plan_sheet, plan_params = approved_plan(run_dir)
     state = load_state(run_dir, plan_sheet, plan_params)
@@ -268,15 +338,26 @@ def record(run_dir, kind, sheet_text, params_text, error_text=""):
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "check-plan":
+        save_dir = None
+        if "--save-checked" in argv:
+            i = argv.index("--save-checked")
+            save_dir = argv[i + 1]
+            argv = argv[:i] + argv[i + 2:]
         pipeline = pipeline_name(argv[2])
-        problems, params = check_plan(pipeline, open(argv[3]).read(), open(argv[4]).read())
+        sheet_text = open(argv[3]).read()
+        problems, params = check_plan(pipeline, sheet_text, open(argv[4]).read())
         if problems:
             print(f"PLAN CHECK: {len(problems)} problem(s)")
             print("\n".join(f"- {p}" for p in problems))
             return 1
         if len(argv) > 5:
             json.dump(params, open(argv[5], "w"), indent=2)
+        if save_dir:
+            save_checked(save_dir, pipeline, sheet_text, params)
         print("PLAN CHECK: OK")
+        return 0
+    if cmd == "save-plan":
+        print(save_plan(argv[2], argv[3], open(argv[4]).read(), open(argv[5]).read(), open(argv[6]).read()))
         return 0
     if cmd == "approve":
         return approve(argv[2], argv[3] if len(argv) > 3 else getpass.getuser())

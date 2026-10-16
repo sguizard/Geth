@@ -10,6 +10,15 @@
  */
 nextflow.enable.types = true
 
+// What the planner returns: lists instead of JSON-in-text, which the structured-output step mangles.
+record PlanProposal {
+    pipeline: String
+    samplesheet_lines: List<String>
+    params: List<String>
+    rationale: String
+}
+
+// The approved plan, read back from the plan_* files.
 record AnalysisPlan {
     pipeline: String
     samplesheet_csv: String
@@ -59,10 +68,31 @@ process READ_TEXT {
     script:
     """
     case "${path}" in
-        ${params.data_root}/*.gz) echo "(first 8 lines, decompressed)"; zcat "${path}" | head -n 8 ;;
+        ${params.data_root}/*.gz) echo "(file type: \$(file -b "${path}"); first 8 lines, decompressed)"; zcat "${path}" 2>&1 | head -n 8 ;;
         ${params.data_root}/*) head -c 8000 "${path}" ;;
         *) echo "REFUSED: only files under ${params.data_root} can be read" ;;
     esac
+    """
+}
+
+process LIST_REFERENCES {
+    executor 'local'
+    scratch false
+
+    input:
+    species: String
+
+    output:
+    listing: String = stdout()
+
+    script:
+    """
+    found=0
+    for readme in ${params.data_root}/references/*/README.txt; do
+        [ -f "\$readme" ] || continue
+        found=1; echo "== \$(dirname "\$readme")"; cat "\$readme"; echo
+    done
+    [ \$found = 1 ] || echo "The reference catalogue is empty."
     """
 }
 
@@ -86,14 +116,14 @@ GETH_EOF
 cat > params.json <<'GETH_EOF'
 ${params_json.trim()}
 GETH_EOF
-geth_checks.py check-plan "${pipeline}" samplesheet.csv params.json || true
+geth_checks.py check-plan "${pipeline}" samplesheet.csv params.json --save-checked "${params.run_dir}" || true
     """
 }
 
 process RUN_NFCORE {
     executor 'local'
     scratch false
-    time 12.h
+    time 72.h
 
     input:
     pipeline: String
@@ -141,9 +171,11 @@ agent planner {
         Always inspect the folder first: list it, then read every README/metadata text file in it.
         Load the skill of the pipeline you choose and follow its rules exactly.
         Use absolute paths. Only use files that appear in the listing; never invent files.
-        Before answering, call CHECK_PLAN with your pipeline, samplesheet and parameters, fix every problem
-        it reports, and repeat until it prints "PLAN CHECK: OK".'''
-    tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:CHECK_PLAN'
+        If the folder holds no reference genome and annotation, call LIST_REFERENCES and use the entry for the
+        right species; if none matches, say so in the rationale instead of guessing.
+        Before answering, call CHECK_PLAN with your pipeline, samplesheet and parameters (as key=value lines),
+        fix every problem it reports, and repeat until it prints "PLAN CHECK: OK".'''
+    tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_PLAN'
     skills 'nfcore-rnaseq', 'nfcore-scrnaseq'
     maxIterations 25
 
@@ -152,16 +184,18 @@ agent planner {
     data_dir: String
 
     output:
-    plan: AnalysisPlan
+    plan: PlanProposal
 
     prompt:
     """
     Request: ${question}
     Data folder: ${data_dir}
 
-    In your final answer give: the pipeline ("rnaseq" or "scrnaseq"); the complete samplesheet CSV text
-    with its header line; the pipeline parameters as one JSON object (do not include "input" or "outdir");
-    and a short rationale that explains how files were grouped into samples and why each parameter is set.
+    In your final answer give exactly the plan that passed CHECK_PLAN: the pipeline ("rnaseq" or "scrnaseq");
+    the samplesheet as a list of CSV lines, header line first; the pipeline parameters as a list of
+    key=value entries, one per parameter (do not include "input" or "outdir"); and a short rationale that
+    explains how files were grouped into samples, which files were left out and why, and why each
+    parameter is set.
     """
 }
 
@@ -223,16 +257,27 @@ agent reporter {
 
 process SAVE_PLAN {
     executor 'local'
+    scratch false
 
     input:
-    plan: AnalysisPlan
+    plan: PlanProposal
 
-    exec:
-    def d = file(params.run_dir)
-    d.resolve('plan_pipeline.txt').text = plan.pipeline.trim().replace('nf-core/', '') + '\n'
-    d.resolve('plan_samplesheet.csv').text = plan.samplesheet_csv.trim() + '\n'
-    d.resolve('plan_params.json').text = plan.params_json.trim() + '\n'
-    d.resolve('plan_rationale.txt').text = plan.rationale.trim() + '\n'
+    output:
+    check: String = stdout()
+
+    script:
+    """
+cat > samplesheet.csv <<'GETH_EOF'
+${plan.samplesheet_lines.join('\n')}
+GETH_EOF
+cat > params.txt <<'GETH_EOF'
+${plan.params.join('\n')}
+GETH_EOF
+cat > rationale.txt <<'GETH_EOF'
+${plan.rationale}
+GETH_EOF
+geth_checks.py save-plan "${params.run_dir}" "${plan.pipeline}" samplesheet.csv params.txt rationale.txt
+    """
 }
 
 process SAVE_OUTCOME {
@@ -282,7 +327,7 @@ workflow {
         if( !params.question || !params.data_dir )
             error "--mode plan needs --question and --data_dir"
         file(params.run_dir).resolve('question.txt').text = params.question + '\n'
-        SAVE_PLAN(planner(params.question, params.data_dir))
+        SAVE_PLAN(planner(params.question, params.data_dir)).view()
     }
     else if( params.mode == 'run' ) {
         def d = file(params.run_dir)
