@@ -42,6 +42,7 @@ Mistral-Small-4 is only fit for narrow, mechanical steps.
 | v1.1 | test scRNA + bulk | 4 | 4/4 | 4/4 | 4/4 | 146/146 |
 | v1.1 | **airway** (GSE52778, 8 samples, GRCh38) | 1 | 12/12 checks | ✅ 287 tasks, 2 h 08 from approval to report, 23 CPU-h | ✅ | 64/64 |
 | v1.1 | **PBMC 1k v3** (10x, GRCh38) | 1 | 12/12 checks | ✅ 15 tasks, 67 min, 1,120 cells | ✅ | 28/28 |
+| v1.2 | **airway DE** (differentialabundance on airway_1) | 1 (+2 plan-only) | 3/3 plans 12/12 | ✅ 12 min; identical to hand-made baseline (650 DE genes, Jaccard 1.0); 7/7 known dex genes up | ✅ | 26/26 |
 
 v1.0 scRNA failures: the structured hand-off mangled JSON parameters nested in a text field; fixed in v1.1
 by handing lists to Geth and keeping the last checked plan. Real-size planner behaviour: stray unpaired-read
@@ -51,8 +52,7 @@ A Salmon index job killed by SGE (exit 140) was retried by nf-core itself; no ag
 ## Proposed next steps
 1. ~~Plan-diff gate + plan approval; repeats~~ done (v1, v1.1).
 2. ~~One real-size public dataset per pipeline~~ done (airway, PBMC 1k v3).
-3. Differential expression for bulk (nf-core/differentialabundance) validated on airway, where the
-   dexamethasone response is well known (e.g. DUSP1, FKBP5, KLF15, PER1, TSC22D3 up).
+3. ~~Differential expression for bulk~~ done (v1.2.0): airway, identical to the baseline, 7/7 known dex genes.
 4. Single-cell clustering/annotation on PBMC 1k v3 (known cell types).
 5. Reuse built indexes across runs (STAR index for GRCh38 took 26 min and 65 GB per run).
 6. Frontier-style "agent writes the pipeline" only once 3-4 are reliable.

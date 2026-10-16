@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score a Geth plan (plan_*.{csv,json,txt} in a run dir) against the known truth of a test dataset.
 
-Usage: eval_plan.py <run_dir> <bulk|sc|airway|pbmc>   -> prints one JSON line with every check and a score.
+Usage: eval_plan.py <run_dir> <bulk|sc|airway|pbmc|airway_de>   -> prints one JSON line with every check and a score.
 """
 import csv
 import io
@@ -11,12 +11,15 @@ import re
 import sys
 
 ROOT = "/exports/eddie/scratch/sguizard/Perseus_Veil/testdata"
-SCHEMAS = {"rnaseq": "rnaseq-3.27.0.params.json", "scrnaseq": "scrnaseq-4.2.0.params.json"}
+SCHEMAS = {"rnaseq": "rnaseq-3.27.0.params.json", "scrnaseq": "scrnaseq-4.2.0.params.json",
+           "differentialabundance": "differentialabundance-2.0.0.params.json"}
 
 
 def known_params(pipeline):
     """All parameter names declared in the pinned pipeline's nextflow_schema.json."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "geth", "schemas", SCHEMAS[pipeline])
+    if not os.path.isfile(path):
+        return set()
     schema = json.load(open(path))
     groups = (schema.get("$defs") or schema.get("definitions") or {}).values()
     return {k for g in groups for k in g.get("properties", {})}
@@ -130,14 +133,47 @@ def pbmc(rows, params, pipeline):
     return c
 
 
-SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc}
-PIPELINE = {"bulk": "rnaseq", "airway": "rnaseq", "sc": "scrnaseq", "pbmc": "scrnaseq"}
+AIRWAY_RUN = "/exports/eddie/scratch/sguizard/Perseus_Veil/geth/runs/airway_1"
+AIRWAY_SAMPLES = {f"{d}_{t}": (d, t == "Dex") for d in ("N61311", "N052611", "N080611", "N061011") for t in ("untreated", "Dex")}
+
+
+def airway_de(rows, params, pipeline, run_dir):
+    """Differential expression on airway_1: dex vs untreated, blocked on donor."""
+    c = {"pipeline": pipeline == "differentialabundance",
+         "samples_match_matrix": sorted(r.get("sample", "") for r in rows) == sorted(AIRWAY_SAMPLES)}
+    cols = set(rows[0]) - {"sample"} if rows else set()
+    # treatment column: the one that splits the samples into dex / untreated
+    treat = next((col for col in cols if all((("dex" in r.get(col, "").lower()) and "un" not in r.get(col, "").lower())
+                                             == AIRWAY_SAMPLES.get(r.get("sample"), (None, None))[1] for r in rows)), None)
+    donor = next((col for col in cols if len({r.get(col) for r in rows}) == 4 and all(
+        r.get(col) and r.get(col) in r.get("sample", "") for r in rows)), None)
+    c["treatment_column"] = treat is not None
+    c["donor_column"] = donor is not None
+    contrasts = list(csv.DictReader(io.StringIO(open(os.path.join(run_dir, "plan_contrasts.csv")).read()))) \
+        if os.path.isfile(os.path.join(run_dir, "plan_contrasts.csv")) else []
+    main = next((x for x in contrasts if x.get("variable") == treat), None)
+    c["one_treatment_contrast"] = main is not None and len(contrasts) == 1
+    c["direction_untreated_to_dex"] = bool(main) and "un" in main.get("reference", "").lower() and "dex" in main.get("target", "").lower()
+    c["donor_blocking"] = bool(main) and donor in (main.get("blocking") or "").split(";")
+    p = params if isinstance(params, dict) else {}
+    star = f"{AIRWAY_RUN}/results/star_salmon"
+    c["raw_counts_matrix"] = p.get("matrix") == f"{star}/salmon.merged.gene_counts.tsv"
+    c["length_matrix"] = p.get("feature_length_matrix") == f"{star}/salmon.merged.gene_lengths.tsv"
+    c["same_gtf"] = p.get("gtf") == GRCH38_GTF
+    profile = open(os.path.join(run_dir, "plan_profile.txt")).read().strip() if os.path.isfile(os.path.join(run_dir, "plan_profile.txt")) else ""
+    c["deseq2_profile"] = profile.startswith("rnaseq") and "limma" not in profile
+    return c
+
+
+SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc, "airway_de": airway_de}
+PIPELINE = {"bulk": "rnaseq", "airway": "rnaseq", "sc": "scrnaseq", "pbmc": "scrnaseq", "airway_de": "differentialabundance"}
+NEEDS_RUN_DIR = {"airway_de"}
 
 
 def main():
     run_dir, kind = sys.argv[1], sys.argv[2]
     rows, params, pipeline = load(run_dir)
-    checks = SCORERS[kind](rows, params, pipeline)
+    checks = SCORERS[kind](rows, params, pipeline, run_dir) if kind in NEEDS_RUN_DIR else SCORERS[kind](rows, params, pipeline)
     expected = PIPELINE[kind]
     unknown = sorted(set(params or {}) - known_params(expected)) if isinstance(params, dict) else []
     checks["params_known"] = not unknown
