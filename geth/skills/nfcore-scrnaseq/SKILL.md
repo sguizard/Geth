@@ -19,7 +19,10 @@ Columns: `sample,fastq_1,fastq_2,expected_cells`
 - `protocol`: for 10x Chromium 3' use `10XV2` (v2 chemistry) or `10XV3` (v3/v3.1). `auto` only works with some aligners — prefer an explicit value when the chemistry is known.
 - `aligner`: `star` (STARsolo; robust, recommended here), `simpleaf` (default), `kallisto`, `cellranger` (needs licence-free container, slow).
 - Custom reference: `fasta` and `gtf`, absolute paths. Do not set `genome` at the same time.
-- Small/test data: set `"skip_cellbender": true` and `"skip_qcatch": true` — these modules fail on tiny datasets.
+- **CellBender** (ambient RNA removal) is recommended for real data: keep it on (`skip_cellbender=false`, the
+  default). Geth runs it on an Eddie GPU automatically. A real sample with ~1,000 cells or more is not "small".
+- Only for tiny **test** datasets (a few MB of reads, a subset reference such as one chromosome):
+  set `skip_cellbender=true` and `skip_qcatch=true` — these modules fail on such data.
 
 ## Typical failure causes
 - Swapped R1/R2 (barcode read must be `fastq_1`).

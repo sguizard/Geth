@@ -254,8 +254,10 @@ a { color: var(--accent); }
         <ul class="check">
           <li class="done">A · Bulk DE (v1.2.0): <code>geth plan --from airway_1</code> → nf-core/differentialabundance 2.0.0. 3/3 plans perfect (dex vs untreated, blocked on donor); the approved run matched the hand-made baseline exactly (650 DE genes, Jaccard 1.0), 7/7 known dexamethasone genes up, 12 min from approval to checked report</li>
           <li class="done">B · GPU access confirmed: <code>gpu</code> queue, project roslin_alaw3_grp, NVIDIA L40S, PyTorch sees CUDA inside the CellBender container</li>
-          <li class="doing">B · CellBender on GPU inside nf-core/scrnaseq, PBMC rerun with ambient-RNA removal</li>
-          <li>C · Agents design the single-cell downstream analysis (QC, doublets, clustering, CellTypist annotation) on a vetted Scanpy toolbox; person approves the design</li>
+          <li class="done">B · GPU routing built: nf-core's GPU-labelled tasks go to the <code>gpu</code> queue with <code>-l gpu=1</code>; the planner now keeps CellBender on for real data</li>
+          <li class="doing">B · PBMC rerun (pbmc_2) with CellBender on GPU: plan 12/12, approved, running</li>
+          <li class="doing">C · Toolbox built and tested (Scanpy 1.12, CellTypist 1.7, design menu with ranges, one justified revision); designer and analyst agents wired; waiting for the CellBender matrix to run the designs</li>
+          <li class="doing">Extra pipelines: skills, schemas and plan checks for nf-core/sarek 3.10.0, isoseq 3.0.1, taxprofiler 2.0.1 and mag 5.5.0 (14/14 tests pass); test-profile baselines on Eddie next</li>
         </ul>
       </div>
     </li>
