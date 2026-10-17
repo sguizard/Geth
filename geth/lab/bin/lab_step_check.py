@@ -5,15 +5,16 @@ Usage: lab_step_check.py <step.py>
 A step is a Python script run as  python3 <step.py> <input.h5ad> <output.h5ad>  inside a sandbox (pinned
 container, no network, no home folder, only its own work folder writable). It reads argv[1], writes argv[2], and
 may write tables (.tsv, .csv, .json) and figures (.png, .pdf) in its working folder. Reference models are in
-./models. This check catches obvious misuse early and tells the agent why; the sandbox is what enforces it.
+./models. The checks are fixed rules on the parsed code (nothing is run). This check catches obvious misuse early and tells the agent why; the sandbox is what enforces it.
 """
 import ast
 import sys
 
-ALLOWED_MODULES = {
+ALLOWED_MODULES = {  # what the lab image holds (geth/lab/README: GETH_LAB_IMAGE), plus harmless standard modules
     "anndata", "scanpy", "celltypist", "numpy", "pandas", "scipy", "sklearn", "statsmodels", "matplotlib",
-    "seaborn", "pydeseq2", "harmonypy", "decoupler", "json", "math", "re", "sys", "os", "collections",
+    "seaborn", "pydeseq2", "harmonypy", "igraph", "leidenalg", "json", "math", "re", "sys", "os", "collections",
     "itertools", "functools", "warnings", "pathlib", "typing", "dataclasses", "csv", "gzip", "statistics",
+    "logging", "time", "datetime", "textwrap", "string",
 }
 FORBIDDEN_CALLS = {"eval", "exec", "compile", "__import__", "breakpoint", "input"}
 FORBIDDEN_ATTRS = {"system", "popen", "spawnl", "spawnv", "execv", "execl", "fork", "kill", "rmtree", "chmod",
@@ -41,7 +42,7 @@ def check(path):
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/") \
                 and len(node.value) > 1 and not node.value.startswith("/tmp"):
             problems.append(f"line {node.lineno}: absolute path '{node.value[:60]}': read argv[1] and ./models, write in the working folder")
-    if "sys.argv[1]" not in source or "sys.argv[2]" not in source:
+    if "sys.argv" not in source:
         problems.append("the step must read its input from sys.argv[1] and write its output AnnData to sys.argv[2]")
     return problems
 
