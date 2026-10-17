@@ -63,6 +63,7 @@ another provider's key by accident.
 | `GETH_NFCORE_CONFIG` | none | Extra config for every nf-core run, applied last, so it wins. Use it for resource limits, queues, or anything your profile lacks. |
 | `GETH_MODULES` | none | Environment modules to load, e.g. `"java/21 apptainer/1.4"`. |
 | `GETH_DRIVER_CPUS` | `2` | CPUs that each Nextflow driver JVM may use. Outside scheduler jobs, `env.sh` sets `NXF_OPTS` (`-Xmx4g`, active processor count). |
+| `GETH_MAX_DRIVERS` | `0` (no limit) | Nextflow drivers allowed at once on this machine: a plan or a lab design uses 1, a run 2 (Geth's and the pipeline's). A command that would exceed it waits for a free slot. On a shared login node, set it so that drivers × `GETH_DRIVER_CPUS` stays within your allowance. |
 
 Anything else your institutional profile reads from the environment goes in `site.env` too, for example
 `NXF_SGE_PROJECT` for a profile that passes a project code to `qsub -P`.

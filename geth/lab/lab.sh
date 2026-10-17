@@ -11,6 +11,7 @@ source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)/env
 set -euo pipefail
 export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
 lab=$GETH_RUNS_DIR/lab
+source "$GETH_HOME/geth/bin/driver_slots.sh"
 
 usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 banner() { echo "*** Geth lab: EXPERIMENTAL, not for real analyses ***" >&2; }
@@ -40,10 +41,12 @@ case "$cmd" in
         site=()
         [ -n "${GETH_NF_CONFIG:-}" ] && site=(-c "$GETH_NF_CONFIG")
         cd "$d"
+        acquire_slots "$d" design 1
         nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
             --mode design --question "$question" --data_dir "$data_dir" --run_dir "$d" --lab_skill "$skill" \
             -w "$d/geth_work" -with-trace "$d/geth_trace_design.txt" -ansi-log false > "$d/geth_design.log" 2>&1 \
-            || { echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
+            || { rm -f "$d/.geth_design.pid"; echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
+        rm -f "$d/.geth_design.pid"
         show "$d"
         ;;
     show)
