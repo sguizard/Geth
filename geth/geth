@@ -181,6 +181,7 @@ case "$cmd" in
             [ -f "$d/question.txt" ] || continue
             printf '%-24s %-22s %s\n' "$(basename "$d")" "$(cat "$d/plan_pipeline.txt" 2>/dev/null || echo -)" "$(state "$d")"
         done
+        [ -d "$runs/lab" ] && echo "(experimental lab runs are listed by: geth lab list)"
         ;;
     doctor)
         [ $# -eq 0 ] || usage

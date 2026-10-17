@@ -4,6 +4,7 @@
 #   geth lab design <data_dir> "<question>" <name> [--no-skill]   a designer agent writes an analysis design;
 #                                                                  nothing runs on the data
 #   geth lab show <name>                                           print the design and its format check
+#   geth lab list                                                  all lab runs and where they stand
 #
 # The lab works only on benchmark data (GETH_LAB_DATA, default $GETH_DATA_ROOT/testdata) and writes to
 # $GETH_RUNS_DIR/lab/<name>.
@@ -13,7 +14,7 @@ export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
 lab=$GETH_RUNS_DIR/lab
 source "$GETH_HOME/geth/bin/driver_slots.sh"
 
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 banner() { echo "*** Geth lab: EXPERIMENTAL, not for real analyses ***" >&2; }
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
@@ -52,6 +53,22 @@ case "$cmd" in
     show)
         [ $# -eq 1 ] || usage
         show "$(run_dir_of "$1")"
+        ;;
+    list)
+        [ $# -eq 0 ] || usage
+        printf '%-30s %-16s %-22s %s\n' RUN DATA ARM STATE
+        for d in "$lab"/*/; do
+            d=${d%/}
+            [ -d "$d" ] || continue
+            if driver_alive "$d/.geth_design.pid"; then state=designing
+            elif [ -f "$d/lab_design_check.txt" ]; then state=$(head -n 1 "$d/lab_design_check.txt")
+            elif [ -f "$d/geth_design.log" ]; then state="failed (see geth_design.log)"
+            else state="waiting for a slot"
+            fi
+            data=$(basename "$(cat "$d/data_dir.txt" 2>/dev/null || echo -)")
+            arm=$(cat "$d/lab_arm.txt" 2>/dev/null || echo -)
+            printf '%-30s %-16s %-22s %s\n' "$(basename "$d")" "$data" "$arm" "$state"
+        done
         ;;
     *) usage ;;
 esac
