@@ -19,7 +19,8 @@ geth status my_analysis                                        # where it is; th
 - Geth must be installed and configured for your site. Run `geth doctor`: the last line should say
   `Geth is ready.` If it does not, see [installation](installation.md) or ask whoever installed Geth.
 - If the `geth` command is not found, load Geth first: `source /path/to/Geth/env.sh`. Add that line to your
-  `~/.bashrc` to have it every time.
+  `~/.bashrc` to have it every time. With fish: `source /path/to/Geth/env.fish` (it also gives tab
+  completion of commands and run names).
 - Geth can only read data inside its data area. To see where that is: `echo $GETH_DATA_ROOT`.
 
 ## Step 1: prepare the data folder
@@ -244,7 +245,7 @@ The annotation model must match your tissue and species. Available models are li
 
 | You see | What to do |
 |---|---|
-| `geth: command not found` | `source /path/to/Geth/env.sh` |
+| `geth: command not found` | `source /path/to/Geth/env.sh` (fish: `env.fish`) |
 | `Agents can only read data under GETH_DATA_ROOT` | Move the data folder inside `$GETH_DATA_ROOT`. |
 | `Planning failed: see .../geth_plan.log` | Often the model endpoint: run `geth doctor`. Otherwise look at the end of the log. |
 | The plan check lists problems | Fix the plan files (the message says what is wrong), or plan again with a clearer README or question. |
