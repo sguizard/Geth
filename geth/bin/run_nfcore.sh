@@ -127,7 +127,7 @@ fi
 {
     echo "STATUS: FAILED (exit $rc)"
     echo "--- error report (from the Nextflow log) ---"
-    awk '/ERROR ~|Error executing process|Validation of pipeline parameters failed|The following invalid input values/{f=1} f' \
+    awk '/ERROR ~|Error executing process|Validation of pipeline parameters failed|The following invalid input values|\] ERROR:/{f=1} f' \
         "$attempt/nextflow.log" | head -n 60
     if ! grep -qE 'ERROR ~|Error executing process|Validation of' "$attempt/nextflow.log"; then
         tail -n 40 "$attempt/nextflow.log"
