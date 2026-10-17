@@ -262,10 +262,10 @@ a { color: var(--accent); }
         </ul>
       </div>
     </li>
-    <li class="phase now">
+    <li class="phase done">
       <div class="node"><span class="dot">8</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>More pipelines</h3><span class="pill run">in progress</span></div>
+        <div class="phase-head"><h3>More pipelines</h3><span class="pill ok">done</span></div>
         <p>Beyond RNA-seq (v1.4.0, v1.6.0): each pipeline gets a planner skill, its release's schemas, plan checks, its own runtime when needed, then benchmarks with agents.</p>
         <ul class="check">
           <li class="done">10 more nf-core pipelines (v1.4.0): skills, schemas and checks (23/23 tests). The 7 in scope pass their own test profiles on Eddie; older templates run with their own Nextflow (legacy config parser, 23.10.4 for nanoseq, 22.10.8 + Java 17 for DSL1 eager)</li>
@@ -275,7 +275,7 @@ a { color: var(--accent); }
           <li class="done">One full agent run per new pipeline on its test delivery (plan, operator, nf-core run, reporter, report check): all 7 succeed after the fixes their first runs exposed (samplesheets keep every column, <code>skip_&lt;step&gt;</code> accepted when the error names the step, parameters describing the data frozen, a third identical launch refused)</li>
           <li class="done">sarek, taxprofiler, mag wired to real references: chicken germline (Ensembl 116 known variants, VEP cache, uncompressed FASTA), the shared Kraken2/Bracken standard database registered without copying, mag refusing GTDB-Tk and CAT downloads. Planner 9/9 plans fully correct</li>
           <li class="done">Their first full runs all failed, each on a gap: the same VCF as <code>dbsnp</code> and <code>known_indels</code> collides in sarek; taxprofiler cannot merge single- and paired-end runs of one sample without merging the pairs first; mag's ALE crashes on tiny assemblies, and the gate refused <code>skip_ale</code> (a 3-letter step). Fixed with plan checks, skills and gate rules (43 tests); re-planned: every plan passes its check</li>
-          <li class="doing">Full runs of chicken, taxprofiler and mag after the fixes</li>
+          <li class="done">Full runs after the fixes: sarek succeeded (1 attempt, 42/42 report numbers traced), taxprofiler succeeded (1 attempt, 79/79) once a second gap was fixed (Bracken needs its own <code>db_name</code>), mag succeeded (1 attempt, 37/37) with a new results summary (assemblies and bins). All 10 new pipelines now run end to end with agents</li>
         </ul>
       </div>
     </li>
@@ -317,7 +317,7 @@ a { color: var(--accent); }
           <li class="done">11.0 Lab mode: <code>geth lab design | show | list</code>, benchmark data only, EXPERIMENTAL banner. The sandbox for agent-written code comes with arm B</li>
           <li class="done">11.1 Design scorer, fixed in advance: Kang 2018 (20 checks), PBMC 1k (12 checks); the answers kept out of the agents' reach. Execution, biology and cost scorers come with arm B</li>
           <li class="done">11.2 Arm A, design only. With the best-practice skill: 18.2/20 on Kang, 11.8/12 on PBMC (6 designs each): pseudobulk per cell type paired by donor, demuxlet singlets, Harmony across conditions, the expected interferon genes. Without it: 15.3/20 and 10.7/12; 2 of 3 Kang designs test with MAST and a donor random effect, none notices the missing mitochondrial reads. Both arms annotate with CellTypist alone, without checking markers. Harness bugs found and fixed on the way: the no-skill flag was ignored (Nextflow passes "false" as text), a file tool crashed on a misspelt path</li>
-          <li>11.3 Arm B: agents write step scripts, Geth writes the Nextflow (waiting for your go)</li>
+          <li class="doing">11.3 Arm B (go given 2026-10-17): an engineer agent writes and tests step scripts on a subset, a reviewer agent checks them, Geth writes the Nextflow and runs it on the full data. Built and tested: a sandbox with no network, no host files and no keys (escape test passed on the front node and a worker node), a pinned image, checks that only tested code runs. Hand-written reference steps through the same path: 86% agreement with the published Kang cell types, interferon response in 8/8 cell types. First agent builds running</li>
           <li>11.4 Arm C: agents write the Nextflow themselves (stretch)</li>
           <li>11.5 Single agent vs team vs 3 designs + judge</li>
           <li>11.6 Verdict</li>
