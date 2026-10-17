@@ -150,12 +150,12 @@ a { color: var(--accent); }
     <h1>Geth</h1>
     <span class="pill ok">v1.5.0 released</span>
   </div>
-  <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (bulk RNA-seq, scRNA-seq) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model.</p>
+  <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (13 pinned pipelines, from RNA-seq to metagenomics) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model. An experimental lab tests agents that design and write analyses themselves.</p>
   <div class="meta">
     <span>Updated 2026-10-17</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
-    <span>nf-core/rnaseq 3.27.0 · nf-core/scrnaseq 4.2.0</span>
-    <span>repo sguizard/Geth · release v1.5.0</span>
+    <span>13 nf-core pipelines + a single-cell toolbox</span>
+    <span>repo sguizard/Geth · release v1.5.0 · v1.6.0 on develop</span>
   </div>
 </header>
 
@@ -331,8 +331,9 @@ a { color: var(--accent); }
         <p>Eddie allows agents only in sandboxes. Agent steps that launch no jobs (planning, design) run as small SGE jobs; every agent runs in a container that sees only what its step needs (data read-only, writes only to its run folder); at most one Geth run at a time on node1q01. Measured today: Geth's driver uses 0.4 GB and 3% of one CPU on the front node, the nf-core driver 0.6 GB.</p>
         <ul class="check">
           <li class="done">Feasibility on Eddie (apptainer 1.4.4, no special rights): <code>--containall --no-home</code> hides everything that is not bound (/exports invisible, root file system read-only); <code>--net --network none</code> removes all network. Limiting the network to the model service only is not possible without admin rights</li>
-          <li>Agent-written code (phase 11): no network, inputs read-only, one writable folder</li>
-          <li>Planning and design agents: one small SGE job each, in a container that sees only the run folder, the data (read-only) and the catalogue (read-only)</li>
+          <li class="done">Agent-written code (phase 11, arm B): runs in a sandbox with no network, inputs read-only, one writable folder, a clean environment (no keys). Escape test passed on node1q01 and on a worker node</li>
+          <li class="done">Worker nodes reach the model service (checked without the key); Geth's SGE jobs carry no key</li>
+          <li>Planning and design agents: one small SGE job each, in a container that sees only the run folder, the data (read-only) and the catalogue (read-only). Open decision for you: how a job gets the key (a key file only you can read), or keep the agents on node1q01 in a container</li>
           <li>Pipeline drivers: stay on the front node (they submit jobs), at most one Geth run at a time</li>
         </ul>
       </div>
@@ -448,7 +449,7 @@ a { color: var(--accent); }
   </div>
   <p>Expected populations: CD4 T, CD8 T, NK, B, classical and non-classical monocytes, dendritic cells. The analyst never revised the design: it answered each flag (e.g. 8 plasma cells kept as a real rare population; platelets hard for classifiers).</p>
 
-  <h3>Pipelines Geth can run (v1.4.0)</h3>
+  <h3>Pipelines Geth can run (v1.6.0 on develop)</h3>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Pipeline</th><th>Version</th><th>Nested Nextflow</th><th>Test profile on Eddie</th><th>Validated with agents</th></tr></thead>
@@ -457,17 +458,47 @@ a { color: var(--accent); }
         <tr><td>scrnaseq</td><td class="n">4.2.0</td><td>26.10.2, GPU CellBender</td><td><span class="pill ok">19 tasks</span></td><td>test data + PBMC 1k v3</td></tr>
         <tr><td>differentialabundance</td><td class="n">2.0.0</td><td>26.10.2</td><td><span class="pill ok">airway baseline</span></td><td>airway DE</td></tr>
         <tr><td>single-cell toolbox</td><td class="n">1.0.0</td><td>—</td><td>—</td><td>PBMC 1k v3 designs</td></tr>
-        <tr><td>isoseq</td><td class="n">3.0.1</td><td>26.10.2</td><td><span class="pill ok">45 tasks</span></td><td>not yet</td></tr>
-        <tr><td>ampliseq</td><td class="n">3.0.0</td><td>26.10.2</td><td><span class="pill ok">126 tasks</span></td><td>not yet</td></tr>
-        <tr><td>methylseq</td><td class="n">4.2.0</td><td>26.10.2, legacy parser</td><td><span class="pill ok">35 tasks</span></td><td>not yet</td></tr>
-        <tr><td>chipseq</td><td class="n">2.1.0</td><td>26.10.2, legacy parser</td><td><span class="pill ok">202 tasks</span></td><td>not yet</td></tr>
-        <tr><td>atacseq</td><td class="n">2.1.2</td><td>26.10.2, legacy parser</td><td><span class="pill ok">256 tasks</span></td><td>not yet</td></tr>
-        <tr><td>nanoseq</td><td class="n">3.1.0</td><td>23.10.4, singularity engine</td><td><span class="pill ok">26 tasks</span></td><td>not yet</td></tr>
-        <tr><td>eager</td><td class="n">2.5.3 (DSL1)</td><td>22.10.8 + Java 17</td><td><span class="pill ok">26 tasks</span></td><td>not yet</td></tr>
-        <tr class="dropped"><td>sarek, taxprofiler, mag</td><td class="n">3.10.0, 2.0.1, 5.5.0</td><td>26.10.2</td><td><span class="pill next">parked</span></td><td>need the existing databases</td></tr>
+        <tr><td>isoseq</td><td class="n">3.0.1</td><td>26.10.2</td><td><span class="pill ok">45 tasks</span></td><td>test delivery: plans 3/3, full run, 21/24 report numbers</td></tr>
+        <tr><td>ampliseq</td><td class="n">3.0.0</td><td>26.10.2</td><td><span class="pill ok">126 tasks</span></td><td>test delivery: plans 3/3, full run, 47/47</td></tr>
+        <tr><td>methylseq</td><td class="n">4.2.0</td><td>26.10.2, legacy parser</td><td><span class="pill ok">35 tasks</span></td><td>test delivery: plans 3/3, full run, 13/13</td></tr>
+        <tr><td>chipseq</td><td class="n">2.1.0</td><td>26.10.2, legacy parser</td><td><span class="pill ok">202 tasks</span></td><td>test delivery: plans 3/3, full run, 2/3</td></tr>
+        <tr><td>atacseq</td><td class="n">2.1.2</td><td>26.10.2, legacy parser</td><td><span class="pill ok">256 tasks</span></td><td>test delivery: plans 3/3, full run, 2/3</td></tr>
+        <tr><td>nanoseq</td><td class="n">3.1.0</td><td>23.10.4, singularity engine</td><td><span class="pill ok">26 tasks</span></td><td>test delivery: plans 3/3, full run, 18/18</td></tr>
+        <tr><td>eager</td><td class="n">2.5.3 (DSL1)</td><td>22.10.8 + Java 17</td><td><span class="pill ok">26 tasks</span></td><td>test delivery: plans 3/3, full run, 33/33</td></tr>
+        <tr><td>sarek</td><td class="n">3.10.0</td><td>26.10.2</td><td>—</td><td>chicken germline delivery (Ensembl 116 variants, VEP cache): full run, 42/42</td></tr>
+        <tr><td>taxprofiler</td><td class="n">2.0.1</td><td>26.10.2</td><td>—</td><td>gut metagenomes, shared Kraken2/Bracken database: full run, 79/79</td></tr>
+        <tr><td>mag</td><td class="n">5.5.0</td><td>26.10.2</td><td>—</td><td>mouse gut metagenomes, no GTDB-Tk/CheckM2: full run, 37/37</td></tr>
       </tbody>
     </table>
   </div>
+
+  <p>Each full run went from plan to checked report with agents; the numbers are the report numbers traced to the results. Not yet tested on real-size data for these pipelines.</p>
+
+  <h3>Reusing indexes (v1.6)</h3>
+  <p>The GRCh38 STAR index built by a PBMC run (29 GB, about 30 minutes) is registered in the reference catalogue. The planner set it in 6/6 plans on two subset deliveries, and both runs finished without building an index (airway 53 min, PBMC 12 min).</p>
+
+  <h3>Geth lab, arm A: agents design a single-cell analysis (experimental)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Designer</th><th>Kang 2018, IFN-β vs control, 8 donors (20 checks)</th><th>PBMC 1k (12 checks)</th><th>What differs</th></tr></thead>
+      <tbody>
+        <tr><td>With the best-practice skill</td><td class="n">19, 19, 18, 18, 18, 17 (mean 18.2)</td><td class="n">12, 12, 12, 12, 12, 11 (mean 11.8)</td><td>pseudobulk per cell type paired by donor, demuxlet singlets, Harmony</td></tr>
+        <tr><td>Without it</td><td class="n">15, 15, 16 (mean 15.3)</td><td class="n">11, 11, 10 (mean 10.7)</td><td>2/3 Kang designs test with MAST; none notices the missing mito reads</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Geth lab, arm B: agents write the analysis code (experimental, benchmark running)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Build of a Kang design</th><th>Steps</th><th>Subset tests failed</th><th>Review</th><th>Cell types vs published labels</th><th>Cell types with the interferon response</th></tr></thead>
+      <tbody>
+        <tr><td>Reference steps written by hand</td><td class="n">3</td><td class="n">0</td><td>—</td><td class="n">86.3%</td><td class="n">8/8</td></tr>
+        <tr><td>First agent build (engineer with the coding skill)</td><td class="n">8</td><td class="n">0</td><td><span class="pill ok">approved</span></td><td class="n">86.0%</td><td class="n">6/7</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Every agent-written step ran in the sandbox: no network, no host files, no keys. The benchmark compares the engineer with and without its coding skill on the same designs.</p>
 
   <h3>Platform checks</h3>
   <div class="table-wrap">
@@ -478,6 +509,7 @@ a { color: var(--accent); }
         <tr><td>Qwen long prompts: ~10k / ~42k / ~132k tokens</td><td><span class="pill ok">pass</span></td></tr>
         <tr><td>Qwen latency, simple answer: thinking on / off</td><td class="n">30 s / 0.9 s</td></tr>
         <tr><td>Compute nodes reach ELM (queues eddie, staging)</td><td><span class="pill ok">yes</span></td></tr>
+        <tr><td>Sandbox escape test for agent-written code (network, host folders, keys, writes, links), front node and worker node</td><td><span class="pill ok">pass</span></td></tr>
         <tr><td>nf-core/rnaseq 3.27.0 test profile, no agents (234 tasks)</td><td><span class="pill ok">pass</span></td></tr>
         <tr><td>nf-core/scrnaseq 4.2.0 test profile, no agents (19 tasks)</td><td><span class="pill ok">pass</span></td></tr>
       </tbody>
@@ -516,6 +548,16 @@ a { color: var(--accent); }
       <p class="seen">Agent preview limits: tool inputs cannot be <code>Path</code>; a failing tool kills the agent; compute nodes cannot submit SGE jobs.</p>
       <p class="fix"><strong>Workarounds:</strong> absolute paths as text on the shared filesystem; tools always exit 0 and report errors as text; the driver runs on node1q01 (≤ 4 CPUs).</p>
     </div>
+    <div class="lesson">
+      <span class="pill warn" style="justify-self:start">v1.6</span>
+      <p class="seen">Every new pipeline's first full run failed, and each time on a gap in Geth, not a model error: a skill's advice (same VCF twice in sarek), a missed error message, a gate rule too strict for 3-letter steps (mag's ALE), a database sheet naming rule (taxprofiler).</p>
+      <p class="fix"><strong>Fix the gate, not the agent:</strong> each gap became a plan check or a gate rule with a replay test from the real error text; every rerun then succeeded first time.</p>
+    </div>
+    <div class="lesson">
+      <span class="pill warn" style="justify-self:start">lab</span>
+      <p class="seen">The first no-skill control in the lab silently used the skill: <code>--lab_skill false</code> reaches Nextflow as the text "false", which is true in Groovy.</p>
+      <p class="fix"><strong>Compare the text</strong>, and record the arm each run really used; the six affected designs were counted with the skill and the control was rerun.</p>
+    </div>
   </div>
 </section>
 
@@ -537,6 +579,10 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-17">2026-10-17</time><span>Releases v1.3.0/v1.3.1 (GPU CellBender, agent-designed single-cell analysis) and v1.4.0 (pipelines).</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Geth made generic for any site: one site configuration file; documentation as Markdown in <code>docs/</code>; licence GPL-3.0 (can be changed later while there are no outside contributors). Release v1.5.0.</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Roadmap split: phase 7 covers the downstream analyses only (done); new pipelines, the public release and index reuse become phases 8 to 10.</span></li>
+    <li><time datetime="2026-10-17">2026-10-17</time><span>Read access granted to roslin_shared_reference_data (large databases, read-only). sarek tested on livestock germline calling, chicken.</span></li>
+    <li><time datetime="2026-10-17">2026-10-17</time><span>Phase 11 lab approved as experimental, not for real analyses; arms B and C only after the arm A results. Rule recorded: on Eddie agents must eventually run in sandboxes, and node1q01 must stay light (phase 12).</span></li>
+    <li><time datetime="2026-10-17">2026-10-17</time><span>Go given for arm B (agent-written code, in a sandbox). Arm C waits for arm B's results.</span></li>
+    <li><time datetime="2026-10-17">2026-10-17</time><span>Phase 8 done: all 10 added pipelines run end to end with agents. fish support added (<code>env.fish</code>, tab completion).</span></li>
   </ul>
 </section>
 
