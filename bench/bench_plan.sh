@@ -25,7 +25,8 @@ declare -A question=(
     [bulk_yeast]="Quantify gene expression in these yeast RNA-seq samples so that we can compare wild type with the RAP1 conditions."
     [sc_mouse_chr19]="Process these single-cell RNA-seq samples into count matrices and give me a QC overview of the cells."
     [airway_index_test]="Quantify gene expression in these two samples (untreated and dexamethasone-treated)."
-    [pbmc_index_test]="Process this single-cell RNA-seq sample into a count matrix with STARsolo and give me a QC overview of the cells." )
+    [pbmc_index_test]="Process this single-cell RNA-seq sample into a count matrix with STARsolo and give me a QC overview of the cells."
+    [chicken_wgs]="Call germline SNVs and small indels in these three chickens, genotyped together, and annotate them." )
 declare -A dataset=( [bulk_yeast]=bulk [sc_mouse_chr19]=sc )
 
 for delivery in "$@"; do

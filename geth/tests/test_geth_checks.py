@@ -336,6 +336,27 @@ class NewPipelines(unittest.TestCase):
         self.assertTrue(any("no sample has status 1" in p for p in self.check("sarek", germline_only, ok)))
         self.assertTrue(any("'tools' value" in p for p in self.check("sarek", sheet, dict(ok, tools="haplotypecaller,gatk4"))))
 
+    def test_sarek_livestock_germline(self):
+        sheet = ("patient,sex,status,sample,lane,fastq_1,fastq_2\n"
+                 f"red1,NA,0,red1,L001,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')}\n"
+                 f"A191,NA,0,A191,L001,{self.f('N_L2_R1.fastq.gz')},{self.f('N_L2_R2.fastq.gz')}\n")
+        cache = os.path.join(self.d, "vep_cache")
+        os.makedirs(os.path.join(cache, "gallus_gallus", "116_GRCg7b"), exist_ok=True)
+        vcf = self.f("known_variants.vcf.gz")
+        with gzip.open(vcf, "wt") as fh:
+            fh.write("##fileformat=VCFv4.2\n")
+        ok = {"fasta": self.f("genome.fa"), "igenomes_ignore": True, "tools": "haplotypecaller,vep",
+              "joint_germline": True, "dbsnp": vcf, "known_indels": vcf, "vep_cache": cache,
+              "vep_species": "gallus_gallus", "vep_genome": "GRCg7b", "vep_cache_version": 116}
+        self.assertEqual(self.check("sarek", sheet, ok), [])
+        no_sites = {k: v for k, v in ok.items() if k not in ("dbsnp", "known_indels")}
+        self.assertTrue(any("needs known sites" in p for p in self.check("sarek", sheet, no_sites)))
+        self.assertEqual(self.check("sarek", sheet, dict(no_sites, skip_tools="baserecalibrator")), [])
+        self.assertTrue(any("VEP cache folder not found" in p for p in self.check("sarek", sheet, dict(ok, vep_genome="GRCg6a"))))
+        self.assertTrue(any("cannot index a gzip" in p for p in self.check("sarek", sheet, dict(ok, fasta=self.f("S1_R1.fastq.gz")))))
+        self.assertTrue(any("needs vep_species" in p for p in
+                            self.check("sarek", sheet, {k: v for k, v in ok.items() if k != "vep_species"})))
+
     def test_isoseq(self):
         sheet = ("sample,seq_data,pbi,start_from\n"
                  f"brain,{self.f('run.subreads.bam')},{self.f('run.subreads.bam.pbi')},ccs\n"
@@ -471,6 +492,7 @@ class MorePipelines(NewPipelines):
         self.assertTrue(any("qcat's kit names" in p for p in self.check("nanoseq", sheet, dict(ok, barcode_kit="EXP-NBD104"))))
 
     test_sarek = test_isoseq = test_taxprofiler = test_mag = None  # covered by NewPipelines
+    test_sarek_livestock_germline = None
 
 
 SC_SHEET = f"sample,h5ad\npbmc_1k_v3,{H5AD}\n"
