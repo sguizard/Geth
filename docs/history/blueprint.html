@@ -271,7 +271,7 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
         <span class="zone-title">Front node · node1q01</span>
         <div class="node person"><b>You type <code>geth plan</code>, <code>approve</code>, <code>run</code></b></div>
         <div class="node"><b>Geth driver (Nextflow)</b>
-          <div class="chips"><span class="chip agent">planner</span><span class="chip agent">operator</span><span class="chip agent">analyst</span><span class="chip agent">reporter</span></div>
+          <div class="chips"><span class="chip agent">planner</span><span class="chip agent">operator</span><span class="chip agent">analyst</span><span class="chip agent">reporter</span><span class="chip agent">lab: designer, engineer, reviewer</span></div>
           <div class="chips"><span class="chip">file tools</span><span class="chip gate">plan check</span><span class="chip gate">plan-diff gate</span><span class="chip gate">report check</span></div>
           <div class="meter">measured: 0.4 GB RAM · 3% of one CPU</div>
         </div>
@@ -283,14 +283,15 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
         <div class="node job"><b>nf-core pipeline tasks</b><small>alignment, quantification, QC: up to hundreds of jobs per run</small></div>
         <div class="node job"><b>Single-cell toolbox jobs</b><small>Scanpy and CellTypist in a pinned container</small></div>
         <div class="node job"><b>GPU node</b><small>CellBender (ambient RNA removal)</small></div>
+        <div class="node job"><b>Lab: agent-written steps</b><small>in a sandbox: no network, no host files, no keys</small></div>
         <p class="zone-note">Worker nodes cannot submit jobs on Eddie, so a driver that launches jobs has to stay on the front node.</p>
       </div>
       <div class="gap-row"><span class="down">jobs read inputs and write results</span></div>
       <div class="zone storage">
         <span class="zone-title">Storage</span>
         <div class="storage-row">
-          <div class="node store"><b>Perseus_Veil (scratch)</b><small>runs, data, and the reference catalogue: GRCh38, its STAR index, CellTypist models</small></div>
-          <div class="node store"><b>roslin_shared_reference_data</b><small>read-only: Kraken2, Bracken and MetaPhlAn databases</small></div>
+          <div class="node store"><b>Perseus_Veil (scratch)</b><small>runs, data, and the reference catalogue: GRCh38 and its STAR index, chicken GRCg7b with known variants and VEP cache, CellTypist models, database sheets</small></div>
+          <div class="node store"><b>roslin_shared_reference_data</b><small>read-only: Kraken2 and Bracken (registered in the catalogue), MetaPhlAn</small></div>
           <div class="node store"><b>Image cache</b><small>apptainer images shared by the group, read and write</small></div>
         </div>
       </div>
@@ -352,9 +353,9 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
           <div class="arrow"></div>
           <div class="node agent"><b>Engineer</b><small>writes the code of each step</small></div>
           <div class="arrow"></div>
-          <div class="node agent"><b>Reviewer</b><small>fresh eyes: reads the code, runs it on a subset</small></div>
+          <div class="node agent"><b>Reviewer</b><small>fresh eyes: reads the code and its subset tests, approves or asks for changes</small></div>
           <div class="arrow"></div>
-          <div class="node agent"><b>Analyst</b><small>reads the results, writes the report</small></div>
+          <div class="node agent ghost"><b>Analyst</b><small>reads the results, writes the report (not built yet)</small></div>
         </div>
       </div>
       <div class="ensemble"><div class="node agent ghost"><b>Variant: 3 designers + a judge</b><small>tested against a single designer (11.5)</small></div><span>at most 2 agents at a time</span></div>
@@ -370,15 +371,15 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
       </div>
       <div class="lab-gate"><div class="node person"><b>Your go</b><small>given for arm B (2026-10-17); arm C waits for arm B's results</small></div><span class="zone-note">Arms B and C run code written by agents.</span></div>
       <div class="sandbox">
-        <span class="sandbox-title">Sandbox: pinned container · inputs read-only · writes only to its own folder · allowed imports only · ≤ 8 CPUs, 64 GB, 4 h per job · ≤ 4 jobs at once</span>
+        <span class="sandbox-title">Sandbox (built, escape test passed): pinned image · no network · inputs read-only · writes only to its own folder · clean environment, no keys · allowed imports only · ≤ 8 CPUs, 64 GB, 4 h per step</span>
         <div class="arms">
           <span class="arm-id">B · 11.3</span>
           <div class="arm-row">
-            <div class="node"><b>Step scripts + pipeline spec</b><small>Python, one script per step</small></div>
+            <div class="node"><b>Step scripts + pipeline spec</b><small>one Python script per step, each tested on a 3,000-cell subset; reviewer approval (2 rounds at most)</small></div>
             <div class="arrow"></div>
-            <div class="node gate"><b>Geth writes main.nf</b><small>from the spec: same resources and container every time</small></div>
+            <div class="node gate"><b>Geth writes main.nf</b><small>from the spec, with a frozen copy of the tested code</small></div>
             <div class="arrow"></div>
-            <div class="node job"><b>Subset, then full data</b><small>at most 10 fix rounds per step</small></div>
+            <div class="node job"><b>Full data on SGE</b><small>first build: 86% cell types right, interferon response in 6/7 cell types; benchmark running</small></div>
           </div>
           <span class="arm-id">C · 11.4</span>
           <div class="arm-row">
@@ -402,7 +403,7 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
     <div class="section-head">
       <span class="eyebrow">Diagram 5 · phase 12 <span class="status-tag plan">planned</span></span>
       <h2 id="sand-h">Agents in sandboxes, off the front node</h2>
-      <p class="caption">Eddie allows agents only inside sandboxes. Phase 12 moves every agent step that launches no jobs to a small job on a worker node, and puts each agent in a container that only sees what its step needs.</p>
+      <p class="caption">Eddie allows agents only inside sandboxes. Phase 12 moves every agent step that launches no jobs to a small job on a worker node, and puts each agent in a container that only sees what its step needs. Checked: worker nodes reach the model service, and jobs carry no key. Open: how a job gets the key, or whether agents stay on node1q01 in a container.</p>
     </div>
     <div class="compare">
       <div class="zone">
@@ -429,7 +430,7 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
             <div class="node job"><b>Pipeline and toolbox jobs</b></div>
           </div>
         </div>
-        <div class="node gate"><b>Every sandbox</b><small>data and references read-only, writes only to its run folder, no home folder; network to the model service only, if Eddie allows it (to check)</small></div>
+        <div class="node gate"><b>Every sandbox</b><small>data and references read-only, writes only to its run folder, no home folder; agents keep the network (they need the model service: limiting it to that service needs admin rights); agent-written code gets none</small></div>
       </div>
     </div>
   </section>
