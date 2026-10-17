@@ -36,7 +36,9 @@ process LAB_LIST_FILES {
     for root in ${params.lab_data.tokenize(':').join(' ')}; do
         case "${dir}" in "\$root"|"\$root"/*) ok=1 ;; esac
     done
-    if [ \$ok = 1 ]; then
+    if [ \$ok = 1 ] && [ ! -d "${dir}" ]; then
+        echo "NOT FOUND: no folder ${dir}; list its parent folder to see what exists"
+    elif [ \$ok = 1 ]; then
         find "${dir}" -maxdepth 3 \\( -type f -o -type l \\) -printf '%p\\t%s bytes\\n' | sort | head -n 300
     else
         echo "REFUSED: the lab only lists benchmark folders: ${params.lab_data}"
@@ -61,7 +63,8 @@ process LAB_READ_TEXT {
         case "${path}" in "\$root"/*) ok=1 ;; esac
     done
     case "${path}" in *.h5ad|*.gz) ok=binary ;; esac
-    if [ \$ok = 1 ]; then head -c 8000 "${path}"
+    if [ \$ok = 1 ] && [ ! -f "${path}" ]; then echo "NOT FOUND: no file ${path}; use LAB_LIST_FILES to see what exists"
+    elif [ \$ok = 1 ]; then head -c 8000 "${path}"
     elif [ \$ok = binary ]; then echo "REFUSED: binary file; use LAB_INSPECT for count matrices"
     else echo "REFUSED: the lab only reads benchmark folders: ${params.lab_data}"
     fi
@@ -260,8 +263,10 @@ workflow {
     if( params.mode == 'design' ) {
         file(params.run_dir).resolve('question.txt').text = params.question + '\n'
         file(params.run_dir).resolve('data_dir.txt').text = params.data_dir + '\n'
-        file(params.run_dir).resolve('lab_arm.txt').text = (params.lab_skill ? 'A1 design, with skill' : 'A0 design, no skill') + '\n'
-        def design = params.lab_skill ? designer_skill(params.question, params.data_dir) : designer_plain(params.question, params.data_dir)
+        // a command-line value arrives as text, and the text 'false' is true in Groovy
+        def with_skill = params.lab_skill.toString() == 'true'
+        file(params.run_dir).resolve('lab_arm.txt').text = (with_skill ? 'A1 design, with skill' : 'A0 design, no skill') + '\n'
+        def design = with_skill ? designer_skill(params.question, params.data_dir) : designer_plain(params.question, params.data_dir)
         SAVE_DESIGN(design).view()
     }
     else {

@@ -414,6 +414,10 @@ def check_sarek(rows, params):
     fasta = params.get("fasta")
     if isinstance(fasta, str) and fasta.endswith(".gz") and os.path.isfile(fasta) and not is_bgzip(fasta):
         problems.append("sarek cannot index a gzip-compressed 'fasta': use the uncompressed FASTA of the catalogue entry")
+    sites = [params.get(k) for k in ("dbsnp", "known_indels", "known_snps") if params.get(k)]
+    if len(sites) != len(set(sites)):
+        problems.append("'dbsnp', 'known_indels' and 'known_snps' must be different files: sarek stages them together "
+                        "and the same file twice collides. Give a single known-variants VCF as 'dbsnp' only")
     custom = not params.get("genome") or params.get("igenomes_ignore") is True
     skipped = set(filter(None, str(params.get("skip_tools", "")).split(",")))
     if step == "mapping" and custom and "baserecalibrator" not in skipped and not params.get("dbsnp") \
@@ -511,6 +515,16 @@ def check_taxprofiler(rows, params):
                     problems.append(f"'{key}' is on but the databases sheet has no '{tool}' database")
         if "bracken" in tools and params.get("run_bracken") is True and params.get("run_kraken2") is not True:
             problems.append("'run_bracken' needs 'run_kraken2' too")
+    merge_pairs = params.get("perform_shortread_qc") is True and params.get("shortread_qc_mergepairs") is True
+    if params.get("perform_runmerging") is True and not merge_pairs:
+        layouts = {}  # single_end as taxprofiler defines it: one short-read file
+        for r in rows:
+            single = bool(r.get("fastq_1")) and not r.get("fastq_2") \
+                and r.get("instrument_platform") not in ("OXFORD_NANOPORE", "PACBIO_SMRT")
+            layouts.setdefault(r.get("sample"), set()).add(single)
+        for sample in sorted(s for s, l in layouts.items() if len(l) > 1):
+            problems.append(f"sample '{sample}' mixes single-end short-read runs with other runs: merging its runs needs read pairs "
+                            "merged first (perform_shortread_qc=true and shortread_qc_mergepairs=true), or no run merging")
     for i, r in enumerate(db_rows(params), start=2):
         path, tool = r.get("db_path", ""), r.get("tool", "")
         if not os.path.exists(path):
@@ -1046,7 +1060,8 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
                 problems.append(f"param '{k}' changed ({old[k]!r} -> {params[k]!r}) but the previous error does not mention it")
     else:
         for k in added + removed + changed:
-            if not mentioned(k, text) and not skips_named_step(k, params.get(k), text):
+            if not mentioned(k, text) and not skips_named_step(k, params.get(k), text) \
+                    and not names_its_file(old.get(k), text) and not skips_named_tools(k, old.get(k), params.get(k), text):
                 what = "added" if k in added else "removed" if k in removed else f"changed ({old[k]!r} -> {params[k]!r})"
                 problems.append(f"param '{k}' was {what} but the previous error does not mention it"
                                 + ("" if text else " (the approved plan must be launched unchanged first)"))
@@ -1058,13 +1073,40 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
     return problems
 
 
+def names_step(name, error_text):
+    """Does the error name this step or tool? A name of 4+ letters may be part of a process name (preseq in
+    PRESEQ_LCEXTRAP); a 3-letter one must stand alone (the ALE process, not 'ALEoutput.txt' or '.gtf')."""
+    text = error_text or ""
+    if len(name) >= 4:
+        return re.search(re.escape(name), text, re.I) is not None
+    return len(name) == 3 and re.search(rf"(?<![A-Za-z0-9./]){re.escape(name)}(?![A-Za-z0-9./])", text, re.I) is not None
+
+
 def skips_named_step(key, value, error_text):
     """skip_<step>=true is the minimal fix when the error names that step (e.g. skip_preseq after a
-    PRESEQ_LCEXTRAP failure)."""
+    PRESEQ_LCEXTRAP failure, skip_ale after an ALE crash)."""
     if not key.startswith("skip_") or value not in (True, "true"):
         return False
     step = key[len("skip_"):]
-    return any(len(w) >= 4 and re.search(re.escape(w), error_text or "", re.I) for w in {step, step.split("_")[0]})
+    first = step.split("_")[0]
+    return names_step(step, error_text) or (len(first) >= 4 and names_step(first, error_text))
+
+
+def skips_named_tools(key, old, new, error_text):
+    """A list of skipped tools (sarek's skip_tools) may gain the tools the error names."""
+    if key != "skip_tools":
+        return False
+    before = set(filter(None, str(old or "").split(",")))
+    added = set(filter(None, str(new or "").split(","))) - before
+    return bool(added) and before <= set(str(new).split(",")) and all(names_step(t, error_text) for t in added)
+
+
+def names_its_file(old_value, error_text):
+    """A file parameter may change when the error names its file (e.g. a file staged twice)."""
+    if not (isinstance(old_value, str) and "/" in old_value):
+        return False
+    name = os.path.basename(old_value)
+    return len(name) >= 6 and name in (error_text or "")
 
 
 def sc_gate(plan, params_text_or_dict, state):

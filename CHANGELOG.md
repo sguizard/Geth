@@ -39,9 +39,18 @@ Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/vali
     copying them
   - taxprofiler database checks, and Kraken2 memory sized to its index
   - mag refuses GTDB-Tk and CAT downloads
-- **Geth lab (experimental):** `geth lab design` for agent-designed single-cell analyses (phase 11, arm A),
-  on benchmark data only.
+- **Full runs of chicken (sarek), taxprofiler and mag**, fixed after their first runs failed:
+  - the gate accepts skipping a 3-letter step the error names (ALE), adding a tool the error names to
+    `skip_tools`, and changing a file parameter whose file the error names
+  - the error digest catches nf-core's own `ERROR:` lines
+  - sarek refuses the same VCF as both `dbsnp` and `known_indels`
+  - taxprofiler requires read pairs to be merged when run merging mixes single-end and paired-end runs
+  - mag skips ALE on test-size data
+- **Geth lab (experimental):** `geth lab design`, `show` and `list` for agent-designed single-cell analyses
+  (phase 11, arm A), on benchmark data only. `geth list` shows real runs only and points to `geth lab list`.
 - `bench/snapshot.sh` runs benchmarks on a frozen commit.
+- **fish support:** `source env.fish` gives fish the same environment as `env.sh` (it imports what
+  `env.sh` exports), with tab completion of commands, run names, lab runs and options.
 
 ## 1.5.0 (2026-10-17)
 

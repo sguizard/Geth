@@ -246,6 +246,44 @@ class RunFixes(unittest.TestCase):
         self.assertNotIn("config_profile_name", gc.parse_params("config_profile_name=mine\nprimer_fwd=ACGT"))
         self.assertNotIn("config_profile_name", gc.launch_params("rnaseq", {}))
 
+    def replay(self, pipeline, sheet, params, error, new_params):
+        run = Run(pipeline, sheet, json.dumps(params))
+        try:
+            gc.approve(run.dir, "tester")
+            gc.record(run.dir, "nextflow", sheet, json.dumps(params), error)
+            return gc.gate(run.dir, pipeline, sheet, json.dumps(new_params))
+        finally:
+            run.close()
+
+    def test_skipping_a_three_letter_step_named_by_the_error(self):
+        sheet = "sample,run,group,short_reads_1,short_reads_2\nmouseA,0,0,/a_1.fastq.gz,/a_2.fastq.gz\n"
+        params = {"skip_gtdbtk": True}
+        ale = ("ERROR ~ Error executing process > 'NFCORE_MAG:MAG:ALE (MEGAHIT-mouseA)'\n"
+               "Caused by:\n  Process `NFCORE_MAG:MAG:ALE (MEGAHIT-mouseA)` terminated with an error exit status (134)\n"
+               "  ALE Output file: mouseA-MEGAHIT_ALEoutput.txt\n  cat <<-END_VERSIONS > versions.yml\n")
+        self.assertEqual(self.replay("mag", sheet, params, ale, dict(params, skip_ale=True)), [])
+        other = "Process `NFCORE_MAG:MAG:MEGAHIT (mouseA)` terminated: see mouseA-MEGAHIT_ALEoutput.txt, genes.gtf"
+        self.assertTrue(self.replay("mag", sheet, params, other, dict(params, skip_ale=True)),
+                        "ALE inside a file name does not name the step")
+        self.assertFalse(gc.names_step("gtf", "reading /ref/genes.gtf"))
+        self.assertFalse(gc.names_step("cat", "Error: x/cat.txt"))
+
+    def test_fixes_for_a_file_named_by_the_error(self):
+        sheet = "patient,sex,status,sample,lane,fastq_1,fastq_2\nred1,NA,0,red1,L001,/r_1.fastq.gz,/r_2.fastq.gz\n"
+        vcf = "/refs/chicken/gallus_gallus.vcf.gz"
+        params = {"tools": "haplotypecaller", "dbsnp": vcf, "known_indels": vcf}
+        collision = ("ERROR ~ Error executing process > 'NFCORE_SAREK:SAREK:FASTQ_PREPROCESS_GATK:BAM_BASERECALIBRATOR:"
+                     "GATK4_BASERECALIBRATOR (2)'\nCaused by:\n  Process `NFCORE_SAREK:SAREK:FASTQ_PREPROCESS_GATK:"
+                     "BAM_BASERECALIBRATOR:GATK4_BASERECALIBRATOR` input file name collision -- There are multiple input "
+                     "files for each of the following file names: gallus_gallus.vcf.gz, gallus_gallus.vcf.gz.tbi\n")
+        no_indels = {k: v for k, v in params.items() if k != "known_indels"}
+        self.assertEqual(self.replay("sarek", sheet, params, collision, no_indels), [])
+        self.assertEqual(self.replay("sarek", sheet, params, collision, dict(params, skip_tools="baserecalibrator")), [])
+        self.assertTrue(self.replay("sarek", sheet, params, collision, dict(params, skip_tools="baserecalibrator,mosdepth")),
+                        "a tool the error does not name")
+        self.assertTrue(self.replay("sarek", sheet, params, "Process `NFCORE_SAREK:SAREK:MOSDEPTH` terminated", no_indels),
+                        "a file the error does not name")
+
 
 class DifferentialAbundance(unittest.TestCase):
 
@@ -348,10 +386,11 @@ class NewPipelines(unittest.TestCase):
         with gzip.open(vcf, "wt") as fh:
             fh.write("##fileformat=VCFv4.2\n")
         ok = {"fasta": self.f("genome.fa"), "igenomes_ignore": True, "tools": "haplotypecaller,vep",
-              "joint_germline": True, "dbsnp": vcf, "known_indels": vcf, "vep_cache": cache,
+              "joint_germline": True, "dbsnp": vcf, "vep_cache": cache,
               "vep_species": "gallus_gallus", "vep_genome": "GRCg7b", "vep_cache_version": 116}
         self.assertEqual(self.check("sarek", sheet, ok), [])
-        no_sites = {k: v for k, v in ok.items() if k not in ("dbsnp", "known_indels")}
+        self.assertTrue(any("must be different files" in p for p in self.check("sarek", sheet, dict(ok, known_indels=vcf))))
+        no_sites = {k: v for k, v in ok.items() if k != "dbsnp"}
         self.assertTrue(any("needs known sites" in p for p in self.check("sarek", sheet, no_sites)))
         self.assertEqual(self.check("sarek", sheet, dict(no_sites, skip_tools="baserecalibrator")), [])
         self.assertTrue(any("VEP cache folder not found" in p for p in self.check("sarek", sheet, dict(ok, vep_genome="GRCg6a"))))
@@ -384,6 +423,14 @@ class NewPipelines(unittest.TestCase):
         self.assertIn("used twice", text)
         self.assertIn("no 'metaphlan' database", text)
         self.assertTrue(any("'databases' is required" in p for p in self.check("taxprofiler", sheet, {"run_kraken2": True})))
+        mixed = sheet.replace("S2,S2,", "S1,S1_run2,")
+        merging = dict(ok, perform_runmerging=True)
+        self.assertTrue(any("mixes single-end short-read runs" in p for p in self.check("taxprofiler", mixed, merging)))
+        self.assertEqual(self.check("taxprofiler", mixed, dict(merging, shortread_qc_mergepairs=True)), [])
+        self.assertEqual(self.check("taxprofiler", mixed, ok), [], "no run merging: nothing to mix")
+        long_reads = sheet.replace(f"S2,S2,ILLUMINA,{self.f('S2_R1.fastq.gz')},,",
+                                   f"S1,S1_ont,OXFORD_NANOPORE,{self.f('ont.fastq.gz')},,")
+        self.assertEqual(self.check("taxprofiler", long_reads, merging), [], "long reads are not single-end short reads")
 
     def test_taxprofiler_databases_and_memory(self):
         k2 = os.path.join(self.d, "k2db")
