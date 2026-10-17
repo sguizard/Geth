@@ -66,5 +66,36 @@ class GenericSummary(unittest.TestCase):
         self.assertIn("73.9", check)
 
 
+
+class MagSummary(unittest.TestCase):
+    """nf-core/mag: assemblies and bins, from the files mag 5.5.0 writes (values from the mag_gut test run)."""
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp(prefix="geth_collect_mag_")
+        qc = os.path.join(self.run, "results", "Assembly", "MEGAHIT", "QC", "mouseA")
+        os.makedirs(os.path.join(qc, "QUAST"))
+        open(os.path.join(qc, "QUAST", "report.tsv"), "w").write(
+            "Assembly\tMEGAHIT-mouseA\n# contigs\t278\nLargest contig\t94357\nTotal length\t1727075\n"
+            "GC (%)\t47.31\nN50\t10600\n")
+        open(os.path.join(qc, "MEGAHIT-mouseA.bowtie2.log"), "w").write("99.67% overall alignment rate\n")
+        binning = os.path.join(self.run, "results", "GenomeBinning")
+        os.makedirs(binning)
+        open(os.path.join(binning, "bin_summary.tsv"), "w").write(
+            "bin\tDepth mouseA\tTotal length_quast\tN50_quast\n"
+            "MEGAHIT-MetaBAT2-mouseA.1.fa\t6.5\t812495\t23272\n"
+            "MEGAHIT-MetaBAT2-mouseA.2.fa\t5.1\t711505\t20000\n"
+            "MEGAHIT-CONCOCT-mouseA_0.fa\t5.08\t1424\t1424\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.run)
+
+    def test_assemblies_and_bins(self):
+        text = cr.collect(self.run, "mag")
+        self.assertIn("| mouseA | MEGAHIT | 278 | 1,727,075 | 10,600 | 94,357 | 47.31 | 99.67 |", text)
+        self.assertIn("| mouseA | MEGAHIT | MetaBAT2 | 2 | 1,524,000 | 812,495 | 23,272 | 2 |", text)
+        self.assertIn("| mouseA | MEGAHIT | CONCOCT | 1 | 1,424 | 1,424 | 1,424 | 0 |", text)
+        self.assertIn("No completeness or contamination estimates", text)
+        self.assertIn(812495.0, cr.raw_values(self.run))
+
 if __name__ == "__main__":
     unittest.main()
