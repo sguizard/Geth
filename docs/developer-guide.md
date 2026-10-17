@@ -375,7 +375,44 @@ coherent analysis of each benchmark must do. Its main test is Kang et al. 2018 (
 where the condition must be tested per cell type with donors as replicates (pseudobulk). The scorer was
 checked on a coherent design (20/20) and on a naive one (7/20). Arm A runs with the best-practice skill
 `sc-design-lab` (A1) and without it (A0), to separate what the model knows from what the skill tells it.
-Arms B and C (agents write the code, in a sandbox) start only after the arm A results have been reviewed.
+
+Arm B (`geth lab build <design run> <name>`) has agents write the code of a checked design, and runs it:
+
+1. **Engineer** (skill `sc-build-lab`): writes one Python script per step with `WRITE_STEP`, and tests each
+   on a 3,000-cell subset with `TEST_STEP` (an SGE task), the first from the subset and every other from the
+   previous step's test output. When all pass, it saves the spec (`step | cpus | memory GB | minutes`) with
+   `SAVE_SPEC`.
+2. **Reviewer:** reads the design, the scripts and their test outputs (`READ_BUILD`, read-only) and answers
+   `approve` or `revise` with one line per required change. A `revise` starts a second engineer round
+   (at most two).
+3. **Geth** renders `pipeline/main.nf` from the spec, with a frozen copy of the tested scripts, and runs it on
+   the full data as SGE jobs (`results/<NN>_<step>/`).
+
+The rules live in deterministic code, not in the prompts:
+- **Sandbox** (`geth/lab/bin/lab_sandbox.sh`): every agent-written script runs in the pinned lab image with
+  `apptainer exec --containall`. Its only writable folder (also its home) is `/work`; `/in` holds the script,
+  the input and the models, read-only. `--net --network none` removes the network, and the environment is
+  clean (no keys). Only regular files come back, never links. `bench/lab/sandbox_test.sh` runs an escape
+  test (network, host folders, secret-like variables, writes and links) on the machine where it runs.
+- **Static check** (`lab_step_check.py`): an import allowlist, no `eval`/`exec`, no process or file-system
+  calls, no absolute paths, and `sys.argv` for input and output. It catches misuse early; the sandbox is what
+  enforces the rules.
+- **Bookkeeping** (`lab_build.py`): each test records fingerprints of the script and its input. The spec is
+  accepted only when every step passed, in order, on its current code, and the results contract holds:
+  `obs["cell_type"]` in the last output, and `de_results.tsv` or `markers.tsv` with
+  `cell_type, gene, log2fc, padj`. The renderer refuses code that changed after its test.
+- **Agent text** reaches the shell only inside single quotes, with each `'` written as `'\''`, and
+  `lab_build.py` checks every name and path again.
+
+`bench/lab/reference/kang2018/` holds hand-written reference steps that exercise the whole path and give a
+baseline: 86% agreement with the published cell types, and the interferon response in all 8 cell types tested.
+`bench/lab/eval_build.py` (run by `score_build.sh`, inside the image) scores a build:
+- execution: steps, rounds, review verdict, tests and refusals
+- Kang: agreement with the published labels, and interferon-stimulated genes up in each cell type
+- PBMC: populations found and their canonical markers
+
+`bench/lab/bench_build.sh` runs the benchmark. Arm C (agents write the Nextflow themselves) waits for arm B's
+results.
 
 ## Lessons from the Nextflow agent preview (26.10.2, nf-agent 0.2.0)
 

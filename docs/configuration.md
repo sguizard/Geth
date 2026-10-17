@@ -65,6 +65,14 @@ another provider's key by accident.
 | `GETH_DRIVER_CPUS` | `2` | CPUs that each Nextflow driver JVM may use. Outside scheduler jobs, `env.sh` sets `NXF_OPTS` (`-Xmx4g`, active processor count). |
 | `GETH_MAX_DRIVERS` | `0` (no limit) | Nextflow drivers allowed at once on this machine: a plan or a lab design uses 1, a run 2 (Geth's and the pipeline's). A command that would exceed it waits for a free slot. On a shared login node, set it so that drivers × `GETH_DRIVER_CPUS` stays within your allowance. |
 
+### Lab (experimental)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GETH_LAB_DATA` | `$GETH_DATA_ROOT/testdata` | The only folders the lab's agents may read (`:`-separated). |
+| `GETH_LAB_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_lab_sc_f4e5ea0d66d15d6c.sif` | The pinned image agent-written steps run in (arm B): scanpy 1.11.5, celltypist 1.7.1, pydeseq2 0.5.4, harmonypy 0.0.10, from Seqera Containers (`oras://community.wave.seqera.io/library/python_scanpy_celltypist_pydeseq2_pruned:f4e5ea0d66d15d6c`). |
+| `GETH_LAB_MODELS` | `$GETH_REFERENCES/celltypist_immune_v2` | CellTypist models copied into each step's sandbox. |
+
 Anything else your institutional profile reads from the environment goes in `site.env` too, for example
 `NXF_SGE_PROJECT` for a profile that passes a project code to `qsub -P`.
 
