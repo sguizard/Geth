@@ -60,4 +60,7 @@ A Salmon index job killed by SGE (exit 140) was retried by nf-core itself; no ag
 5b. ~~More pipelines~~ v1.4.0: 10 more nf-core pipelines with skills and checks; 7 pass their test profiles on Eddie
    (older templates run with their own Nextflow: legacy config parser, 23.10.4, or 22.10.8 for DSL1 eager);
    sarek/taxprofiler/mag wait for the existing databases. Next: planner tests on realistic deliveries per pipeline.
+5c. ~~Public-ready~~ v1.5.0: one site configuration file (`site/site.env`) instead of Eddie values in the
+   code, documentation for users and developers in `docs/`, GPL-3.0; smoke-tested on Eddie through the new
+   configuration (yeast bulk 13/13 plan checks; single-cell design 7/7 PBMC populations).
 6. Frontier-style "agent writes the pipeline" only once 3-4 are reliable.

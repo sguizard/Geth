@@ -51,6 +51,7 @@ for every agent.
 | 1.2 | **airway differential expression**, on the airway run | 1 (+2 plan only) | 3/3 plans, 12/12 checks each | 12 min. **Identical to the hand-made baseline**: the same 650 DE genes (Jaccard 1.0), and 7/7 known dexamethasone genes up | yes | 26/26 |
 | 1.3 | **PBMC 1k v3 with CellBender** on a GPU | 1 | 12/12 checks | 20 tasks; CellBender on a GPU in 6.6 min | yes | 38/38 |
 | 1.3 | **agent-designed single-cell analysis** of that run | 3 | 3/3 designs pass the check | each found 7/7 expected PBMC populations; labels agree with CellTypist's broad types for 100% of cells; doublets 0.8% (automatic threshold) | n/a | 291/291 |
+| 1.5 | smoke test of the site configuration: yeast bulk test delivery, then a single-cell design on the PBMC run | 2 | 13/13 checks; design passes | both succeeded; 7/7 PBMC populations, 12/12 clusters annotated, 100% agreement with CellTypist. 81% of cells kept: the designer chose stricter QC than the benchmark's 85% target, and the analyst did not revise | yes | 42/42 and 88/88 |
 
 The known dexamethasone genes are DUSP1, FKBP5, KLF15, PER1, TSC22D3, ZBTB16 and CRISPLD2. The expected
 PBMC populations are CD4 T, CD8 T, NK, B, CD14 monocytes, FCGR3A monocytes and dendritic cells.
