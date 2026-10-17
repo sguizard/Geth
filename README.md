@@ -95,6 +95,7 @@ holds tagged releases. Before opening a pull request, run the tests:
 
 ```bash
 python3 geth/tests/test_geth_checks.py
+python3 geth/tests/test_collect_results.py
 nextflow lint geth/main.nf
 ```
 

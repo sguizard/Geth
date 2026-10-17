@@ -297,12 +297,14 @@ are often read-only in jobs.
 
 ```bash
 python3 geth/tests/test_geth_checks.py -v      # the gates: 23 tests, under a second, no site needed
+python3 geth/tests/test_collect_results.py -v  # result summaries and the report check
 nextflow lint geth/main.nf geth/nextflow.config
 bash -n geth/geth geth/bin/*.sh bench/*.sh
 ```
 
 The unit tests replay real failures: the smaller model's design changes, an edited plan after approval,
-swapped contrasts, wrong single-cell designs. Their fixtures are placeholders written to a temporary
+swapped contrasts, wrong single-cell designs, and a results summary that crashed on samplesheets
+without a `sample` column. Their fixtures are placeholders written to a temporary
 folder, so the tests run anywhere.
 
 A useful trick for launcher changes: put a stub `nextflow` that prints its arguments first on `PATH`.
