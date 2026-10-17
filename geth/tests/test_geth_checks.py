@@ -291,5 +291,55 @@ class MorePipelines(NewPipelines):
     test_sarek = test_isoseq = test_taxprofiler = test_mag = None  # covered by NewPipelines
 
 
+H5AD = f"{PV}/geth/runs/pbmc_1/results/star/mtx_conversions/pbmc_1k_v3/pbmc_1k_v3_filtered_matrix.h5ad"
+MODEL = f"{PV}/references/celltypist_immune_v2/Immune_All_Low.pkl"
+SC_SHEET = f"sample,h5ad\npbmc_1k_v3,{H5AD}\n"
+SC_DESIGN = "\n".join([
+    "qc.min_genes=200", "qc.max_pct_mt=20", "doublets.method=scrublet", "doublets.threshold=0.25",
+    "leiden.resolutions=0.5,0.8,1.2", "leiden.chosen=0.8", "markers.panel=CD3E,CD8A,MS4A1,CD14,FCGR3A",
+    f"annotation.model={MODEL}"])
+
+
+@unittest.skipUnless(os.path.isfile(H5AD) and os.path.isfile(MODEL), "pbmc_1 results or CellTypist model missing")
+class SingleCellDesign(unittest.TestCase):
+
+    def test_valid_design_is_normalised(self):
+        problems, design = gc.check_plan("sc_downstream", SC_SHEET, SC_DESIGN)
+        self.assertEqual(problems, [])
+        self.assertEqual(design["leiden.resolutions"], [0.5, 0.8, 1.2])
+        self.assertEqual(design["markers.panel"][:2], ["CD3E", "CD8A"])
+
+    def test_menu_ranges_and_consistency(self):
+        bad = SC_DESIGN.replace("qc.max_pct_mt=20", "qc.max_pct_mt=150").replace("leiden.chosen=0.8", "leiden.chosen=2.0")
+        bad += "\nhvg.flavor=seurat_v3\nqc.max_mito=10\nannotation.model=/tmp/model.pkl"
+        problems, _ = gc.check_plan("sc_downstream", SC_SHEET, bad)
+        text = "\n".join(problems)
+        for expected in ("between 1 and 100", "'leiden.chosen' must be one of", "'hvg.flavor' must be one of",
+                         "'qc.max_mito' is not on the menu", "reference catalogue"):
+            self.assertIn(expected, text)
+
+    def test_gate_one_justified_revision_of_tunable_keys(self):
+        _, design = gc.check_plan("sc_downstream", SC_SHEET, SC_DESIGN)
+        run = Run("sc_downstream", SC_SHEET, json.dumps(design))
+        try:
+            gc.approve(run.dir, "tester")
+            revised = dict(design, **{"leiden.chosen": 1.2})
+            self.assertTrue(gc.gate(run.dir, "sc_downstream", SC_SHEET, json.dumps(revised)), "must run approved first")
+            self.assertEqual(gc.gate(run.dir, "sc_downstream", SC_SHEET, json.dumps(design)), [])
+            gc.record(run.dir, "analysis", SC_SHEET, json.dumps(design), "cluster 9 has 51% CellTypist agreement")
+            self.assertTrue(any("justification" in p for p in gc.gate(run.dir, "sc_downstream", SC_SHEET, json.dumps(revised))))
+            revised["justification"] = "cluster 9 mixes two CellTypist labels (agreement 51%)"
+            self.assertEqual(gc.gate(run.dir, "sc_downstream", SC_SHEET, json.dumps(revised)), [])
+            frozen = dict(revised, **{"markers.panel": ["CD3E"]})
+            self.assertTrue(any("not tunable" in p for p in gc.gate(run.dir, "sc_downstream", SC_SHEET, json.dumps(frozen))))
+            gc.record(run.dir, "analysis", SC_SHEET, json.dumps(revised), "after revision")
+            again = dict(revised, **{"leiden.chosen": 0.5})
+            self.assertTrue(any("only one revision" in p for p in gc.gate(run.dir, "sc_downstream", SC_SHEET, json.dumps(again))))
+            other = SC_SHEET.replace("pbmc_1k_v3,", "other,")
+            self.assertTrue(any("design change" in p for p in gc.gate(run.dir, "sc_downstream", other, json.dumps(design))))
+        finally:
+            run.close()
+
+
 if __name__ == "__main__":
     unittest.main()

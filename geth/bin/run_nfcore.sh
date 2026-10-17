@@ -62,6 +62,11 @@ if [ -n "$analysis_profile" ]; then
     profiles=roslin,$analysis_profile
     extra+=(--contrasts "$attempt/contrasts.csv")
 fi
+# CellBender runs on a GPU (gpu queue) unless the plan skips it.
+if [ "$pipeline" = scrnaseq ] && ! python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("skip_cellbender") in (True, "true") else 1)' "$attempt/params.json"; then
+    profiles=$profiles,gpu
+    extra+=(-c "$GETH_HOME/geth/conf/gpu.config")
+fi
 if [ "$input_bytes" -lt 2000000000 ]; then resources=test; else resources=production; fi
 
 # Per-pipeline runtime: older pipelines pin their Nextflow (and Java), eager reads a TSV and takes max_* params.
@@ -91,7 +96,7 @@ env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" -profile 
     > "$attempt/nextflow.log" 2>&1
 rc=$?
 
-echo "PIPELINE: nf-core/$pipeline $revision (resources: $resources)"
+echo "PIPELINE: nf-core/$pipeline $revision (profiles: $profiles; resources: $resources)"
 if [ $rc -eq 0 ]; then
     python3 "$checks" record "$run_dir" ok "$attempt/samplesheet.csv" "$attempt/params.submitted.json"
     echo "STATUS: SUCCESS"

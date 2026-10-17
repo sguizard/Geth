@@ -37,6 +37,7 @@ record RunOutcome {
     attempts: Integer
     outdir: String
     fixes_applied: List<String>
+    annotations: List<String>
     last_error: String
 }
 
@@ -162,6 +163,70 @@ run_nfcore.sh "${params.run_dir}" "${pipeline}" samplesheet.csv params.json cont
     """
 }
 
+// Single-cell toolbox (Geth's own, bin/sc_downstream.py), run as SGE jobs in the pinned CellTypist container.
+process SC_INSPECT {
+    container 'https://depot.galaxyproject.org/singularity/celltypist:1.7.1--pyhdfd78af_2'
+    containerOptions "-B ${params.data_root}"
+    cpus 1
+    memory 16.GB
+    time 1.h
+
+    input:
+    h5ad: String
+
+    output:
+    summary: String = stdout()
+
+    script:
+    """
+    case "${h5ad}" in
+        ${params.data_root}/*.h5ad) GETH_CACHE=\$PWD/.cache sc_downstream.py inspect "${h5ad}" 2> inspect.err || tail -n 20 inspect.err ;;
+        *) echo "REFUSED: only .h5ad files under ${params.data_root} can be inspected" ;;
+    esac
+    """
+}
+
+process SC_ANALYSE {
+    container 'https://depot.galaxyproject.org/singularity/celltypist:1.7.1--pyhdfd78af_2'
+    containerOptions "-B ${params.data_root}"
+    cpus 4
+    memory 32.GB
+    time 4.h
+
+    input:
+    design: String
+
+    output:
+    digest: String = stdout()
+
+    script:
+    """
+cat > design.txt <<'GETH_EOF'
+${design.trim()}
+GETH_EOF
+sc_analyse.sh "${params.run_dir}" design.txt
+    """
+}
+
+process SAVE_ANNOTATIONS {
+    executor 'local'
+    scratch false
+
+    input:
+    annotations: String
+
+    output:
+    saved: String = stdout()
+
+    script:
+    """
+cat > "${params.run_dir}/annotations.txt" <<'GETH_EOF'
+${annotations.trim()}
+GETH_EOF
+echo "Saved \$(grep -c . "${params.run_dir}/annotations.txt") annotation line(s)."
+    """
+}
+
 process COLLECT_RESULTS {
     executor 'local'
     scratch false
@@ -200,13 +265,18 @@ agent planner {
         Use absolute paths. Only use files that appear in the listing; never invent files.
         If the folder holds no reference genome and annotation, call LIST_REFERENCES and use the entry for the
         right species; if none matches, say so in the rationale instead of guessing.
+        For a follow-up of a finished nf-core/scrnaseq run, design a downstream analysis for Geth's single-cell
+        toolbox instead (pipeline "sc_downstream"): load the sc-downstream skill, find the sample's filtered
+        count matrix in the upstream results, call SC_INSPECT on it, and choose every design value from the
+        observed data; the samplesheet is "sample,h5ad" and the parameters are the design key=value lines.
         Before answering, call CHECK_PLAN with your pipeline, samplesheet and parameters (as key=value lines),
         plus the contrasts CSV and analysis profile for differentialabundance (empty strings otherwise),
         fix every problem it reports, and repeat until it prints "PLAN CHECK: OK".'''
-    tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_PLAN'
-    skills 'nfcore-rnaseq', 'nfcore-scrnaseq', 'nfcore-differentialabundance', 'nfcore-sarek', 'nfcore-isoseq',
-        'nfcore-taxprofiler', 'nfcore-mag', 'nfcore-ampliseq', 'nfcore-chipseq', 'nfcore-atacseq', 'nfcore-nanoseq',
-        'nfcore-eager', 'nfcore-methylseq'
+    tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_PLAN',
+        'nf:module_run:SC_INSPECT'
+    skills 'nfcore-rnaseq', 'nfcore-scrnaseq', 'nfcore-differentialabundance', 'sc-downstream', 'nfcore-sarek',
+        'nfcore-isoseq', 'nfcore-taxprofiler', 'nfcore-mag', 'nfcore-ampliseq', 'nfcore-chipseq', 'nfcore-atacseq',
+        'nfcore-nanoseq', 'nfcore-eager', 'nfcore-methylseq'
     maxIterations 25
 
     input:
@@ -257,7 +327,46 @@ agent operator {
     contrasts_csv and profile (pass empty strings where the plan has none).
     In your final answer state: whether the run succeeded, how many RUN_NFCORE calls you made,
     the OUTDIR printed by the tool (or "none"), every change you made to the plan (or none),
-    and the last error (or "none").
+    no annotations (an empty list), and the last error (or "none").
+    """
+}
+
+agent analyst {
+    model "openai/${params.model}"
+    instruction '''You are Geth's single-cell analyst. You run a downstream analysis design that a person has
+        approved, with the SC_ANALYSE tool, then interpret the diagnostics.
+        First call SC_ANALYSE with the approved design lines exactly as given. Read the diagnostics: cells kept
+        per QC step, doublet rate, clusters per resolution, and for each cluster its size, top markers, the
+        canonical marker panel and the CellTypist label with its agreement.
+        You may call SC_ANALYSE once more, only if a diagnostic shows a real problem, changing only tunable keys
+        (QC thresholds, doublet rate/threshold, HVG number, neighbours, Leiden resolutions/chosen) and adding a
+        line justification=... that cites the diagnostic. If STATUS: REFUSED, do not insist: report.
+        The diagnostics end with FLAGS computed by Geth: for each flag, either revise the design to address it
+        or state in your final answer why it needs no change. Do not describe the results as better than the
+        diagnostics show.
+        Then annotate every cluster of the final analysis from its markers, supported by CellTypist; write
+        "uncertain" when markers and CellTypist disagree, and save the annotations with SAVE_ANNOTATIONS
+        (one line per cluster: "cluster <id>: <cell type> (<key markers>)"). Never claim success unless the
+        tool printed STATUS: SUCCESS.'''
+    tools 'nf:module_run:SC_ANALYSE', 'nf:module_run:SAVE_ANNOTATIONS'
+    skills 'sc-downstream'
+    maxIterations 8
+
+    input:
+    plan: AnalysisPlan
+
+    output:
+    outcome: RunOutcome
+
+    prompt:
+    """
+    Run the approved design now: call SC_ANALYSE with this design exactly as given (a JSON object; for a
+    revision you may send the changed keys and the justification as key=value lines instead):
+    ${plan.params_json}
+    In your final answer state: whether the analysis succeeded, how many SC_ANALYSE calls you made, the OUTDIR
+    of the final analysis, every change you made to the design with its justification (or none), how you
+    handled each FLAG, one annotation per cluster as "cluster <id>: <cell type> (<key markers>)" (also saved
+    with SAVE_ANNOTATIONS), and the last error (or "none").
     """
 }
 
@@ -331,6 +440,7 @@ process SAVE_OUTCOME {
         attempts: ${outcome.attempts}
         outdir: ${outcome.outdir}
         changes_to_plan: ${outcome.fixes_applied}
+        annotations: ${outcome.annotations}
         last_error: ${outcome.last_error}
         """.stripIndent()
 }
@@ -386,7 +496,7 @@ workflow {
             contrasts_csv: d.resolve('plan_contrasts.csv').exists() ? d.resolve('plan_contrasts.csv').text : '',
             profile: d.resolve('plan_profile.txt').exists() ? d.resolve('plan_profile.txt').text.trim() : '',
             rationale: d.resolve('plan_rationale.txt').text))
-        def outcome = operator(plan)
+        def outcome = d.resolve('plan_pipeline.txt').text.trim() == 'sc_downstream' ? analyst(plan) : operator(plan)
         SAVE_OUTCOME(outcome)
         def report = reporter(question, plan.combine(outcome))
         FINALIZE_REPORT(report.combine(outcome)).view()

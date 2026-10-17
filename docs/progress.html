@@ -148,14 +148,14 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill run">phase 7: downstream analysis</span>
+    <span class="pill run">v1.3.1 · adding pipelines</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (bulk RNA-seq, scRNA-seq) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model.</p>
   <div class="meta">
     <span>Updated 2026-10-16</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>nf-core/rnaseq 3.27.0 · nf-core/scrnaseq 4.2.0</span>
-    <span>repo sguizard/Geth · release v1.2.0</span>
+    <span>repo sguizard/Geth · release v1.3.1</span>
   </div>
 </header>
 
@@ -254,8 +254,11 @@ a { color: var(--accent); }
         <ul class="check">
           <li class="done">A · Bulk DE (v1.2.0): <code>geth plan --from airway_1</code> → nf-core/differentialabundance 2.0.0. 3/3 plans perfect (dex vs untreated, blocked on donor); the approved run matched the hand-made baseline exactly (650 DE genes, Jaccard 1.0), 7/7 known dexamethasone genes up, 12 min from approval to checked report</li>
           <li class="done">B · GPU access confirmed: <code>gpu</code> queue, project roslin_alaw3_grp, NVIDIA L40S, PyTorch sees CUDA inside the CellBender container</li>
-          <li class="doing">B · CellBender on GPU inside nf-core/scrnaseq, PBMC rerun with ambient-RNA removal</li>
-          <li>C · Agents design the single-cell downstream analysis (QC, doublets, clustering, CellTypist annotation) on a vetted Scanpy toolbox; person approves the design</li>
+          <li class="done">B · GPU routing built: nf-core's GPU-labelled tasks go to the <code>gpu</code> queue with <code>-l gpu=1</code>; the planner now keeps CellBender on for real data</li>
+          <li class="done">B · PBMC rerun (pbmc_2) with CellBender: 20/20 tasks; CellBender ran on the <code>gpu</code> queue (<code>--cuda</code>, 6.6 min), project roslin_alaw3_grp; 38/38 report numbers traced (v1.3.0)</li>
+          <li class="done">C · Agents design the single-cell analysis on a vetted Scanpy/CellTypist toolbox: 3/3 designs found all 7 expected PBMC populations, analyst labels matched CellTypist broad types for 100% of cells, every flag answered, all report numbers traced (v1.3.0)</li>
+          <li class="done">C · Fixes found by the benchmark: CellTypist cache in the job folder, automatic doublet threshold (0 → 0.8% doublets), flags computed by Geth, annotations saved through a tool (v1.3.0, v1.3.1)</li>
+          <li class="doing">Extra pipelines: skills, schemas and checks for 10 more nf-core pipelines (20/20 tests). Test profiles on Eddie: isoseq, chipseq, atacseq, methylseq, ampliseq pass; nanoseq and eager being fixed (older Nextflow). sarek, taxprofiler, mag parked until the existing databases are wired in</li>
         </ul>
       </div>
     </li>
@@ -364,6 +367,19 @@ a { color: var(--accent); }
   </div>
   <p>650 genes at padj &lt; 0.05 and |log2FC| ≥ 1 (369 up, 281 down), the same set as the run designed by hand.</p>
 
+  <h3>Agent-designed single-cell analysis of PBMC 1k v3 (Geth v1.3)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Run</th><th>Cells kept</th><th>Doublets</th><th>Clusters</th><th>Expected populations</th><th>Analyst vs CellTypist</th><th>Report numbers traced</th></tr></thead>
+      <tbody>
+        <tr><td>scd2_1</td><td class="n">81.0%</td><td class="n">0.8%</td><td class="n">13</td><td class="n">7/7</td><td class="n">100%</td><td class="n">94/94</td></tr>
+        <tr><td>scd2_2</td><td class="n">81.0%</td><td class="n">0.8%</td><td class="n">13</td><td class="n">7/7</td><td class="n">100% (3 clusters marked uncertain)</td><td class="n">97/97</td></tr>
+        <tr><td>scd2_3</td><td class="n">81.0%</td><td class="n">0.8%</td><td class="n">13</td><td class="n">7/7</td><td class="n">100%</td><td class="n">100/100</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Expected populations: CD4 T, CD8 T, NK, B, classical and non-classical monocytes, dendritic cells. The analyst never revised the design: it answered each flag (e.g. 8 plasma cells kept as a real rare population; platelets hard for classifiers).</p>
+
   <h3>Platform checks</h3>
   <div class="table-wrap">
     <table>
@@ -428,6 +444,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-16">2026-10-16</time><span>Real-size tests use public human data: airway (bulk) and PBMC 1k v3 (single-cell) on GRCh38.</span></li>
     <li><time datetime="2026-10-16">2026-10-16</time><span>Git flow adopted: master holds tagged releases (v0.1.0, v1.0.0, v1.1.0, v1.2.0), work goes through develop and feature branches.</span></li>
     <li><time datetime="2026-10-16">2026-10-16</time><span>Phase 7 plan approved: bulk DE first, then CellBender on the gpu queue, then agent-designed single-cell downstream analysis.</span></li>
+    <li><time datetime="2026-10-17">2026-10-17</time><span>10 more nf-core pipelines added; sarek, taxprofiler and mag wait for the existing database copies. Older pipelines run with their own Nextflow version.</span></li>
   </ul>
 </section>
 
