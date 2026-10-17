@@ -148,11 +148,11 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill ok">v1.4.0 released</span>
+    <span class="pill ok">v1.5.0 released</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (bulk RNA-seq, scRNA-seq) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model.</p>
   <div class="meta">
-    <span>Updated 2026-10-16</span>
+    <span>Updated 2026-10-17</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>nf-core/rnaseq 3.27.0 · nf-core/scrnaseq 4.2.0</span>
     <span>repo sguizard/Geth · release v1.5.0</span>
@@ -272,8 +272,10 @@ a { color: var(--accent); }
           <li class="done">Planner benchmark, round 1: 7 deliveries built from nf-core test data the way a facility delivers them (re-sequenced lanes, inputs shared per culture, facility IDs that are not valid sample names, a pooled Nanopore FASTQ). 14/21 plans fully correct; all 21 passed the plan check. methylseq, eager, isoseq 3/3; chipseq 2/3 (one sample per library); atacseq 2/3 (guessed mitochondrial contig); ampliseq 2/3 (unusable metadata); nanoseq 0/3 (ONT kit name instead of qcat's: the skill's own example was wrong)</li>
           <li class="done">Fixes from round 1: clearer ChIP-seq and Nanopore skills; new deterministic plan checks (qcat kit names, ampliseq metadata IDs and categories, ATAC-seq <code>mito_name</code> against the FASTA's contigs); scorers checked with hand-written correct plans and injected mistakes</li>
           <li class="done">Round 2 on the four deliveries with problems: 12/12 plans fully correct. All 7 pipelines now 3/3</li>
-          <li class="doing">One full agent run per new pipeline on its test delivery: plan, operator, nf-core run, reporter, report check</li>
-          <li>sarek, taxprofiler, mag: waiting for the paths of the existing database copies</li>
+          <li class="done">One full agent run per new pipeline on its test delivery (plan, operator, nf-core run, reporter, report check): all 7 succeed after the fixes their first runs exposed (samplesheets keep every column, <code>skip_&lt;step&gt;</code> accepted when the error names the step, parameters describing the data frozen, a third identical launch refused)</li>
+          <li class="done">sarek, taxprofiler, mag wired to real references: chicken germline (Ensembl 116 known variants, VEP cache, uncompressed FASTA), the shared Kraken2/Bracken standard database registered without copying, mag refusing GTDB-Tk and CAT downloads. Planner 9/9 plans fully correct</li>
+          <li class="done">Their first full runs all failed, each on a gap: the same VCF as <code>dbsnp</code> and <code>known_indels</code> collides in sarek; taxprofiler cannot merge single- and paired-end runs of one sample without merging the pairs first; mag's ALE crashes on tiny assemblies, and the gate refused <code>skip_ale</code> (a 3-letter step). Fixed with plan checks, skills and gate rules (43 tests); re-planned: every plan passes its check</li>
+          <li class="doing">Full runs of chicken, taxprofiler and mag after the fixes</li>
         </ul>
       </div>
     </li>
@@ -291,31 +293,31 @@ a { color: var(--accent); }
         </ul>
       </div>
     </li>
-    <li class="phase now">
+    <li class="phase done">
       <div class="node"><span class="dot">10</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Faster runs: reusing indexes</h3><span class="pill run">in progress</span></div>
+        <div class="phase-head"><h3>Faster runs: reusing indexes</h3><span class="pill ok">done</span></div>
         <p>A human STAR index costs about 30 minutes and 30 GB in every RNA-seq or single-cell run (v1.6.0).</p>
         <ul class="check">
           <li class="done">nf-core/rnaseq 3.27.0 and nf-core/scrnaseq 4.2.0 build it with the same STAR 2.7.11b module and options: one index serves both</li>
           <li class="done">The GRCh38 index built by pbmc_2 registered in the reference catalogue by hard link (no extra space), its STAR version, FASTA and GTF recorded; the plan check refuses a reused index that does not match the plan</li>
           <li class="done">The planner picks the index on its own: 6/6 plans (airway and PBMC subsets, 3 each) set <code>star_index</code> to the registered index with its FASTA and GTF</li>
           <li class="done">Found on the way: small inputs on a human genome got the test resource caps (16 GB), too little for STAR (about 32 GB). Caps now depend on the reference size too</li>
-          <li class="doing">Runs on the two subsets must finish without building an index</li>
+          <li class="done">Both subset runs finished without building an index: airway in 53 min (mostly queue waits for full-size jobs), PBMC in 12 min</li>
           <li>Later: indexes of other aligners (Salmon, Bowtie2, BWA, Bismark)</li>
         </ul>
       </div>
     </li>
-    <li class="phase">
+    <li class="phase now">
       <div class="node"><span class="dot">11</span></div>
       <div class="phase-body">
         <div class="phase-head"><h3>Agents write analyses</h3><span class="pill warn">experimental</span></div>
         <p>Not for real analyses. Can a small team of Qwen agents (designer, engineer, reviewer, analyst) design a coherent single-cell downstream analysis and build it as a Nextflow pipeline? Tested on PBMC 1k v3 and Kang 2018 (8 donors, control vs IFN-β, published cell types) with scores fixed in advance.</p>
         <ul class="check">
-          <li>11.0 Lab mode: <code>geth lab</code>, benchmark data only, EXPERIMENTAL banner, sandbox for agent-written code</li>
-          <li>11.1 Benchmarks and scorers (design, execution, biology, cost)</li>
-          <li>11.2 Arm A: free-form design only, nothing executed</li>
-          <li>11.3 Arm B: agents write step scripts, Geth writes the Nextflow (after your go)</li>
+          <li class="done">11.0 Lab mode: <code>geth lab design | show | list</code>, benchmark data only, EXPERIMENTAL banner. The sandbox for agent-written code comes with arm B</li>
+          <li class="done">11.1 Design scorer, fixed in advance: Kang 2018 (20 checks), PBMC 1k (12 checks); the answers kept out of the agents' reach. Execution, biology and cost scorers come with arm B</li>
+          <li class="done">11.2 Arm A, design only. With the best-practice skill: 18.2/20 on Kang, 11.8/12 on PBMC (6 designs each): pseudobulk per cell type paired by donor, demuxlet singlets, Harmony across conditions, the expected interferon genes. Without it: 15.3/20 and 10.7/12; 2 of 3 Kang designs test with MAST and a donor random effect, none notices the missing mitochondrial reads. Both arms annotate with CellTypist alone, without checking markers. Harness bugs found and fixed on the way: the no-skill flag was ignored (Nextflow passes "false" as text), a file tool crashed on a misspelt path</li>
+          <li>11.3 Arm B: agents write step scripts, Geth writes the Nextflow (waiting for your go)</li>
           <li>11.4 Arm C: agents write the Nextflow themselves (stretch)</li>
           <li>11.5 Single agent vs team vs 3 designs + judge</li>
           <li>11.6 Verdict</li>
