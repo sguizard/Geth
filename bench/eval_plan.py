@@ -372,6 +372,7 @@ def chicken_wgs(rows, params, pipeline):
             "sex_na_for_birds": bool(rows) and all(r.get("sex") == "NA" for r in rows),
             "fasta_uncompressed": p.get("fasta") == f"{CHICKEN}/Gallus_gallus.bGalGal1.mat.broiler.GRCg7b.dna.toplevel.fa",
             "known_sites": p.get("dbsnp") == f"{CHICKEN}/gallus_gallus.vcf.gz",
+            "known_sites_once": p.get("known_indels") != p.get("dbsnp"),  # the same file twice collides (v1.6 run)
             "germline_caller": bool(tools & {"haplotypecaller", "deepvariant", "freebayes"}),
             "no_somatic_or_human": not tools & {"mutect2", "ascat", "controlfreec", "strelka_somatic"}
             and not p.get("germline_resource") and not p.get("pon"),
@@ -395,6 +396,8 @@ def taxprofiler_reads(rows, params, pipeline):
             "pairs": all(base(r.get("fastq_2")) == base(r.get("fastq_1")).replace("_R1", "_R2") for k, r in run.items() if k != "2612_C"),
             "illumina": bool(rows) and all(r.get("instrument_platform") == "ILLUMINA" for r in rows),
             "run_merging": p.get("perform_runmerging") in (True, "true"),
+            "pairs_merged_first": p.get("perform_shortread_qc") in (True, "true")  # 2612 mixes SE and PE runs (v1.6 run)
+            and p.get("shortread_qc_mergepairs") in (True, "true"),
             "catalogue_databases": db.startswith(os.environ["GETH_REFERENCES"] + "/") and os.path.isfile(db),
             "profilers_match_sheet": (p.get("run_kraken2") in (True, "true")) if kraken else (p.get("run_metaphlan") in (True, "true"))}
 
@@ -411,7 +414,8 @@ def mag_gut(rows, params, pipeline):
             "platform": bool(rows) and all(r.get("short_reads_platform") == "ILLUMINA" for r in rows),
             "groups_filled": bool(rows) and all(r.get("group") not in (None, "") for r in rows),
             "no_gtdbtk_download": p.get("skip_gtdbtk") in (True, "true") or bool(p.get("gtdb_db")),
-            "no_host_invented": not p.get("host_fasta") and not p.get("host_genome")}
+            "no_host_invented": not p.get("host_fasta") and not p.get("host_genome"),
+            "ale_skipped_on_test_data": p.get("skip_ale") in (True, "true")}  # ALE crashes on these tiny assemblies (v1.6 run)
 
 
 SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc, "airway_de": airway_de,

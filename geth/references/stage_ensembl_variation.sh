@@ -49,7 +49,7 @@ grep -q '^Genome FASTA (uncompressed' README.txt || echo "Genome FASTA (uncompre
 echo "OK $(basename "$fasta")"
 
 grep -q '^Known variants VCF:' README.txt || cat >> README.txt <<EOF
-Known variants VCF: $entry/$vcf (Ensembl $release variation: SNVs and indels; for nf-core/sarek use it as dbsnp and known_indels; sarek builds the .tbi)
+Known variants VCF: $entry/$vcf (Ensembl $release variation: SNVs and indels; for nf-core/sarek use it as dbsnp only, not also as known_indels; sarek builds the .tbi)
 VEP cache: $entry/vep_cache (VEP $release; for nf-core/sarek: vep_cache=$entry/vep_cache, vep_species=$species, vep_genome=$assembly, vep_cache_version=$release)
 EOF
 tail -n 2 README.txt

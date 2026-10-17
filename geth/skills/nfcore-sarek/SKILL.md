@@ -35,7 +35,8 @@ Columns for raw reads (`step=mapping`, the default): `patient,sex,status,sample,
 ## Other species (livestock, birds, plants)
 - `igenomes_ignore=true` and `fasta` = the catalogue genome, **uncompressed** (sarek cannot index a gzipped
   FASTA: the entry lists an uncompressed copy). Known sites: the entry's `Known variants VCF`
-  as both `dbsnp` and `known_indels` (sarek builds the indexes). Without one: `skip_tools=baserecalibrator`.
+  as `dbsnp` only (sarek builds the index; never the same file as `known_indels` too: sarek stages them together
+  and the names collide). Without one: `skip_tools=baserecalibrator`.
 - `germline_resource` and `pon` are human somatic resources: never set them for other species.
 - Birds have a ZW sex system: `sex=NA` (the XX/XY values do not apply).
 - Annotation: `vep` in `tools` only with the entry's `VEP cache`, and its four values: `vep_cache`,
