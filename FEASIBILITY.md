@@ -57,4 +57,7 @@ A Salmon index job killed by SGE (exit 140) was retried by nf-core itself; no ag
 3. ~~Differential expression for bulk~~ done (v1.2.0): airway, identical to the baseline, 7/7 known dex genes.
 4. ~~Single-cell clustering/annotation on PBMC 1k v3~~ done (v1.3.0): agents design and run it on a vetted toolbox.
 5. Reuse built indexes across runs (STAR index for GRCh38 took 26 min and 65 GB per run).
+5b. ~~More pipelines~~ v1.4.0: 10 more nf-core pipelines with skills and checks; 7 pass their test profiles on Eddie
+   (older templates run with their own Nextflow: legacy config parser, 23.10.4, or 22.10.8 for DSL1 eager);
+   sarek/taxprofiler/mag wait for the existing databases. Next: planner tests on realistic deliveries per pipeline.
 6. Frontier-style "agent writes the pipeline" only once 3-4 are reliable.

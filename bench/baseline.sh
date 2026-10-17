@@ -23,6 +23,6 @@ extra=()
 env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" -profile test,roslin -c "$here/geth/conf/test.config" "${extra[@]}" \
     --outdir "$out/results" -w "$out/work" -ansi-log false > "$out/run.log" 2>&1
 rc=$?
-tasks=$(grep -cE '^\[PROCESS' "$out/run.log")
+tasks=$(grep -cE '^\[PROCESS|Submitted process' "$out/run.log")  # new and pre-24 Nextflow log formats
 echo "$pipeline $revision exit=$rc tasks=$tasks wall=$(( ($(date +%s) - start) / 60 ))min"
 [ $rc -eq 0 ] || grep -m3 -A8 -E 'ERROR ~|Error executing process' "$out/run.log"
