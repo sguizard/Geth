@@ -1,5 +1,5 @@
 /*
- * Geth: Qwen agents plan, run, fix and report an nf-core analysis on Eddie.
+ * Geth: language-model agents plan, run, fix and report bioinformatics analyses with nf-core pipelines.
  *
  *   --mode plan : planner inspects the data folder (and, for a follow-up analysis such as
  *                 differential expression, the upstream run given by --upstream_run) and
@@ -8,7 +8,9 @@
  *   --mode run  : operator launches the approved plan (gated retries), reporter writes report.md,
  *                 every number in the report is checked against the results
  *
- * Tools run as local processes on the submit host; the nf-core runs submit their own SGE jobs.
+ * Most tools run as local processes next to the driver (which must be able to submit jobs); the nf-core
+ * runs submit their own jobs through the site profile; the single-cell toolbox runs as cluster jobs.
+ * Site settings (model, folders, profiles) come from env.sh / site/site.env through nextflow.config.
  */
 nextflow.enable.types = true
 
@@ -95,7 +97,7 @@ process LIST_REFERENCES {
     script:
     """
     found=0
-    for readme in ${params.data_root}/references/*/README.txt; do
+    for readme in ${params.references}/*/README.txt; do
         [ -f "\$readme" ] || continue
         found=1; echo "== \$(dirname "\$readme")"; cat "\$readme"; echo
     done
@@ -163,10 +165,10 @@ run_nfcore.sh "${params.run_dir}" "${pipeline}" samplesheet.csv params.json cont
     """
 }
 
-// Single-cell toolbox (Geth's own, bin/sc_downstream.py), run as SGE jobs in the pinned CellTypist container.
+// Single-cell toolbox (Geth's own, bin/sc_downstream.py), run as scheduler jobs in the pinned CellTypist container.
 process SC_INSPECT {
     container 'https://depot.galaxyproject.org/singularity/celltypist:1.7.1--pyhdfd78af_2'
-    containerOptions "-B ${params.data_root}"
+    containerOptions "-B ${params.data_root} -B ${params.references} -B ${params.runs_dir}"
     cpus 1
     memory 16.GB
     time 1.h
@@ -188,7 +190,7 @@ process SC_INSPECT {
 
 process SC_ANALYSE {
     container 'https://depot.galaxyproject.org/singularity/celltypist:1.7.1--pyhdfd78af_2'
-    containerOptions "-B ${params.data_root}"
+    containerOptions "-B ${params.data_root} -B ${params.references} -B ${params.runs_dir}"
     cpus 4
     memory 32.GB
     time 4.h
@@ -204,6 +206,7 @@ process SC_ANALYSE {
 cat > design.txt <<'GETH_EOF'
 ${design.trim()}
 GETH_EOF
+export GETH_REFERENCES="${params.references}"
 sc_analyse.sh "${params.run_dir}" design.txt
     """
 }
@@ -467,10 +470,13 @@ cat "${params.run_dir}/report_check.txt"
 }
 
 workflow {
-    if( params.model != 'Qwen/Qwen3.5-397B-A17B-FP8' )
-        error "Geth runs on the free ELM model Qwen/Qwen3.5-397B-A17B-FP8 only (got '${params.model}')"
-    if( !params.run_dir || !params.run_dir.startsWith("${params.data_root}/geth/runs/") )
-        error "run_dir must be under ${params.data_root}/geth/runs/"
+    if( !params.model || !params.runs_dir || !params.data_root || !params.references )
+        error "Geth's site settings are missing: source env.sh (it loads site/site.env) before running Geth"
+    def allowed = params.allowed_models.tokenize(', ')
+    if( !(params.model in allowed) )
+        error "Model '${params.model}' is not in GETH_LLM_ALLOWED_MODELS (${allowed.join(', ')})"
+    if( !params.run_dir || !params.run_dir.startsWith("${params.runs_dir}/") )
+        error "run_dir must be under ${params.runs_dir}/"
 
     if( params.mode == 'plan' ) {
         if( !params.question || !params.data_dir )

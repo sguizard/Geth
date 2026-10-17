@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Regression tests for geth_checks.py, replaying real failures seen while building Geth.
 
-Run: source env.sh; python3 geth/tests/test_geth_checks.py -v
-Uses real files under $PERSEUS_VEIL (staged test data, the spike runs and the airway_1 results).
+Run: python3 geth/tests/test_geth_checks.py -v      (no site configuration or data needed)
+The plans and attempts of real runs are kept here as text; the files they point to are recreated as small
+placeholders in a temporary folder (the checks look at names, headers and gzip magic, not at contents).
 """
+import gzip
 import json
 import os
 import shutil
@@ -14,12 +16,34 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin"))
 import geth_checks as gc  # noqa: E402
 
-PV = os.environ.get("PERSEUS_VEIL", "/exports/eddie/scratch/sguizard/Perseus_Veil")
-SPIKES = f"{PV}/spikes/nfcore/runs"
-AIRWAY = f"{PV}/geth/runs/airway_1"
+ROOT = tempfile.mkdtemp(prefix="geth_fixtures_")  # filled by setUpModule, removed by tearDownModule
+YEAST = f"{ROOT}/data/bulk_yeast"
+REFS = f"{ROOT}/references"
+AIRWAY = f"{ROOT}/runs/airway_1"  # a finished nf-core/rnaseq run: upstream of the DE analyses
 COUNTS = f"{AIRWAY}/results/star_salmon/salmon.merged.gene_counts.tsv"
 LENGTHS = f"{AIRWAY}/results/star_salmon/salmon.merged.gene_lengths.tsv"
-GTF = f"{PV}/references/homo_sapiens_GRCh38_ens116/Homo_sapiens.GRCh38.116.gtf.gz"
+GTF = f"{REFS}/homo_sapiens_GRCh38_ens116/Homo_sapiens.GRCh38.116.gtf.gz"
+
+# Spike 3, run full_bulk_mistral_1 (Mistral Small 4 as operator): the approved plan, then two attempts.
+# Attempt 1 split a technical replicate (second RAP1_uninduced_REP2 file renamed REP3); attempt 2 answered a
+# plan-check error about 'strandedness' by also adding threshold params nobody asked for.
+MISTRAL_SHEET = """sample,fastq_1,fastq_2,strandedness
+wild_type_REP1,{Y}/fastq/SRR6357070_1.fastq.gz,{Y}/fastq/SRR6357070_2.fastq.gz,auto
+wild_type_REP1,{Y}/fastq/SRR6357071_1.fastq.gz,{Y}/fastq/SRR6357071_2.fastq.gz,auto
+wild_type_REP2,{Y}/fastq/SRR6357072_1.fastq.gz,{Y}/fastq/SRR6357072_2.fastq.gz,auto
+RAP1_uninduced_REP1,{Y}/fastq/SRR6357073_1.fastq.gz,,auto
+RAP1_uninduced_REP2,{Y}/fastq/SRR6357074_1.fastq.gz,,auto
+RAP1_uninduced_REP2,{Y}/fastq/SRR6357075_1.fastq.gz,,auto
+RAP1_IAA_30min_REP1,{Y}/fastq/SRR6357076_1.fastq.gz,{Y}/fastq/SRR6357076_2.fastq.gz,auto
+""".replace("{Y}", YEAST)
+MISTRAL_ATTEMPT_1_SHEET = MISTRAL_SHEET.replace(f"RAP1_uninduced_REP2,{YEAST}/fastq/SRR6357075",
+                                                f"RAP1_uninduced_REP3,{YEAST}/fastq/SRR6357075")
+MISTRAL_PARAMS = json.dumps({"fasta": f"{YEAST}/reference/genome.fasta", "gtf": f"{YEAST}/reference/genes.gtf.gz",
+                             "aligner": "star_salmon", "strandedness": "auto", "skip_bbsplit": True,
+                             "skip_dupradar": True, "skip_qualimap": True}, indent=2)
+MISTRAL_ATTEMPT_2_PARAMS = json.dumps({"fasta": f"{YEAST}/reference/genome.fasta", "gtf": f"{YEAST}/reference/genes.gtf.gz",
+                                       "aligner": "star_salmon", "stranded_threshold": 0.8, "unstranded_threshold": 0.2,
+                                       "skip_bbsplit": True, "skip_dupradar": True, "skip_qualimap": True}, indent=2)
 
 OBS = """sample,condition,donor
 N61311_untreated,untreated,N61311
@@ -33,6 +57,35 @@ N061011_Dex,dex,N061011
 """
 CONTRASTS = "id,variable,reference,target,blocking\ndex_vs_untreated,condition,untreated,dex,donor\n"
 DE_PARAMS = json.dumps({"matrix": COUNTS, "feature_length_matrix": LENGTHS, "gtf": GTF})
+
+H5AD = f"{ROOT}/runs/pbmc_1/results/star/mtx_conversions/pbmc_1k_v3/pbmc_1k_v3_filtered_matrix.h5ad"
+MODEL = f"{REFS}/celltypist_immune_v2/Immune_All_Low.pkl"
+
+
+def setUpModule():
+    def write(path, text, compress=False):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with (gzip.open(path, "wt") if compress else open(path, "w")) as fh:
+            fh.write(text)
+
+    for run in range(70, 77):
+        for read in (1, 2):
+            write(f"{YEAST}/fastq/SRR63570{run}_{read}.fastq.gz", "@r\nACGT\n+\nIIII\n", compress=True)
+    write(f"{YEAST}/reference/genome.fasta", ">I\nACGT\n")
+    write(f"{YEAST}/reference/genes.gtf.gz", 'I\tx\texon\t1\t4\t.\t+\t.\tgene_id "g";\n', compress=True)
+    write(GTF, '1\tx\texon\t1\t4\t.\t+\t.\tgene_id "g";\n', compress=True)
+    header = "\t".join(["gene_id", "gene_name"] + [line.split(",")[0] for line in OBS.splitlines()[1:]]) + "\n"
+    write(COUNTS, header + "g1\tA\t" + "\t".join(["5"] * 8) + "\n")
+    write(LENGTHS, header + "g1\tA\t" + "\t".join(["900"] * 8) + "\n")
+    write(f"{AIRWAY}/plan_samplesheet.csv", MISTRAL_SHEET)
+    write(f"{AIRWAY}/plan_params.json", json.dumps({"fasta": f"{YEAST}/reference/genome.fasta", "gtf": GTF}))
+    write(H5AD, "placeholder")
+    write(MODEL, "placeholder")
+    gc.REFERENCES = REFS
+
+
+def tearDownModule():
+    shutil.rmtree(ROOT)
 
 
 class Run:
@@ -62,14 +115,11 @@ class Run:
         shutil.rmtree(self.dir)
 
 
-@unittest.skipUnless(os.path.isdir(SPIKES), "spike runs not available")
 class UpstreamGate(unittest.TestCase):
     """v1.1 behaviour, replayed on the real Mistral failures from spike 3."""
 
     def setUp(self):
-        src = f"{SPIKES}/full_bulk_mistral_1"
-        self.src = src
-        self.run = Run("rnaseq", open(f"{src}/plan_samplesheet.csv").read(), open(f"{src}/plan_params.json").read())
+        self.run = Run("rnaseq", MISTRAL_SHEET, MISTRAL_PARAMS)
         gc.approve(self.run.dir, "tester")
 
     def tearDown(self):
@@ -81,16 +131,14 @@ class UpstreamGate(unittest.TestCase):
         self.assertTrue(any("not been approved" in p for p in problems))
 
     def test_split_technical_replicate_is_refused(self):
-        sheet = open(f"{self.src}/attempt_1/samplesheet.csv").read()
-        problems = gc.gate(self.run.dir, "rnaseq", sheet, self.run.read("plan_params.json"))
+        problems = gc.gate(self.run.dir, "rnaseq", MISTRAL_ATTEMPT_1_SHEET, self.run.read("plan_params.json"))
         self.assertTrue(any("RAP1_uninduced_REP3" in p for p in problems), problems)
 
     def test_unrequested_params_are_refused_and_minimal_fix_allowed(self):
         problems, _ = gc.check_plan("rnaseq", self.run.read("plan_samplesheet.csv"), self.run.read("plan_params.json"))
         self.run.write("check.txt", "\n".join(problems))
         gc.record(self.run.dir, "check", self.run.read("plan_samplesheet.csv"), self.run.read("plan_params.json"), "\n".join(problems))
-        mistral_fix = open(f"{self.src}/attempt_2/params.json").read()
-        self.assertTrue(gc.gate(self.run.dir, "rnaseq", self.run.read("plan_samplesheet.csv"), mistral_fix))
+        self.assertTrue(gc.gate(self.run.dir, "rnaseq", self.run.read("plan_samplesheet.csv"), MISTRAL_ATTEMPT_2_PARAMS))
         minimal = json.loads(self.run.read("plan_params.json"))
         minimal.pop("strandedness")
         self.assertEqual(gc.gate(self.run.dir, "rnaseq", self.run.read("plan_samplesheet.csv"), json.dumps(minimal)), [])
@@ -101,7 +149,6 @@ class UpstreamGate(unittest.TestCase):
         self.assertTrue(any("changed after approval" in p for p in problems))
 
 
-@unittest.skipUnless(os.path.isfile(COUNTS), "airway_1 results not available")
 class DifferentialAbundance(unittest.TestCase):
 
     def check(self, obs=OBS, params=DE_PARAMS, contrasts=CONTRASTS, profile="rnaseq", upstream=AIRWAY):
@@ -291,8 +338,6 @@ class MorePipelines(NewPipelines):
     test_sarek = test_isoseq = test_taxprofiler = test_mag = None  # covered by NewPipelines
 
 
-H5AD = f"{PV}/geth/runs/pbmc_1/results/star/mtx_conversions/pbmc_1k_v3/pbmc_1k_v3_filtered_matrix.h5ad"
-MODEL = f"{PV}/references/celltypist_immune_v2/Immune_All_Low.pkl"
 SC_SHEET = f"sample,h5ad\npbmc_1k_v3,{H5AD}\n"
 SC_DESIGN = "\n".join([
     "qc.min_genes=200", "qc.max_pct_mt=20", "doublets.method=scrublet", "doublets.threshold=0.25",
@@ -300,7 +345,6 @@ SC_DESIGN = "\n".join([
     f"annotation.model={MODEL}"])
 
 
-@unittest.skipUnless(os.path.isfile(H5AD) and os.path.isfile(MODEL), "pbmc_1 results or CellTypist model missing")
 class SingleCellDesign(unittest.TestCase):
 
     def test_valid_design_is_normalised(self):

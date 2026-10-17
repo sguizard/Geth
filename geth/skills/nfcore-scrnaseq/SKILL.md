@@ -20,7 +20,8 @@ Columns: `sample,fastq_1,fastq_2,expected_cells`
 - `aligner`: `star` (STARsolo; robust, recommended here), `simpleaf` (default), `kallisto`, `cellranger` (needs licence-free container, slow).
 - Custom reference: `fasta` and `gtf`, absolute paths. Do not set `genome` at the same time.
 - **CellBender** (ambient RNA removal) is recommended for real data: keep it on (`skip_cellbender=false`, the
-  default). Geth runs it on an Eddie GPU automatically. A real sample with ~1,000 cells or more is not "small".
+  default). Geth sends it to a GPU automatically when the site has one (on CPUs it is slower but works).
+  A real sample with ~1,000 cells or more is not "small".
 - Only for tiny **test** datasets (a few MB of reads, a subset reference such as one chromosome):
   set `skip_cellbender=true` and `skip_qcatch=true` — these modules fail on such data.
 

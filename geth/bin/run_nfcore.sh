@@ -10,13 +10,14 @@
 # so failures are reported as text.
 set -uo pipefail
 run_dir=$1; pipeline=${2#nf-core/}; sheet=$3; params=$4; contrasts=${5:-}; analysis_profile=${6:-}
-source /exports/cmvm/eddie/eb/groups/alaw3_grp/sguizard/Dev/github/Geth/env.sh
+# Site settings: inherited from the Geth driver, or loaded from the repository's env.sh.
+[ -n "${GETH_RUNS_DIR:-}" ] || source "$(cd "$(dirname "$0")/../.." && pwd)/env.sh"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
 max_attempts=5
 
 case "$run_dir" in
-    "$PERSEUS_VEIL"/geth/runs/*) ;;
-    *) echo "STATUS: REFUSED - run_dir must be under $PERSEUS_VEIL/geth/runs"; exit 0 ;;
+    "$GETH_RUNS_DIR"/*) ;;
+    *) echo "STATUS: REFUSED - run_dir must be under $GETH_RUNS_DIR"; exit 0 ;;
 esac
 if ! revision=$(python3 "$checks" revision "$pipeline"); then
     echo "STATUS: REFUSED - $revision"; exit 0
@@ -56,17 +57,21 @@ fi
 input_bytes=$(python3 -c 'import csv, os, sys
 print(sum(os.path.getsize(v) for r in csv.DictReader(open(sys.argv[1])) for v in r.values()
           if v and v.startswith("/") and os.path.isfile(v)))' "$attempt/samplesheet.csv")
-profiles=roslin
+# Profiles: the site's (institutional or container profile), then the plan's analysis profile.
+profiles=${GETH_NFCORE_PROFILE:-}
 extra=()
 if [ -n "$analysis_profile" ]; then
-    profiles=roslin,$analysis_profile
+    profiles=${profiles:+$profiles,}$analysis_profile
     extra+=(--contrasts "$attempt/contrasts.csv")
 fi
-# CellBender runs on a GPU (gpu queue) unless the plan skips it.
-if [ "$pipeline" = scrnaseq ] && ! python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("skip_cellbender") in (True, "true") else 1)' "$attempt/params.json"; then
-    profiles=$profiles,gpu
-    extra+=(-c "$GETH_HOME/geth/conf/gpu.config")
+# CellBender runs on a GPU when the site has one (GETH_GPU=yes), unless the plan skips it.
+if [ "$pipeline" = scrnaseq ] && [ "${GETH_GPU:-no}" = yes ] && \
+        ! python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("skip_cellbender") in (True, "true") else 1)' "$attempt/params.json"; then
+    profiles=${profiles:+$profiles,}gpu
+    [ -n "${GETH_GPU_CONFIG:-}" ] && extra+=(-c "$GETH_GPU_CONFIG")
 fi
+profile_args=()
+[ -n "$profiles" ] && profile_args=(-profile "$profiles")
 if [ "$input_bytes" -lt 2000000000 ]; then resources=test; else resources=production; fi
 
 # Per-pipeline runtime: older pipelines pin their Nextflow (and Java), eager reads a TSV and takes max_* params.
@@ -85,18 +90,20 @@ fi
 if [ -n "$pipeline_legacy_limits" ] && [ "$resources" = test ]; then
     extra+=(--max_cpus 4 --max_memory 16.GB --max_time 4.h)
 fi
+site_config=()
+[ -n "${GETH_NFCORE_CONFIG:-}" ] && site_config=(-c "$GETH_NFCORE_CONFIG")  # applied last: the site wins
 
 # Separate launch dir: the Geth driver itself runs in $run_dir, and -resume must not pick its session.
 mkdir -p "$run_dir/nfcore"
 cd "$run_dir/nfcore"
-env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" -profile "$profiles" "${extra[@]}" \
-    -c "$GETH_HOME/geth/conf/$resources.config" \
+env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" "${profile_args[@]}" "${extra[@]}" \
+    -c "$GETH_HOME/geth/conf/$resources.config" "${site_config[@]}" \
     -params-file "$attempt/params.json" --input "$input" \
     --outdir "$run_dir/results" -w "$run_dir/work" -resume -ansi-log false \
     > "$attempt/nextflow.log" 2>&1
 rc=$?
 
-echo "PIPELINE: nf-core/$pipeline $revision (profiles: $profiles; resources: $resources)"
+echo "PIPELINE: nf-core/$pipeline $revision (profiles: ${profiles:-none}; resources: $resources)"
 if [ $rc -eq 0 ]; then
     python3 "$checks" record "$run_dir" ok "$attempt/samplesheet.csv" "$attempt/params.submitted.json"
     echo "STATUS: SUCCESS"

@@ -1,21 +1,17 @@
-#!/bin/bash
-# Stage the public real-size benchmark data on scratch (data-transfer job on the staging queue).
-#   airway (GSE52778 / PRJNA229998): 8 untreated/dexamethasone runs, as delivered by ENA
-#   pbmc_1k_v3: 10x Genomics public FASTQs
-#   GRCh38 (Ensembl 116 primary assembly + GTF) into the reference catalogue
-# Usage: qsub bench/stage_public.sge
-#$ -N geth_stage_public
-#$ -P roslin_alaw3_grp
-#$ -q staging
-#$ -l h_rt=12:00:00
-#$ -l h_vmem=4G
-#$ -j y
-#$ -cwd
+#!/usr/bin/env bash
+# Stage the public real-size benchmark data (about 30 GB of downloads) under $GETH_DATA_ROOT/data:
+#   airway (GSE52778 / PRJNA229998): 8 untreated/dexamethasone runs, as delivered by ENA (24 GB)
+#   pbmc_1k_v3: 10x Genomics public FASTQs (5 GB)
+#   GRCh38 (Ensembl 116 primary assembly + GTF) and CellTypist immune models into the reference catalogue
+# Run it where large downloads are allowed, e.g. as a job on a cluster's data-transfer queue. Jobs run a copy
+# of the script, so tell it where Geth is:
+#   SGE:   qsub -v GETH_HOME="$GETH_HOME" -cwd -j y -l h_rt=12:00:00 [-q <transfer queue>] [-P <project>] bench/stage_public.sh
+#   Slurm: sbatch --time=12:00:00 [--partition=<transfer partition>] bench/stage_public.sh
 set -euo pipefail
-source /exports/cmvm/eddie/eb/groups/alaw3_grp/sguizard/Dev/github/Geth/env.sh
+[ -n "${GETH_RUNS_DIR:-}" ] || source "${GETH_HOME:-$(cd "$(dirname "$0")/.." && pwd)}/env.sh"
 
 # --- airway: files exactly as ENA serves them (some runs include a third file of unpaired reads)
-A=$PERSEUS_VEIL/data/airway_GSE52778
+A=$GETH_DATA_ROOT/data/airway_GSE52778
 mkdir -p "$A/fastq"
 runs="SRR1039508 SRR1039509 SRR1039512 SRR1039513 SRR1039516 SRR1039517 SRR1039520 SRR1039521"
 curl -fsSL "https://www.ebi.ac.uk/ena/portal/api/filereport?accession=PRJNA229998&result=read_run&fields=run_accession,sample_title,library_layout,read_count,fastq_md5,fastq_ftp&format=tsv" > "$A/.ena_filereport.tsv"
@@ -46,7 +42,7 @@ FASTQ files as downloaded from ENA.
 EOF
 
 # --- PBMC 1k v3 (10x Genomics public dataset)
-P=$PERSEUS_VEIL/data/pbmc_1k_v3
+P=$GETH_DATA_ROOT/data/pbmc_1k_v3
 mkdir -p "$P"
 if [ ! -d "$P/fastq" ]; then
     curl -fsSL --retry 3 -o "$P/pbmc_1k_v3_fastqs.tar" https://cf.10xgenomics.com/samples/cell-exp/3.0.0/pbmc_1k_v3/pbmc_1k_v3_fastqs.tar
@@ -62,6 +58,8 @@ Source: https://www.10xgenomics.com/datasets (pbmc_1k_v3, Cell Ranger 3.0.0)
 EOF
 ls -la "$P/fastq"
 
-# --- GRCh38 reference into the catalogue
+# --- GRCh38 reference and CellTypist immune models into the catalogue
 "$GETH_HOME/geth/references/stage_ensembl.sh" homo_sapiens GRCh38 116 "Homo sapiens (human)"
-du -sh "$A" "$P" "$PERSEUS_VEIL/references"/*
+"$GETH_HOME/geth/references/stage_celltypist.sh" celltypist_immune_v2 "Homo sapiens (human)" "human immune cells" \
+    Immune_All_Low Immune_All_High
+du -sh "$A" "$P" "$GETH_REFERENCES"/*
