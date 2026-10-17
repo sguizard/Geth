@@ -260,8 +260,10 @@ workflow {
     if( params.mode == 'design' ) {
         file(params.run_dir).resolve('question.txt').text = params.question + '\n'
         file(params.run_dir).resolve('data_dir.txt').text = params.data_dir + '\n'
-        file(params.run_dir).resolve('lab_arm.txt').text = (params.lab_skill ? 'A1 design, with skill' : 'A0 design, no skill') + '\n'
-        def design = params.lab_skill ? designer_skill(params.question, params.data_dir) : designer_plain(params.question, params.data_dir)
+        // a command-line value arrives as text, and the text 'false' is true in Groovy
+        def with_skill = params.lab_skill.toString() == 'true'
+        file(params.run_dir).resolve('lab_arm.txt').text = (with_skill ? 'A1 design, with skill' : 'A0 design, no skill') + '\n'
+        def design = with_skill ? designer_skill(params.question, params.data_dir) : designer_plain(params.question, params.data_dir)
         SAVE_DESIGN(design).view()
     }
     else {
