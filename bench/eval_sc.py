@@ -23,7 +23,7 @@ def broad(label):
              ("dendritic cell", ("dc", "dendritic")),
              ("NK", ("nk cell", "nk ", "natural killer", "cd16+ nk", "cd56")),
              ("CD8 T", ("cd8", "cytotoxic t")),
-             ("CD4 T", ("cd4", "helper t", "treg", "regulatory t")),
+             ("CD4 T", ("cd4", "helper t", "t helper", "th1", "th2", "th17", "treg", "regulatory t")),
              ("other T", ("mait", "gamma", "γδ", "t cell", "t-cell")),
              ("B", ("b cell", "b-cell", "plasma")),
              ("platelet", ("platelet", "megakaryocyte")))
