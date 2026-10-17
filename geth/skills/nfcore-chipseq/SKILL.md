@@ -31,6 +31,8 @@ Use this pipeline for **ChIP-seq** (transcription factors, histone marks): align
 - `blacklist=<BED>` (ENCODE blacklist for the assembly) if available in the catalogue.
 - `aligner`: `bwa` (default), `bowtie2`, `chromap`, `star`.
 
+- Tiny test data (a few thousand reads per library): `skip_preseq=true` (preseq needs more reads).
+
 ## Typical failure causes
 - `control`/`control_replicate` pointing to a sample/replicate that does not exist.
 - Replicates not starting at 1; controls given an antibody.

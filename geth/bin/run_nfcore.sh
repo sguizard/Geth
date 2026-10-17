@@ -53,6 +53,9 @@ if ! python3 "$checks" check-plan "$pipeline" "$attempt/samplesheet.csv" "$attem
     exit 0
 fi
 
+# nf-core's own samplesheet checks count columns: write every column on every row.
+python3 "$checks" normalise-sheet "$attempt/samplesheet.csv" "$attempt/samplesheet.csv"
+
 # Resources: small test data on a small reference gets capped requests (fast scheduling); real data gets
 # nf-core's own. A large genome needs large jobs whatever the read count (e.g. STAR loads a human index in RAM).
 input_bytes=$(python3 -c 'import csv, os, sys

@@ -32,6 +32,9 @@ Columns: `group,replicate,barcode,input_file,fasta,gtf`
   otherwise `skip_modification_analysis=true`.
 - DNA: `call_variants=true` only if variant calling is requested.
 
+- `protocol=DNA`: also set `skip_quantification=true` and `skip_fusion_analysis=true` (both are RNA analyses;
+  the pipeline refuses DNA with quantification).
+
 ## Typical failure causes
 - Barcodes given with `skip_demultiplexing=true` (or input files without it).
 - `protocol` not matching the library (cDNA vs directRNA).
