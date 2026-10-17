@@ -5,7 +5,7 @@
 #                                                                  nothing runs on the data
 #   geth lab show <name>                                           print the design and its format check
 #   geth lab list                                                  all lab runs and where they stand
-#   geth lab build <design run> <name>                             arm B: an engineer agent implements a checked
+#   geth lab build <design run> <name> [--no-skill]                arm B: an engineer agent implements a checked
 #                                                                  design as step scripts (tested on a subset in a
 #                                                                  sandbox), a reviewer agent checks them (2 rounds
 #                                                                  at most), then Geth runs them on the full data
@@ -105,8 +105,9 @@ case "$cmd" in
         done
         ;;
     build)
-        [ $# -eq 2 ] || usage
-        src=$(run_dir_of "$1"); d=$(run_dir_of "$2")
+        [ $# -eq 2 ] || { [ $# -eq 3 ] && [ "$3" = --no-skill ]; } || usage
+        src=$(run_dir_of "$1"); d=$(run_dir_of "$2"); skill=true
+        [ "${3:-}" = --no-skill ] && skill=false
         head -n 1 "$src/lab_design_check.txt" 2>/dev/null | grep -q '^DESIGN CHECK: OK' \
             || { echo "Lab run '$1' has no checked design: run geth lab design first." >&2; exit 1; }
         [ -e "$d" ] && { echo "Lab run '$2' already exists: choose another name." >&2; exit 1; }
@@ -115,13 +116,14 @@ case "$cmd" in
         mkdir -p "$d"
         cp "$src"/lab_design_{steps,statistics,expected,rationale}.txt "$src/question.txt" "$src/data_dir.txt" "$d/"
         echo "$1" > "$d/design_from.txt"
-        echo "B build, from design $1" > "$d/lab_arm.txt"
+        if [ "$skill" = true ]; then echo "B1 build, from design $1" > "$d/lab_arm.txt"
+        else echo "B0 build (no coding skill), from design $1" > "$d/lab_arm.txt"; fi
         cd "$d"
         verdict=none
         for round in 1 2; do
             rm -f "$d/build_spec.txt"  # every round must check its own spec
             build_state "$d" "engineer round $round"
-            lab_nf "$d" engineer "engineer_$round" --build_round "$round" --data_file "${data[0]}" \
+            lab_nf "$d" engineer "engineer_$round" --build_round "$round" --data_file "${data[0]}" --lab_skill "$skill" \
                 || { build_state "$d" "failed: engineer round $round (see geth_engineer_$round.log)"; echo "Engineer round $round failed: see $d/geth_engineer_$round.log" >&2; exit 1; }
             [ -f "$d/build_spec.txt" ] || { build_state "$d" "failed: no checked spec after round $round"; echo "The engineer ended round $round without a checked spec." >&2; exit 1; }
             build_state "$d" "review round $round"

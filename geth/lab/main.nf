@@ -6,6 +6,7 @@
  *                   --lab_skill false gives the designer no best-practice skill (arm A0), true gives it one (arm A1).
  *   --mode engineer: arm B, an engineer agent implements a checked design as Python step scripts, testing each
  *                   one on a subset in the sandbox, then saves the pipeline spec (--build_round 1 or 2).
+ *                   --lab_skill false: the engineer has no coding skill (arm B0).
  *   --mode review  : arm B, a reviewer agent reads the scripts and their test outputs: approve or revise.
  *                   geth lab build runs these rounds, then the pipeline Geth renders from the spec.
  *
@@ -383,6 +384,56 @@ agent engineer {
     """
 }
 
+// The same engineer without the coding skill (arm B0).
+agent engineer_plain {
+    model "openai/${params.model}"
+    instruction '''You are an EXPERIMENTAL single-cell analysis engineer in Geth's lab. You implement an analysis
+    design that a person has already checked, as Python step scripts that Geth chains into a pipeline.
+    Each step is one script, run as "python3 step.py <input.h5ad> <output.h5ad>" in a sandbox: no network, no
+    files but its input, its own working folder, and ./models (CellTypist models Immune_All_Low.pkl and
+    Immune_All_High.pkl). Libraries: scanpy, anndata, celltypist, pydeseq2, harmonypy, numpy, pandas, scipy,
+    scikit-learn, statsmodels, matplotlib, seaborn. Read the input from sys.argv[1] and write the AnnData for the
+    next step to sys.argv[2]; keep the raw counts (layers["counts"]) through every step; write tables (.tsv, tab
+    separated) and figures (.png) in the working folder.
+    Results contract: the last step's AnnData has obs["cell_type"] (the annotation). The step that compares
+    conditions writes de_results.tsv, and the step that finds markers of clusters or cell types writes
+    markers.tsv; both have at least the columns cell_type, gene, log2fc, padj (one row per gene and cell type).
+    Implement the design's steps in its order; one script may hold several small steps; leave out steps whose
+    method is none. Work one step at a time: WRITE_STEP saves a script and checks it; TEST_STEP runs it on a
+    3000-cell subset, the first step from "input", every other step from the previous step's name, and shows
+    its log and outputs. Fix and test again until the step works and its outputs look right (cells kept,
+    columns, plausible values), then go on to the next step. READ_BUILD shows the design, the subset, your
+    steps and their test outputs. When every step has passed its test in order, call SAVE_SPEC with one line
+    per step in order, "<step> | <cpus> | <memory GB> | <minutes>" for the full data (at most 8 cpus, 64 GB,
+    240 minutes), until it prints "SPEC CHECK: OK".'''
+    tools 'nf:module_run:WRITE_STEP', 'nf:module_run:TEST_STEP', 'nf:module_run:READ_BUILD', 'nf:module_run:SAVE_SPEC'
+    maxIterations 90
+
+    input:
+    question: String
+    design: String
+    review: String
+    subset: String
+
+    output:
+    notes: LabNotes
+
+    prompt:
+    """
+    Request: ${question}
+
+    The checked design:
+    ${design}
+
+    Review of the previous round: ${review}
+
+    The subset for tests: ${subset}
+
+    When SAVE_SPEC has printed "SPEC CHECK: OK", answer with short notes: one line per step on what it does
+    and anything a reviewer should know.
+    """
+}
+
 agent reviewer {
     model "openai/${params.model}"
     instruction '''You are an EXPERIMENTAL code reviewer in Geth's lab. A person checked an analysis design; an
@@ -514,7 +565,9 @@ workflow {
             def previous = file(params.run_dir).resolve("review_${(params.build_round.toString() as int) - 1}.txt")
             def review = previous.exists() ? previous.text : 'none (first round)'
             def subset = MAKE_SUBSET(params.data_file)
-            SAVE_NOTES(engineer(question, design, review, subset)).view()
+            def with_skill = params.lab_skill.toString() == 'true'
+            def notes = with_skill ? engineer(question, design, review, subset) : engineer_plain(question, design, review, subset)
+            SAVE_NOTES(notes).view()
         }
         else {
             SAVE_REVIEW(reviewer(question, design)).view()
