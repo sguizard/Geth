@@ -25,6 +25,11 @@ Columns: `sample,fastq_1,fastq_2,expected_cells`
 - Only for tiny **test** datasets (a few MB of reads, a subset reference such as one chromosome):
   set `skip_cellbender=true` and `skip_qcatch=true` — these modules fail on such data.
 
+## Reusing a built index
+With `aligner=star`: if the reference catalogue entry you use lists a `STAR index:` for STAR 2.7.11b (the
+version of this release), set `star_index` to that folder and keep `fasta` and `gtf` as the entry's files.
+It saves about 30 minutes and 30 GB per run. Leave `star_index` unset otherwise.
+
 ## Typical failure causes
 - Swapped R1/R2 (barcode read must be `fastq_1`).
 - Wrong `protocol` → almost no cells detected or whitelist errors.

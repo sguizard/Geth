@@ -137,6 +137,20 @@ Genome FASTA: /data/geth/references/danio_rerio_GRCz11_ens116/Danio_rerio.GRCz11
 Annotation GTF: /data/geth/references/danio_rerio_GRCz11_ens116/Danio_rerio.GRCz11.116.gtf.gz
 ```
 
+**Reuse genome indexes.** Building a STAR index for a mammalian genome takes about 30 minutes and 30 GB of
+disk for every RNA-seq or single-cell run. Once one run has built it, register it in the catalogue, and the
+planner reuses it in later runs. The index is in the run's `work/` folder, or in `results/` when the plan set
+`save_reference=true`:
+
+```bash
+geth/references/register_star_index.sh homo_sapiens_GRCh38_ens116 \
+    $GETH_RUNS_DIR/my_pbmc/results/star/genome_generate/star "nf-core/scrnaseq 4.2.0"
+```
+
+The script hard-links the index into the catalogue entry, so it takes no extra space on the same file system.
+It records the STAR version and the entry's FASTA and GTF. The plan check accepts a reused index only for
+pipelines with the same STAR version and plans with the same FASTA and GTF.
+
 ## 7. Check the installation
 
 ```bash

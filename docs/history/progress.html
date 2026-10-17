@@ -247,10 +247,11 @@ a { color: var(--accent); }
         </ul>
       </div>
     </li>
-    <li class="phase now">
+    <li class="phase done">
       <div class="node"><span class="dot">7</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Downstream analysis</h3><span class="pill run">in progress</span></div>
+        <div class="phase-head"><h3>Downstream analysis</h3><span class="pill ok">done</span></div>
+        <p>Follow-up analyses of finished runs (v1.2.0 to v1.3.1): A · differential expression, B · CellBender on the GPU nodes, C · agent-designed single-cell analysis.</p>
         <ul class="check">
           <li class="done">A · Bulk DE (v1.2.0): <code>geth plan --from airway_1</code> → nf-core/differentialabundance 2.0.0. 3/3 plans perfect (dex vs untreated, blocked on donor); the approved run matched the hand-made baseline exactly (650 DE genes, Jaccard 1.0), 7/7 known dexamethasone genes up, 12 min from approval to checked report</li>
           <li class="done">B · GPU access confirmed: <code>gpu</code> queue, project roslin_alaw3_grp, NVIDIA L40S, PyTorch sees CUDA inside the CellBender container</li>
@@ -258,17 +259,53 @@ a { color: var(--accent); }
           <li class="done">B · PBMC rerun (pbmc_2) with CellBender: 20/20 tasks; CellBender ran on the <code>gpu</code> queue (<code>--cuda</code>, 6.6 min), project roslin_alaw3_grp; 38/38 report numbers traced (v1.3.0)</li>
           <li class="done">C · Agents design the single-cell analysis on a vetted Scanpy/CellTypist toolbox: 3/3 designs found all 7 expected PBMC populations, analyst labels matched CellTypist broad types for 100% of cells, every flag answered, all report numbers traced (v1.3.0)</li>
           <li class="done">C · Fixes found by the benchmark: CellTypist cache in the job folder, automatic doublet threshold (0 → 0.8% doublets), flags computed by Geth, annotations saved through a tool (v1.3.0, v1.3.1)</li>
-          <li class="done">Extra pipelines (v1.4.0): skills, schemas and checks for 10 more nf-core pipelines (23/23 tests). All 7 in scope pass their test profiles on Eddie; older templates run with their own Nextflow (legacy config parser, 23.10.4 for nanoseq, 22.10.8 + Java 17 for DSL1 eager)</li>
-          <li class="done">Public-ready (v1.5.0): every site-specific value moved to one site file (<code>site/site.env</code>, with examples for a single machine and for Eddie); documentation for users and developers in <code>docs/</code>; generic README; GPL-3.0 licence; <code>geth doctor</code>, <code>list</code>, <code>version</code>; self-contained tests; results summary for every pipeline (it crashed on nanoseq/eager samplesheets). Smoke runs through the new configuration: yeast bulk 13/13 plan checks, 42/42 report numbers; single-cell design 7/7 PBMC populations, 88/88</li>
-          <li class="done">Planner benchmark on realistic deliveries, round 1: 7 deliveries built from nf-core test data the way a facility delivers them (re-sequenced lanes, inputs shared per culture, facility IDs that are not valid sample names, a pooled Nanopore FASTQ). 14/21 plans fully correct; all 21 passed the plan check. methylseq, eager, isoseq 3/3; chipseq 2/3 (one sample per library); atacseq 2/3 (guessed mitochondrial contig); ampliseq 2/3 (unusable metadata); nanoseq 0/3 (ONT kit name instead of qcat's: the skill's own example was wrong)</li>
+        </ul>
+      </div>
+    </li>
+    <li class="phase now">
+      <div class="node"><span class="dot">8</span></div>
+      <div class="phase-body">
+        <div class="phase-head"><h3>More pipelines</h3><span class="pill run">in progress</span></div>
+        <p>Beyond RNA-seq (v1.4.0, v1.6.0): each pipeline gets a planner skill, its release's schemas, plan checks, its own runtime when needed, then benchmarks with agents.</p>
+        <ul class="check">
+          <li class="done">10 more nf-core pipelines (v1.4.0): skills, schemas and checks (23/23 tests). The 7 in scope pass their own test profiles on Eddie; older templates run with their own Nextflow (legacy config parser, 23.10.4 for nanoseq, 22.10.8 + Java 17 for DSL1 eager)</li>
+          <li class="done">Planner benchmark, round 1: 7 deliveries built from nf-core test data the way a facility delivers them (re-sequenced lanes, inputs shared per culture, facility IDs that are not valid sample names, a pooled Nanopore FASTQ). 14/21 plans fully correct; all 21 passed the plan check. methylseq, eager, isoseq 3/3; chipseq 2/3 (one sample per library); atacseq 2/3 (guessed mitochondrial contig); ampliseq 2/3 (unusable metadata); nanoseq 0/3 (ONT kit name instead of qcat's: the skill's own example was wrong)</li>
           <li class="done">Fixes from round 1: clearer ChIP-seq and Nanopore skills; new deterministic plan checks (qcat kit names, ampliseq metadata IDs and categories, ATAC-seq <code>mito_name</code> against the FASTA's contigs); scorers checked with hand-written correct plans and injected mistakes</li>
-          <li class="doing">Round 2 on the four deliveries with problems: 11/11 plans fully correct so far (chipseq 3/3, atacseq 3/3, ampliseq 3/3, nanoseq 2/2)</li>
-          <li>Next: one full agent run per new pipeline; STAR index reuse (the GRCh38 index built by pbmc_2, 29 GB, into the catalogue; reuse checked by STAR version, FASTA and GTF); sarek, taxprofiler, mag once the database copies are wired in</li>
+          <li class="done">Round 2 on the four deliveries with problems: 12/12 plans fully correct. All 7 pipelines now 3/3</li>
+          <li class="doing">One full agent run per new pipeline on its test delivery: plan, operator, nf-core run, reporter, report check</li>
+          <li>sarek, taxprofiler, mag: waiting for the paths of the existing database copies</li>
+        </ul>
+      </div>
+    </li>
+    <li class="phase done">
+      <div class="node"><span class="dot">9</span></div>
+      <div class="phase-body">
+        <div class="phase-head"><h3>Public release</h3><span class="pill ok">done</span></div>
+        <p>Geth usable at any site (v1.5.0).</p>
+        <ul class="check">
+          <li class="done">Every site-specific value moved to one site file (<code>site/site.env</code>), with examples for a single machine and for Eddie; no paths or project codes left in the code</li>
+          <li class="done">Documentation in <code>docs/</code>: a user guide for running analyses, a developer guide, installation, configuration, pipelines, validation; generic README; GPL-3.0 licence</li>
+          <li class="done"><code>geth doctor</code> (installation and endpoint checks), <code>geth list</code>, <code>geth version</code>; self-contained tests</li>
+          <li class="done">Results summary for every pipeline: reports crashed on nanoseq and eager samplesheets</li>
+          <li class="done">Smoke runs through the new configuration: yeast bulk 13/13 plan checks, 42/42 report numbers; single-cell design 7/7 PBMC populations, 88/88</li>
+        </ul>
+      </div>
+    </li>
+    <li class="phase now">
+      <div class="node"><span class="dot">10</span></div>
+      <div class="phase-body">
+        <div class="phase-head"><h3>Faster runs: reusing indexes</h3><span class="pill run">in progress</span></div>
+        <p>A human STAR index costs about 30 minutes and 30 GB in every RNA-seq or single-cell run (v1.6.0).</p>
+        <ul class="check">
+          <li class="done">nf-core/rnaseq 3.27.0 and nf-core/scrnaseq 4.2.0 build it with the same STAR 2.7.11b module and options: one index serves both</li>
+          <li class="done">The GRCh38 index built by pbmc_2 registered in the reference catalogue by hard link (no extra space), its STAR version, FASTA and GTF recorded; the plan check refuses a reused index that does not match the plan</li>
+          <li class="doing">The planner picks the index on its own (plan-only repeats), then two runs on small subsets of airway and PBMC must finish without building an index</li>
+          <li>Later: indexes of other aligners (Salmon, Bowtie2, BWA, Bismark)</li>
         </ul>
       </div>
     </li>
     <li class="phase">
-      <div class="node"><span class="dot">8</span></div>
+      <div class="node"><span class="dot">11</span></div>
       <div class="phase-body">
         <div class="phase-head"><h3>Frontier-style pipeline writing</h3><span class="pill next">later</span></div>
         <p>Agents write Nextflow code themselves, only once v1 is reliable.</p>
@@ -473,6 +510,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-17">2026-10-17</time><span>10 more nf-core pipelines added; sarek, taxprofiler and mag wait for the existing database copies. Older pipelines run with their own Nextflow version.</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Releases v1.3.0/v1.3.1 (GPU CellBender, agent-designed single-cell analysis) and v1.4.0 (pipelines).</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Geth made generic for any site: one site configuration file; documentation as Markdown in <code>docs/</code>; licence GPL-3.0 (can be changed later while there are no outside contributors). Release v1.5.0.</span></li>
+    <li><time datetime="2026-10-17">2026-10-17</time><span>Roadmap split: phase 7 covers the downstream analyses only (done); new pipelines, the public release and index reuse become phases 8 to 10.</span></li>
   </ul>
 </section>
 

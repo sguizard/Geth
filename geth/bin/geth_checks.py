@@ -42,8 +42,9 @@ OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_ve
 # Pipelines Geth runs. "design" = samplesheet columns that define the experiment and may never change
 # after approval (None = every column). Downstream pipelines also need contrasts and an analysis profile.
 REGISTRY = {
-    "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
-    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    # "star": the STAR version the release uses; a reused star_index must have been built with it.
+    "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b"},
+    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b"},
     "sarek": {"revision": "3.10.0", "design": ("patient", "sample", "status", "lane", "fastq_1", "fastq_2", "bam", "cram"),
               "key": ("fastq_1", "bam", "cram", "spring_1", "vcf")},
     "isoseq": {"revision": "3.0.1", "design": ("sample", "seq_data", "start_from"), "key": "seq_data",
@@ -279,7 +280,34 @@ def check_params(pipeline, params_text):
         if spec.get("format") in ("file-path", "directory-path", "path") and isinstance(value, str) and value \
                 and not is_remote(value) and not os.path.exists(value):
             problems.append(f"param '{key}' points to a file that does not exist: {value}")
+    problems += check_star_index(pipeline, params)
     return problems, params
+
+
+def check_star_index(pipeline, params):
+    """A reused STAR index must come from the reference catalogue (geth_index.json, written by
+    references/register_star_index.sh) and match the release's STAR version and the plan's FASTA and GTF."""
+    index, star = params.get("star_index"), REGISTRY[pipeline].get("star")
+    if not index or not star:
+        return []
+    aligner = str(params.get("aligner", "star_salmon" if pipeline == "rnaseq" else "simpleaf"))
+    if not aligner.startswith("star"):
+        return [f"param 'star_index' is only used with a STAR aligner (aligner is '{aligner}')"]
+    info_path = os.path.join(str(index), "geth_index.json")
+    if not os.path.isfile(info_path):
+        return [f"param 'star_index' must be an index registered in the reference catalogue (no geth_index.json in "
+                f"{index}); use one listed by LIST_REFERENCES, or leave star_index unset to build one"]
+    with open(info_path) as fh:
+        info = json.load(fh)
+    problems = []
+    if info.get("version") != star:
+        problems.append(f"param 'star_index' was built with STAR {info.get('version')}, but nf-core/{pipeline} "
+                        f"{REGISTRY[pipeline]['revision']} uses STAR {star}: leave star_index unset to build a matching index")
+    for key in ("fasta", "gtf"):
+        if params.get(key) != info.get(key):
+            problems.append(f"param 'star_index' was built from {key} {info.get(key)}: set '{key}' to that file "
+                            f"(got {params.get(key)!r}), or leave star_index unset")
+    return problems
 
 
 def check_fastq_sheet(pipeline, sheet_text, params):

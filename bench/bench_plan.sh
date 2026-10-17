@@ -3,7 +3,8 @@
 # (bench/eval_plan.py). Nothing is approved or run. One planner at a time (one Nextflow driver).
 # Usage: bench_plan.sh <tag> <repeats> <delivery> [<delivery> ...]
 #   deliveries: chipseq_spt5 atacseq_osmotic methylseq_wgbs ampliseq_16s nanoseq_barcoded eager_mammoth isoseq_brain
-#   (bench/stage_deliveries.sh), bulk_yeast sc_mouse_chr19 (bench/stage_testdata.sh)
+#   (bench/stage_deliveries.sh), bulk_yeast sc_mouse_chr19 (bench/stage_testdata.sh),
+#   airway_index_test pbmc_index_test (bench/stage_index_tests.sh)
 # Results: $GETH_BENCH_DIR/<tag>.jsonl (default $GETH_WORK_ROOT/bench)
 set -uo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
@@ -22,7 +23,9 @@ declare -A question=(
     [eager_mammoth]="Map these ancient mammoth reads to the mitochondrial genome and report mapping, duplication and DNA damage."
     [isoseq_brain]="Identify the full-length transcripts in this Iso-Seq library and map them to chromosome 19."
     [bulk_yeast]="Quantify gene expression in these yeast RNA-seq samples so that we can compare wild type with the RAP1 conditions."
-    [sc_mouse_chr19]="Process these single-cell RNA-seq samples into count matrices and give me a QC overview of the cells." )
+    [sc_mouse_chr19]="Process these single-cell RNA-seq samples into count matrices and give me a QC overview of the cells."
+    [airway_index_test]="Quantify gene expression in these two samples (untreated and dexamethasone-treated)."
+    [pbmc_index_test]="Process this single-cell RNA-seq sample into a count matrix with STARsolo and give me a QC overview of the cells." )
 declare -A dataset=( [bulk_yeast]=bulk [sc_mouse_chr19]=sc )
 
 for delivery in "$@"; do

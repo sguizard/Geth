@@ -81,6 +81,7 @@ On a real human bulk RNA-seq dataset, Geth matched a hand-made reference analysi
 - [Pipelines](docs/pipelines.md): what is supported and what each pipeline needs
 - [Developer guide](docs/developer-guide.md): architecture, gates, adding a pipeline, tests, benchmarks
 - [Validation](docs/validation.md): what was tested and the results
+- [Changelog](CHANGELOG.md): what changed in each release
 
 ## Status
 
