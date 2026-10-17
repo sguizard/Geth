@@ -16,7 +16,6 @@ For every pipeline it has:
   fully correct after one round of fixes. A full run, from plan to checked report, succeeded on that
   delivery ([validation](validation.md#full-runs-of-the-new-pipelines-version-16)). Not yet validated on
   real-size data, so review its plans with care.
-- **Parked.** Supported by the code, but waiting for its large reference databases.
 
 ## Supported pipelines
 
@@ -33,13 +32,13 @@ For every pipeline it has:
 | [methylseq](https://nf-co.re/methylseq/4.2.0) | 4.2.0 | DNA methylation: WGBS, RRBS, EM-seq, TAPS | validated with agents on test deliveries |
 | [nanoseq](https://nf-co.re/nanoseq/3.1.0) | 3.1.0 | Oxford Nanopore DNA, cDNA and direct RNA | validated with agents on test deliveries |
 | [eager](https://nf-co.re/eager/2.5.3) | 2.5.3 | Ancient DNA | validated with agents on test deliveries |
-| [sarek](https://nf-co.re/sarek/3.10.0) | 3.10.0 | Germline and somatic variant calling (WGS, WES, panels) | parked: needs the variant databases |
-| [taxprofiler](https://nf-co.re/taxprofiler/2.0.1) | 2.0.1 | Taxonomic profiling of shotgun metagenomes | parked: needs the profiler databases |
-| [mag](https://nf-co.re/mag/5.5.0) | 5.5.0 | Metagenome assembly and binning | parked: needs GTDB and the other databases |
+| [sarek](https://nf-co.re/sarek/3.10.0) | 3.10.0 | Germline and somatic variant calling (WGS, WES, panels) | validated with agents on test deliveries: germline, chicken. Somatic and human calling need a GATK bundle, not tested |
+| [taxprofiler](https://nf-co.re/taxprofiler/2.0.1) | 2.0.1 | Taxonomic profiling of shotgun metagenomes | validated with agents on test deliveries, with Kraken2 and Bracken. MetaPhlAn not tested |
+| [mag](https://nf-co.re/mag/5.5.0) | 5.5.0 | Metagenome assembly and binning | validated with agents on test deliveries, without GTDB-Tk and CheckM2 (no databases on the test site) |
 
-Results summaries in the report are tailored for rnaseq, scrnaseq, differentialabundance and the
-single-cell toolbox. For the other pipelines the report points to the pipeline's MultiQC report and
-results folders.
+Results summaries in the report are tailored for rnaseq, scrnaseq, differentialabundance, mag (assemblies
+and bins) and the single-cell toolbox. For the other pipelines the report gives MultiQC's general
+statistics and points to the MultiQC report and results folders.
 
 ## What each pipeline needs from you
 
@@ -59,6 +58,9 @@ Beyond that:
 | methylseq | genome FASTA | library kit or protocol (e.g. RRBS, EM-seq, PBAT) |
 | nanoseq | genome or transcriptome FASTA (+ GTF) | DNA, cDNA or direct RNA; barcodes, or already demultiplexed files |
 | eager | genome FASTA | library build (single or double stranded), UDG treatment, colour chemistry |
+| sarek | genome FASTA (uncompressed or bgzip), a known-variants VCF for base recalibration, a VEP cache for annotation: catalogue entries (`geth/references/stage_ensembl_variation.sh`) | germline or tumour/normal, sex, lanes, the variant callers you want |
+| taxprofiler | a databases sheet in the catalogue (Kraken2/Bracken, MetaPhlAn), registered with `geth/references/register_database.sh` | sequencing platform, runs per sample, single- or paired-end, host reads to remove |
+| mag | none required; a host genome to remove host reads; GTDB-Tk and CheckM2 databases for taxonomy and completeness (never downloaded per run) | runs per sample, groups for co-assembly, long reads |
 
 ## Pipelines with their own runtime
 
