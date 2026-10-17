@@ -19,6 +19,29 @@ Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/vali
   - the rnaseq and scrnaseq skills reuse it
   - the plan check refuses an index whose STAR version, FASTA or GTF does not match the plan
 - The run scorer handles every pipeline.
+- **Full agent runs of the seven new pipelines**, all succeeding after these fixes:
+  - samplesheets keep every column
+  - `skip_<step>` is accepted when the error names the step
+  - parameters that describe the data are frozen
+  - no analysis profile for upstream pipelines
+  - a third identical launch is refused
+  - ampliseq's `config_profile_name` is set by Geth
+  - nanoseq DNA and isoseq chunking checks
+  - the report check counts numbers from error reports
+- **Resource caps** depend on the reference and database size too. A small input on a human genome gets
+  full-size jobs.
+- **nf-core/sarek for livestock germline calling** (chicken):
+  - `geth/references/stage_ensembl_variation.sh` stages known variants, the VEP cache and an uncompressed
+    FASTA
+  - checks for VEP caches, known sites and FASTA compression
+- **Metagenomics:**
+  - `geth/references/register_database.sh` registers shared Kraken2 and MetaPhlAn databases without
+    copying them
+  - taxprofiler database checks, and Kraken2 memory sized to its index
+  - mag refuses GTDB-Tk and CAT downloads
+- **Geth lab (experimental):** `geth lab design` for agent-designed single-cell analyses (phase 11, arm A),
+  on benchmark data only.
+- `bench/snapshot.sh` runs benchmarks on a frozen commit.
 
 ## 1.5.0 (2026-10-17)
 

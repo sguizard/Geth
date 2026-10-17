@@ -54,7 +54,7 @@ geth plan --from my_experiment "Which genes change with the treatment? Pair samp
 | Single-cell RNA-seq (10x), with CellBender on a GPU | nf-core/scrnaseq 4.2.0 | validated with agents |
 | Differential expression of a bulk RNA-seq run | nf-core/differentialabundance 2.0.0 | validated with agents |
 | Single-cell QC, clustering and cell-type annotation | Geth's Scanpy and CellTypist toolbox | validated with agents |
-| Iso-Seq, amplicon, ChIP-seq, ATAC-seq, methylation, Nanopore, ancient DNA | isoseq, ampliseq, chipseq, atacseq, methylseq, nanoseq, eager | planner validated on realistic test deliveries |
+| Iso-Seq, amplicon, ChIP-seq, ATAC-seq, methylation, Nanopore, ancient DNA | isoseq, ampliseq, chipseq, atacseq, methylseq, nanoseq, eager | validated with agents on realistic test deliveries |
 | Variant calling, metagenomics | sarek, taxprofiler, mag | waiting for reference databases |
 
 On a real human bulk RNA-seq dataset, Geth matched a hand-made reference analysis gene for gene. On a
