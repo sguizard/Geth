@@ -90,7 +90,7 @@ case "$cmd" in
         for d in "$lab"/*/; do
             d=${d%/}
             [ -d "$d" ] || continue
-            pid=$(ls "$d"/.geth_*.pid 2>/dev/null | head -n 1)
+            pid=$(ls "$d"/.geth_*.pid 2>/dev/null | head -n 1 || true)
             if [ -n "$pid" ] && driver_alive "$pid"; then state=$(basename "$pid" .pid | sed 's/^\.geth_//; s/_/ round /')
             elif [ -f "$d/build_state.txt" ]; then state=$(cat "$d/build_state.txt")
             elif [ -f "$d/lab_design_check.txt" ]; then state=$(head -n 1 "$d/lab_design_check.txt")
