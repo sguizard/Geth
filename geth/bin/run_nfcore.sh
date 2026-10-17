@@ -69,12 +69,14 @@ eval "$(python3 "$checks" runtime "$pipeline")"
 nested_env=()
 [ -n "$pipeline_nxf_ver" ] && nested_env+=(NXF_VER="$pipeline_nxf_ver")
 [ -n "$pipeline_java_home" ] && nested_env+=(JAVA_HOME="$pipeline_java_home" NXF_JAVA_HOME="$pipeline_java_home")
+nested_env+=("${pipeline_env[@]}")
 input="$attempt/samplesheet.csv"
 if [ "$pipeline_input_format" = tsv ]; then
     python3 -c 'import csv, sys; csv.writer(sys.stdout, delimiter="\t", lineterminator="\n").writerows(csv.reader(open(sys.argv[1])))' \
         "$attempt/samplesheet.csv" > "$attempt/samplesheet.tsv"
     input="$attempt/samplesheet.tsv"
 fi
+[ -n "$pipeline_extra_config" ] && extra+=(-c "$GETH_HOME/geth/conf/$pipeline_extra_config")
 if [ -n "$pipeline_legacy_limits" ] && [ "$resources" = test ]; then
     extra+=(--max_cpus 4 --max_memory 16.GB --max_time 4.h)
 fi

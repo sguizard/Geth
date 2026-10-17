@@ -17,7 +17,10 @@ eval "$(python3 "$here/geth/bin/geth_checks.py" runtime "$pipeline")"
 nested_env=()
 [ -n "$pipeline_nxf_ver" ] && nested_env+=(NXF_VER="$pipeline_nxf_ver")
 [ -n "$pipeline_java_home" ] && nested_env+=(JAVA_HOME="$pipeline_java_home" NXF_JAVA_HOME="$pipeline_java_home")
-env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" -profile test,roslin -c "$here/geth/conf/test.config" \
+nested_env+=("${pipeline_env[@]}")
+extra=()
+[ -n "$pipeline_extra_config" ] && extra+=(-c "$here/geth/conf/$pipeline_extra_config")
+env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" -profile test,roslin -c "$here/geth/conf/test.config" "${extra[@]}" \
     --outdir "$out/results" -w "$out/work" -ansi-log false > "$out/run.log" 2>&1
 rc=$?
 tasks=$(grep -cE '^\[PROCESS' "$out/run.log")

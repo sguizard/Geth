@@ -50,16 +50,20 @@ REGISTRY = {
     "mag": {"revision": "5.5.0", "design": ("sample", "run", "group", "short_reads_1", "short_reads_2", "long_reads"),
             "key": ("short_reads_1", "long_reads")},
     "ampliseq": {"revision": "3.0.0", "design": ("sample", "run", "fastq_1", "fastq_2"), "key": "fastq_1"},
-    "chipseq": {"revision": "2.1.0", "key": "fastq_1",
+    # Older templates define functions in nextflow.config, which Nextflow 26's strict config parser rejects.
+    "chipseq": {"revision": "2.1.0", "key": "fastq_1", "nxf_env": {"NXF_SYNTAX_PARSER": "v1"},
                 "design": ("sample", "replicate", "antibody", "control", "control_replicate", "fastq_1", "fastq_2")},
-    "atacseq": {"revision": "2.1.2", "key": "fastq_1",
+    "atacseq": {"revision": "2.1.2", "key": "fastq_1", "nxf_env": {"NXF_SYNTAX_PARSER": "v1"},
                 "design": ("sample", "replicate", "control", "control_replicate", "fastq_1", "fastq_2")},
-    "nanoseq": {"revision": "3.1.0", "design": ("group", "replicate", "barcode", "input_file"),
+    # nanoseq uses the `echo` process directive, removed from recent Nextflow.
+    "nanoseq": {"revision": "3.1.0", "design": ("group", "replicate", "barcode", "input_file"), "nextflow": "23.10.4",
                 "key": ("input_file", "barcode"), "required_params": ("protocol",)},
-    "methylseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    "methylseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1",
+                  "nxf_env": {"NXF_SYNTAX_PARSER": "v1"}},
     # eager 2.5.3 is DSL1: run with an older Nextflow (and Java 17), TSV input, max_* resource params.
     "eager": {"revision": "2.5.3", "key": ("R1", "BAM"), "nextflow": "22.10.8",
               "java_home": "/usr/lib/jvm/java-17-openjdk", "input_format": "tsv", "legacy_limits": True,
+              "extra_config": "legacy_singularity.config",
               "design": ("Sample_Name", "Library_ID", "Lane", "SeqType", "Strandedness", "UDG_Treatment", "R1", "R2", "BAM")},
     "differentialabundance": {
         "revision": "2.0.0", "design": None, "key": "sample", "downstream": True,
@@ -836,6 +840,8 @@ def main(argv):
         print(f"pipeline_java_home={entry.get('java_home', '')}")
         print(f"pipeline_input_format={entry.get('input_format', 'csv')}")
         print(f"pipeline_legacy_limits={'1' if entry.get('legacy_limits') else ''}")
+        print(f"pipeline_extra_config={entry.get('extra_config', '')}")
+        print("pipeline_env=(" + " ".join(f"{k}={v}" for k, v in entry.get("nxf_env", {}).items()) + ")")
         return 0
     if cmd == "revision":
         name = pipeline_name(argv[2]) if len(argv) > 2 else ""
