@@ -127,6 +127,22 @@ geth/references/stage_celltypist.sh celltypist_immune_v2 "Homo sapiens (human)" 
     Immune_All_Low Immune_All_High
 ```
 
+For DNA variant calling with nf-core/sarek on any Ensembl species, add the species' known variants and VEP
+annotation cache to its genome entry. This also writes the uncompressed FASTA that sarek needs:
+
+```bash
+geth/references/stage_ensembl.sh gallus_gallus bGalGal1.mat.broiler.GRCg7b 116 "Gallus gallus (chicken)"
+geth/references/stage_ensembl_variation.sh gallus_gallus bGalGal1.mat.broiler.GRCg7b 116
+```
+
+For metagenomic profiling (nf-core/taxprofiler), register the databases you already have. Nothing is copied:
+the catalogue entry points to the folder and holds a ready-made databases sheet:
+
+```bash
+geth/references/register_database.sh kraken2_standard_20250402 kraken2 /shared/k2_standard_20250402 \
+    "Kraken2 standard 2025-04-02: RefSeq archaea, bacteria, viral, plasmid, human, UniVec_Core"
+```
+
 To add your own reference, create a folder in `$GETH_REFERENCES` with the files and a `README.txt` that
 says what they are, using absolute paths:
 

@@ -76,15 +76,7 @@ if [ "$pipeline" = scrnaseq ] && [ "${GETH_GPU:-no}" = yes ] && \
 fi
 profile_args=()
 [ -n "$profiles" ] && profile_args=(-profile "$profiles")
-reference_bytes=$(python3 -c 'import json, os, sys
-p = json.load(open(sys.argv[1]))
-fasta = p.get("fasta") or ""
-if p.get("genome") or p.get("star_index"):
-    print(10 ** 10)  # an iGenomes genome or a prebuilt index: assume a large genome
-elif fasta.startswith("/") and os.path.isfile(fasta):
-    print(os.path.getsize(fasta) * (3 if fasta.endswith(".gz") else 1))
-else:
-    print(0)' "$attempt/params.json")
+reference_bytes=$(python3 "$checks" reference-size "$pipeline" "$attempt/params.json")
 if [ "$input_bytes" -lt 2000000000 ] && [ "$reference_bytes" -lt 500000000 ]; then
     resources=test
 else
@@ -104,6 +96,9 @@ if [ "$pipeline_input_format" = tsv ]; then
     input="$attempt/samplesheet.tsv"
 fi
 [ -n "$pipeline_extra_config" ] && extra+=(-c "$GETH_HOME/geth/conf/$pipeline_extra_config")
+# Memory that depends on the data (e.g. Kraken2 loads its database index in RAM).
+python3 "$checks" resources "$pipeline" "$attempt/params.json" > "$attempt/resources.config"
+[ -s "$attempt/resources.config" ] && extra+=(-c "$attempt/resources.config")
 if [ -n "$pipeline_legacy_limits" ] && [ "$resources" = test ]; then
     extra+=(--max_cpus 4 --max_memory 16.GB --max_time 4.h)
 fi

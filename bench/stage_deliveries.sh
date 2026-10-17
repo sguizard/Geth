@@ -4,12 +4,13 @@
 # and a sample table. The planner must work out the design from these, as for a real delivery.
 # About 250 MB under $GETH_DATA_ROOT/testdata/<delivery>. Usage: stage_deliveries.sh [<delivery> ...]
 #   chipseq_spt5  atacseq_osmotic  methylseq_wgbs  ampliseq_16s  nanoseq_barcoded  eager_mammoth  isoseq_brain
+#   taxprofiler_reads  mag_gut
 set -euo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "${GETH_HOME:-$(cd "$(dirname "$0")/.." && pwd)}/env.sh"
 
 TD=https://raw.githubusercontent.com/nf-core/test-datasets
 ROOT=$GETH_DATA_ROOT/testdata
-deliveries=${*:-chipseq_spt5 atacseq_osmotic methylseq_wgbs ampliseq_16s nanoseq_barcoded eager_mammoth isoseq_brain}
+deliveries=${*:-chipseq_spt5 atacseq_osmotic methylseq_wgbs ampliseq_16s nanoseq_barcoded eager_mammoth isoseq_brain taxprofiler_reads mag_gut}
 
 get() {  # get <url> <file>: download once
     [ -s "$2" ] && return 0
@@ -173,6 +174,41 @@ library, raw subreads (BAM with its .pbi index; a 1% subset for this test). The 
 used for the library are in primers.fasta.
 Reference: GRCh38 chromosome 19 (Ensembl) and the Ensembl 104 annotation of chromosomes 13, 18 and 19,
 in reference/. We want the full-length transcripts and their structures on chromosome 19.
+EOF
+}
+
+taxprofiler_reads() {
+    local d=$ROOT/taxprofiler_reads t=$TD/taxprofiler/data/fastq
+    get "$t/ERX5474932_ERR5766176_1.fastq.gz" "$d/fastq/2612_A_R1.fastq.gz"
+    get "$t/ERX5474932_ERR5766176_2.fastq.gz" "$d/fastq/2612_A_R2.fastq.gz"
+    get "$t/ERX5474932_ERR5766176_B_1.fastq.gz" "$d/fastq/2612_B_R1.fastq.gz"
+    get "$t/ERX5474932_ERR5766176_B_2.fastq.gz" "$d/fastq/2612_B_R2.fastq.gz"
+    get "$t/ERX5474936_ERR5766180_1.fastq.gz" "$d/fastq/2612_C_R1.fastq.gz"
+    get "$t/ERX5474937_ERR5766181_1.fastq.gz" "$d/fastq/2613_A_R1.fastq.gz"
+    get "$t/ERX5474937_ERR5766181_2.fastq.gz" "$d/fastq/2613_A_R2.fastq.gz"
+    cat > "$d/README.txt" <<'EOF'
+Shotgun metagenomic sequencing (Illumina) of two samples, 2612 and 2613 (subsampled for this test).
+Sample 2612 was sequenced three times: runs A and B are paired-end, run C is single-end.
+Sample 2613 was sequenced once (run A, paired-end). We want one taxonomic profile per sample.
+EOF
+}
+
+mag_gut() {
+    local d=$ROOT/mag_gut t=$TD/mag/test_data c=$ROOT/.cache_mag
+    get "$t/test_minigut_R1.fastq.gz" "$c/A_R1.fastq.gz"
+    get "$t/test_minigut_R2.fastq.gz" "$c/A_R2.fastq.gz"
+    mkdir -p "$d/fastq"
+    for r in 1 2; do  # mouse A was sequenced on two lanes
+        [ -s "$d/fastq/mouseA_S1_L002_R${r}_001.fastq.gz" ] || split_lanes "$c/A_R$r.fastq.gz" \
+            "$d/fastq/mouseA_S1_L001_R${r}_001.fastq.gz" "$d/fastq/mouseA_S1_L002_R${r}_001.fastq.gz"
+    done
+    rm -f "$c"/A_R[12].fastq.gz && rmdir "$c"
+    get "$t/test_minigut_sample2_R1.fastq.gz" "$d/fastq/mouseB_S2_L001_R1_001.fastq.gz"
+    get "$t/test_minigut_sample2_R2.fastq.gz" "$d/fastq/mouseB_S2_L001_R2_001.fastq.gz"
+    cat > "$d/README.txt" <<'EOF'
+Shotgun metagenomes of the gut microbiota of two mice, A and B (Illumina paired-end, subsampled for this test).
+Mouse A was sequenced on two lanes (L001, L002). No host genome is provided with this delivery.
+We want metagenome-assembled genomes (bins) for each mouse, with their completeness and contamination.
 EOF
 }
 

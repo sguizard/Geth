@@ -459,6 +459,39 @@ def check_isoseq(rows, params):
     return problems
 
 
+def db_rows(params):
+    """Rows of the taxprofiler databases sheet (empty when there is none)."""
+    db = params.get("databases")
+    if not (isinstance(db, str) and os.path.isfile(db)):
+        return []
+    with open(db) as fh:
+        return [{(k or "").strip(): (v or "").strip() for k, v in r.items()} for r in csv.DictReader(fh)]
+
+
+def kraken2_index_bytes(params):
+    """Size of the largest Kraken2 index of the databases sheet: Kraken2 loads it in RAM."""
+    sizes = [os.path.getsize(os.path.join(r["db_path"], "hash.k2d")) for r in db_rows(params)
+             if r.get("tool") in ("kraken2", "bracken") and os.path.isfile(os.path.join(r.get("db_path", ""), "hash.k2d"))]
+    return max(sizes, default=0)
+
+
+def reference_bytes(pipeline, params):
+    """How large the reference data of a plan is (decides the resource caps): genome, prebuilt index, databases."""
+    if params.get("genome") or params.get("star_index"):
+        return 10 ** 10  # an iGenomes genome or a prebuilt index: assume a large genome
+    fasta = params.get("fasta") or ""
+    size = os.path.getsize(fasta) * (3 if fasta.endswith(".gz") else 1) if fasta.startswith("/") and os.path.isfile(fasta) else 0
+    return max(size, kraken2_index_bytes(params))
+
+
+def extra_resources(pipeline, params):
+    """Nextflow config for jobs whose memory depends on the data, e.g. Kraken2 loads its whole index in RAM."""
+    index = kraken2_index_bytes(params) if pipeline == "taxprofiler" else 0
+    if not index:
+        return ""
+    return "process {\n    withName: '.*KRAKEN2_KRAKEN2.*' {\n        memory = %d.GB\n    }\n}\n" % (index / 1e9 * 1.15 + 8)
+
+
 def check_taxprofiler(rows, params):
     problems = []
     runs = [(r.get("sample"), r.get("run_accession")) for r in rows]
@@ -478,6 +511,16 @@ def check_taxprofiler(rows, params):
                     problems.append(f"'{key}' is on but the databases sheet has no '{tool}' database")
         if "bracken" in tools and params.get("run_bracken") is True and params.get("run_kraken2") is not True:
             problems.append("'run_bracken' needs 'run_kraken2' too")
+    for i, r in enumerate(db_rows(params), start=2):
+        path, tool = r.get("db_path", ""), r.get("tool", "")
+        if not os.path.exists(path):
+            problems.append(f"databases sheet line {i}: db_path does not exist: {path}")
+        elif tool in ("kraken2", "bracken") and os.path.isdir(path) and not os.path.isfile(os.path.join(path, "hash.k2d")):
+            problems.append(f"databases sheet line {i}: {path} is not a Kraken2 database (no hash.k2d)")
+        elif tool == "bracken" and os.path.isdir(path):
+            m = re.search(r"-r\s*(\d+)", r.get("db_params", ""))
+            if m and not os.path.isfile(os.path.join(path, f"database{m.group(1)}mers.kmer_distrib")):
+                problems.append(f"databases sheet line {i}: no Bracken distribution for read length {m.group(1)} in {path}")
     if not any(k.startswith("run_") and v is True and k not in ("run_profile_standardisation", "run_krona")
                for k, v in params.items()):
         problems.append("no profiler enabled: set at least one run_<tool>=true matching the databases sheet")
@@ -500,6 +543,11 @@ def check_mag(rows, params):
         problems.append("short reads are single-end: set 'single_end=true'")
     if params.get("coassemble_group") is True and params.get("binning_map_mode") != "group":
         problems.append("'coassemble_group' needs 'binning_map_mode=group'")
+    if params.get("skip_gtdbtk") is not True and not params.get("gtdb_db"):
+        problems.append("GTDB-Tk would download its database (over 100 GB) at run time: set 'gtdb_db' from the "
+                        "reference catalogue, or skip_gtdbtk=true")
+    if params.get("cat_db_generate") is True:
+        problems.append("'cat_db_generate' downloads NCBI nr (hundreds of GB): use 'cat_db' from the catalogue, or leave CAT off")
     return problems
 
 
@@ -1165,6 +1213,12 @@ def main(argv):
     if cmd == "record":
         error_text = open(argv[6]).read() if len(argv) > 6 else ""
         record(argv[2], argv[3], open(argv[4]).read(), open(argv[5]).read(), error_text)
+        return 0
+    if cmd == "reference-size":  # reference-size <pipeline> <params.json>: bytes, for the resource caps
+        print(reference_bytes(pipeline_name(argv[2]), parse_params(read_text(argv[3]))))
+        return 0
+    if cmd == "resources":  # resources <pipeline> <params.json>: extra Nextflow config (may be empty)
+        sys.stdout.write(extra_resources(pipeline_name(argv[2]), parse_params(read_text(argv[3]))))
         return 0
     if cmd == "runtime":  # shell assignments for run_nfcore.sh
         entry = REGISTRY.get(pipeline_name(argv[2]) if len(argv) > 2 else "", {})
