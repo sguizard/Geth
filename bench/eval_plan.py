@@ -326,11 +326,41 @@ def isoseq_brain(rows, params, pipeline):
             "gtf_correct_if_set": "gtf" not in p or p.get("gtf") == gtf}
 
 
+GRCH38_STAR = f"{GRCH38}/star_2.7.11b"  # registered by geth/references/register_star_index.sh
+
+
+def airway_index_test(rows, params, pipeline):
+    """Two airway runs, subset (bench/stage_index_tests.sh): GRCh38 and its registered STAR index."""
+    p = params if isinstance(params, dict) else {}
+    name = {run_of(r.get("fastq_1")): r.get("sample", "") for r in rows}
+    return {"pipeline": pipeline == "rnaseq", "n_rows_2": len(rows) == 2,
+            "two_samples": len(set(name.values())) == 2 and set(name) == {"SRR1039508", "SRR1039509"},
+            "treatment_in_names": "dex" in name.get("SRR1039509", "").lower() and "dex" not in name.get("SRR1039508", "").lower(),
+            "pairs": bool(rows) and all((r.get("fastq_2") or "").endswith(f"{run_of(r.get('fastq_1'))}_2.fastq.gz") for r in rows),
+            "fasta_gtf": p.get("fasta") == GRCH38_FASTA and p.get("gtf") == GRCH38_GTF,
+            "star_index_reused": p.get("star_index") == GRCH38_STAR,
+            "star_aligner": str(p.get("aligner", "star_salmon")).startswith("star")}
+
+
+def pbmc_index_test(rows, params, pipeline):
+    """PBMC 1k v3, lane-1 subset (bench/stage_index_tests.sh): STARsolo with the registered STAR index."""
+    p = params if isinstance(params, dict) else {}
+    return {"pipeline": pipeline == "scrnaseq", "n_rows_1": len(rows) == 1,
+            "r1_r2_order": bool(rows) and all("_R1_" in (r.get("fastq_1") or "") and "_R2_" in (r.get("fastq_2") or "")
+                                              for r in rows),
+            "protocol_10XV3": str(p.get("protocol", "")).upper() == "10XV3",
+            "fasta_gtf": p.get("fasta") == GRCH38_FASTA and p.get("gtf") == GRCH38_GTF,
+            "aligner_star": p.get("aligner") == "star",
+            "star_index_reused": p.get("star_index") == GRCH38_STAR}
+
+
 SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc, "airway_de": airway_de,
+           "airway_index_test": airway_index_test, "pbmc_index_test": pbmc_index_test,
            "chipseq_spt5": chipseq_spt5, "atacseq_osmotic": atacseq_osmotic, "methylseq_wgbs": methylseq_wgbs,
            "ampliseq_16s": ampliseq_16s, "nanoseq_barcoded": nanoseq_barcoded, "eager_mammoth": eager_mammoth,
            "isoseq_brain": isoseq_brain}
 PIPELINE = {"bulk": "rnaseq", "airway": "rnaseq", "sc": "scrnaseq", "pbmc": "scrnaseq", "airway_de": "differentialabundance",
+            "airway_index_test": "rnaseq", "pbmc_index_test": "scrnaseq",
             **{k: k.split("_")[0] for k in ("chipseq_spt5", "atacseq_osmotic", "methylseq_wgbs", "ampliseq_16s",
                                             "nanoseq_barcoded", "eager_mammoth", "isoseq_brain")}}
 NEEDS_RUN_DIR = {"airway_de"}

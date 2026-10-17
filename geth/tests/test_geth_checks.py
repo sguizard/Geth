@@ -149,6 +149,43 @@ class UpstreamGate(unittest.TestCase):
         self.assertTrue(any("changed after approval" in p for p in problems))
 
 
+class StarIndexReuse(unittest.TestCase):
+    """A reused STAR index must be registered and match the release's STAR version, FASTA and GTF."""
+
+    def setUp(self):
+        self.index = tempfile.mkdtemp(prefix="geth_star_")
+        self.info = {"tool": "STAR", "version": "2.7.11b", "fasta": f"{YEAST}/reference/genome.fasta",
+                     "gtf": f"{YEAST}/reference/genes.gtf.gz"}
+        self.write_info(self.info)
+        self.params = {"fasta": f"{YEAST}/reference/genome.fasta", "gtf": f"{YEAST}/reference/genes.gtf.gz",
+                       "star_index": self.index}
+
+    def tearDown(self):
+        shutil.rmtree(self.index)
+
+    def write_info(self, info):
+        json.dump(info, open(os.path.join(self.index, "geth_index.json"), "w"))
+
+    def problems(self, pipeline="rnaseq", **change):
+        return gc.check_params(pipeline, json.dumps(dict(self.params, **change)))[0]
+
+    def test_registered_index_matching_the_plan_passes(self):
+        self.assertEqual(self.problems(), [])
+        self.assertEqual(self.problems("scrnaseq", aligner="star", protocol="10XV3"), [])
+
+    def test_mismatches_are_refused(self):
+        self.assertTrue(any("built from gtf" in p for p in self.problems(gtf=f"{YEAST}/reference/genome.fasta")))
+        self.write_info(dict(self.info, version="2.7.10a"))
+        self.assertTrue(any("STAR 2.7.10a" in p for p in self.problems()))
+        os.remove(os.path.join(self.index, "geth_index.json"))
+        self.assertTrue(any("registered in the reference catalogue" in p for p in self.problems()))
+
+    def test_scrnaseq_index_needs_the_star_aligner(self):
+        self.assertIn("param 'star_index' is only used with a STAR aligner (aligner is 'simpleaf')",
+                      self.problems("scrnaseq", protocol="10XV3"))
+        self.assertTrue(any("STAR aligner" in p for p in self.problems(aligner="hisat2")))
+
+
 class DifferentialAbundance(unittest.TestCase):
 
     def check(self, obs=OBS, params=DE_PARAMS, contrasts=CONTRASTS, profile="rnaseq", upstream=AIRWAY):

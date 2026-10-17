@@ -47,8 +47,8 @@ Beyond that:
 
 | Pipeline | Reference | Worth stating in the README |
 |---|---|---|
-| rnaseq | genome FASTA + GTF (catalogue or folder) | conditions and replicates, lanes or re-sequenced libraries, strandedness if known |
-| scrnaseq | genome FASTA + GTF | 10x chemistry (v2, v3 ...), the expected number of cells |
+| rnaseq | genome FASTA + GTF (catalogue or folder); a registered STAR index is reused | conditions and replicates, lanes or re-sequenced libraries, strandedness if known |
+| scrnaseq | genome FASTA + GTF; a registered STAR index is reused (STAR aligner) | 10x chemistry (v2, v3 ...), the expected number of cells |
 | differentialabundance | the upstream rnaseq run | the comparisons you want, pairing (donor) or batches |
 | sc_downstream | a CellTypist model in the catalogue, for your tissue and species | tissue, expected cell types |
 | isoseq | genome FASTA (+ GTF for some aligners) and the primers | what the files are (subreads, CCS, full-length), the primer set |

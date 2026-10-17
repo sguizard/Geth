@@ -215,12 +215,21 @@ Keep skills short (30 to 50 lines) and factual. The plan check, not the skill, i
 | `required_params` | parameters the plan must set (schema `required` flags are unreliable: profiles and defaults fill many) |
 | `downstream`, `profiles` | follow-up pipeline: takes contrasts and an analysis profile from this allowlist |
 | `toolbox` | Geth's own single-cell toolbox, validated against `SC_MENU` instead of a schema |
+| `star` | STAR version of the release: a reused `star_index` must have been built with it |
 | `nextflow` | Nextflow version for the nested run (`NXF_VER`) |
 | `java` | Java major version for the nested run, resolved from `GETH_JAVA<n>_HOME` |
 | `nxf_env` | extra environment for the nested run, e.g. `NXF_SYNTAX_PARSER=v1` |
 | `extra_config` | a config from `geth/conf/` added to the nested run |
 | `input_format` | `tsv`: the samplesheet is converted before launch (eager) |
 | `legacy_limits` | pass `--max_cpus/--max_memory/--max_time` (pre-`resourceLimits` templates) |
+
+**Index reuse.** A registered index has a `geth_index.json` next to it: tool, version, the FASTA and GTF it
+was built from, and how it was built (`geth/references/register_star_index.sh`). The catalogue README gets
+a `STAR index:` line, which the planner sees through `LIST_REFERENCES`, and the rnaseq and scrnaseq skills
+say when to use it. `check_star_index()` refuses three cases: an index without `geth_index.json`, a STAR
+version other than the registry's `star`, and a plan whose `fasta` or `gtf` differ from the recorded ones. A
+STAR index stores the annotation's transcript and gene models, so STARsolo counts and Salmon's transcriptome
+BAM depend on it.
 
 Pipeline-specific rules live in `EXTRA_CHECKS`, one function per pipeline taking the rows and params.
 Examples: tumour/normal status in sarek, IP-to-control links in chipseq, the UDG treatment and its
@@ -359,8 +368,8 @@ automatically: use public data only.
 - Validated with agents on real-size data for four analysis types. The planner of the other pipelines is
   validated on test-size deliveries only.
 - One organism and one experiment per plan.
-- Built indexes (e.g. STAR for GRCh38, about 25 minutes and 65 GB) are rebuilt for every run. Reuse
-  through the reference catalogue is planned.
+- Only STAR indexes can be registered for reuse so far (`geth/references/register_star_index.sh`); other
+  aligners' indexes (Salmon, Bowtie2, BWA, Bismark...) are still built by each run.
 - sarek, taxprofiler and mag wait for their databases to be added to the catalogue.
 - The single-cell analyst is lenient: in the benchmark it answered every flag but never chose to
   revise a design.
