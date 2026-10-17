@@ -262,10 +262,10 @@ a { color: var(--accent); }
         </ul>
       </div>
     </li>
-    <li class="phase now">
+    <li class="phase done">
       <div class="node"><span class="dot">8</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>More pipelines</h3><span class="pill run">in progress</span></div>
+        <div class="phase-head"><h3>More pipelines</h3><span class="pill ok">done</span></div>
         <p>Beyond RNA-seq (v1.4.0, v1.6.0): each pipeline gets a planner skill, its release's schemas, plan checks, its own runtime when needed, then benchmarks with agents.</p>
         <ul class="check">
           <li class="done">10 more nf-core pipelines (v1.4.0): skills, schemas and checks (23/23 tests). The 7 in scope pass their own test profiles on Eddie; older templates run with their own Nextflow (legacy config parser, 23.10.4 for nanoseq, 22.10.8 + Java 17 for DSL1 eager)</li>
@@ -275,7 +275,7 @@ a { color: var(--accent); }
           <li class="done">One full agent run per new pipeline on its test delivery (plan, operator, nf-core run, reporter, report check): all 7 succeed after the fixes their first runs exposed (samplesheets keep every column, <code>skip_&lt;step&gt;</code> accepted when the error names the step, parameters describing the data frozen, a third identical launch refused)</li>
           <li class="done">sarek, taxprofiler, mag wired to real references: chicken germline (Ensembl 116 known variants, VEP cache, uncompressed FASTA), the shared Kraken2/Bracken standard database registered without copying, mag refusing GTDB-Tk and CAT downloads. Planner 9/9 plans fully correct</li>
           <li class="done">Their first full runs all failed, each on a gap: the same VCF as <code>dbsnp</code> and <code>known_indels</code> collides in sarek; taxprofiler cannot merge single- and paired-end runs of one sample without merging the pairs first; mag's ALE crashes on tiny assemblies, and the gate refused <code>skip_ale</code> (a 3-letter step). Fixed with plan checks, skills and gate rules (43 tests); re-planned: every plan passes its check</li>
-          <li class="doing">Full runs of chicken, taxprofiler and mag after the fixes</li>
+          <li class="done">Full runs after the fixes: sarek succeeded (1 attempt, 42/42 report numbers traced), taxprofiler succeeded (1 attempt, 79/79) once a second gap was fixed (Bracken needs its own <code>db_name</code>), mag succeeded (1 attempt, 37/37) with a new results summary (assemblies and bins). All 10 new pipelines now run end to end with agents</li>
         </ul>
       </div>
     </li>
