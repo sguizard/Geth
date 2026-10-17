@@ -34,8 +34,27 @@ Data folders and the reference catalogue (`$PERSEUS_VEIL/references`, filled wit
 | report | **reporter** (tool `COLLECT_RESULTS`) | Markdown report from rounded, labelled result tables |
 | | report check | every number and link must trace to the results, otherwise the report carries a warning |
 
-Pinned: Nextflow 26.10.2, nf-agent 0.2.0, nf-core/rnaseq 3.27.0, nf-core/scrnaseq 4.2.0,
-nf-core/differentialabundance 2.0.0; single-cell toolbox in the CellTypist 1.7.1 container (Scanpy 1.12.4).
+Geth's driver: Nextflow 26.10.2 + nf-agent 0.2.0. Single-cell toolbox: CellTypist 1.7.1 container (Scanpy 1.12.4).
+
+## Pipelines
+Each pipeline is pinned, has a planner skill (`geth/skills/`), schema-driven and pipeline-specific plan checks
+(`geth/bin/geth_checks.py`), and runs with its own Nextflow when its template needs it. "Test profile" = the
+pipeline's own test run on Eddie with `-profile test,roslin` (`bench/baseline.sh`).
+
+| Pipeline | Version | Nested Nextflow | Test profile on Eddie | Validated with agents |
+|---|---|---|---|---|
+| rnaseq | 3.27.0 | 26.10.2 | ✅ 234 tasks | ✅ test data + airway (real size) |
+| scrnaseq | 4.2.0 | 26.10.2 (+ GPU CellBender) | ✅ 19 tasks | ✅ test data + PBMC 1k v3 |
+| differentialabundance | 2.0.0 | 26.10.2 | ✅ (airway baseline) | ✅ airway DE |
+| sc_downstream (Geth toolbox) | 1.0.0 | — | — | ✅ PBMC 1k v3 designs |
+| isoseq | 3.0.1 | 26.10.2 | ✅ 45 tasks | not yet |
+| ampliseq | 3.0.0 | 26.10.2 | ✅ 126 tasks | not yet |
+| methylseq | 4.2.0 | 26.10.2, legacy config parser | ✅ 35 tasks | not yet |
+| chipseq | 2.1.0 | 26.10.2, legacy config parser | ✅ 202 tasks | not yet |
+| atacseq | 2.1.2 | 26.10.2, legacy config parser | ✅ 256 tasks | not yet |
+| nanoseq | 3.1.0 | 23.10.4, singularity engine | ✅ 26 tasks | not yet |
+| eager | 2.5.3 (DSL1) | 22.10.8 + Java 17, singularity engine, TSV input | ✅ 26 tasks | not yet |
+| sarek, taxprofiler, mag | 3.10.0, 2.0.1, 5.5.0 | 26.10.2 | parked: need the existing database copies | — |
 Regression tests: `python3 geth/tests/test_geth_checks.py`.
 
 ## Layout

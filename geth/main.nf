@@ -248,10 +248,16 @@ process COLLECT_RESULTS {
 agent planner {
     model "openai/${params.model}"
     instruction '''You are Geth, a bioinformatics analysis planner. You turn a scientist's request and a
-        sequencing data folder into a run plan for exactly one nf-core pipeline: "rnaseq" (bulk RNA-seq,
-        nf-core/rnaseq) or "scrnaseq" (single-cell RNA-seq, nf-core/scrnaseq) for new sequencing data, or
-        "differentialabundance" (nf-core/differentialabundance) for differential expression on the results
-        of a finished nf-core/rnaseq run (an upstream run).
+        sequencing data folder into a run plan for exactly one nf-core pipeline. For new sequencing data:
+        "rnaseq" (bulk RNA-seq), "scrnaseq" (droplet single-cell RNA-seq), "sarek" (DNA-seq variant calling:
+        germline or tumour/normal, WGS/WES/panels), "isoseq" (PacBio Iso-Seq full-length transcripts),
+        "taxprofiler" (taxonomic profiling of shotgun metagenomes), "mag" (metagenome assembly and binning),
+        "ampliseq" (amplicon/metabarcoding: 16S, 18S, ITS, COI), "chipseq" (ChIP-seq peaks), "atacseq"
+        (ATAC-seq accessibility), "nanoseq" (Oxford Nanopore DNA/cDNA/direct RNA), "eager" (ancient DNA) or
+        "methylseq" (DNA methylation: WGBS, RRBS, EM-seq, TAPS).
+        For a follow-up analysis: "differentialabundance" for differential expression on the results of a
+        finished nf-core/rnaseq run (an upstream run). If none of these fits the data or the request, say so
+        in the rationale instead of forcing a pipeline.
         Always inspect the folders first: list them, then read every README/metadata text file in them;
         for a follow-up analysis also read the upstream run's question.txt, plan_samplesheet.csv,
         plan_params.json and plan_rationale.txt, and list its results folder.
@@ -268,7 +274,9 @@ agent planner {
         fix every problem it reports, and repeat until it prints "PLAN CHECK: OK".'''
     tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_PLAN',
         'nf:module_run:SC_INSPECT'
-    skills 'nfcore-rnaseq', 'nfcore-scrnaseq', 'nfcore-differentialabundance', 'sc-downstream'
+    skills 'nfcore-rnaseq', 'nfcore-scrnaseq', 'nfcore-differentialabundance', 'sc-downstream', 'nfcore-sarek',
+        'nfcore-isoseq', 'nfcore-taxprofiler', 'nfcore-mag', 'nfcore-ampliseq', 'nfcore-chipseq', 'nfcore-atacseq',
+        'nfcore-nanoseq', 'nfcore-eager', 'nfcore-methylseq'
     maxIterations 25
 
     input:
@@ -285,8 +293,8 @@ agent planner {
     Data folder: ${data_dir}
     Upstream run: ${upstream}
 
-    In your final answer give exactly the plan that passed CHECK_PLAN: the pipeline ("rnaseq", "scrnaseq"
-    or "differentialabundance"); the samplesheet (for differentialabundance: the observations sheet) as a
+    In your final answer give exactly the plan that passed CHECK_PLAN: the pipeline name (e.g. "rnaseq",
+    "sarek", "differentialabundance"); the samplesheet (for differentialabundance: the observations sheet) as a
     list of CSV lines, header line first; the pipeline parameters as a list of key=value entries, one per
     parameter (do not include "input", "outdir" or "contrasts"); for differentialabundance the contrasts
     as a list of CSV lines, header line first, and the analysis profile (otherwise an empty list and an

@@ -54,8 +54,8 @@ fi
 
 # Resources: small test data gets capped requests (fast scheduling); real data gets nf-core's own.
 input_bytes=$(python3 -c 'import csv, os, sys
-print(sum(os.path.getsize(r[k]) for r in csv.DictReader(open(sys.argv[1])) for k in ("fastq_1", "fastq_2") if r.get(k)))' \
-    "$attempt/samplesheet.csv")
+print(sum(os.path.getsize(v) for r in csv.DictReader(open(sys.argv[1])) for v in r.values()
+          if v and v.startswith("/") and os.path.isfile(v)))' "$attempt/samplesheet.csv")
 profiles=roslin
 extra=()
 if [ -n "$analysis_profile" ]; then
@@ -69,12 +69,29 @@ if [ "$pipeline" = scrnaseq ] && ! python3 -c 'import json, sys; sys.exit(0 if j
 fi
 if [ "$input_bytes" -lt 2000000000 ]; then resources=test; else resources=production; fi
 
+# Per-pipeline runtime: older pipelines pin their Nextflow (and Java), eager reads a TSV and takes max_* params.
+eval "$(python3 "$checks" runtime "$pipeline")"
+nested_env=()
+[ -n "$pipeline_nxf_ver" ] && nested_env+=(NXF_VER="$pipeline_nxf_ver")
+[ -n "$pipeline_java_home" ] && nested_env+=(JAVA_HOME="$pipeline_java_home" NXF_JAVA_HOME="$pipeline_java_home")
+nested_env+=("${pipeline_env[@]}")
+input="$attempt/samplesheet.csv"
+if [ "$pipeline_input_format" = tsv ]; then
+    python3 -c 'import csv, sys; csv.writer(sys.stdout, delimiter="\t", lineterminator="\n").writerows(csv.reader(open(sys.argv[1])))' \
+        "$attempt/samplesheet.csv" > "$attempt/samplesheet.tsv"
+    input="$attempt/samplesheet.tsv"
+fi
+[ -n "$pipeline_extra_config" ] && extra+=(-c "$GETH_HOME/geth/conf/$pipeline_extra_config")
+if [ -n "$pipeline_legacy_limits" ] && [ "$resources" = test ]; then
+    extra+=(--max_cpus 4 --max_memory 16.GB --max_time 4.h)
+fi
+
 # Separate launch dir: the Geth driver itself runs in $run_dir, and -resume must not pick its session.
 mkdir -p "$run_dir/nfcore"
 cd "$run_dir/nfcore"
-nextflow run "nf-core/$pipeline" -r "$revision" -profile "$profiles" "${extra[@]}" \
+env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" -profile "$profiles" "${extra[@]}" \
     -c "$GETH_HOME/geth/conf/$resources.config" \
-    -params-file "$attempt/params.json" --input "$attempt/samplesheet.csv" \
+    -params-file "$attempt/params.json" --input "$input" \
     --outdir "$run_dir/results" -w "$run_dir/work" -resume -ansi-log false \
     > "$attempt/nextflow.log" 2>&1
 rc=$?
