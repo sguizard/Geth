@@ -411,7 +411,33 @@ def check_sarek(rows, params):
         problems.append(f"patient '{patient}' has a tumour but no normal sample; {', '.join(sorted(paired_only))} need tumour/normal pairs")
     if "fasta" not in params and "genome" not in params:
         problems.append("set 'fasta' (a reference from the catalogue) or 'genome'")
+    fasta = params.get("fasta")
+    if isinstance(fasta, str) and fasta.endswith(".gz") and os.path.isfile(fasta) and not is_bgzip(fasta):
+        problems.append("sarek cannot index a gzip-compressed 'fasta': use the uncompressed FASTA of the catalogue entry")
+    custom = not params.get("genome") or params.get("igenomes_ignore") is True
+    skipped = set(filter(None, str(params.get("skip_tools", "")).split(",")))
+    if step == "mapping" and custom and "baserecalibrator" not in skipped and not params.get("dbsnp") \
+            and not params.get("known_indels"):
+        problems.append("base recalibration needs known sites with a custom genome: set 'dbsnp' (and "
+                        "'known_indels') from the catalogue, or skip_tools=baserecalibrator")
+    if "vep" in tools and custom:
+        keys = ("vep_cache", "vep_species", "vep_genome", "vep_cache_version")
+        missing = [k for k in keys if not params.get(k)]
+        if missing:
+            problems.append(f"'vep' with a custom genome needs {', '.join(missing)} (from the catalogue entry's VEP cache)")
+        else:
+            folder = os.path.join(str(params["vep_cache"]), str(params["vep_species"]),
+                                  f"{params['vep_cache_version']}_{params['vep_genome']}")
+            if not os.path.isdir(folder):
+                problems.append(f"VEP cache folder not found: {folder} (check vep_species, vep_genome, vep_cache_version)")
     return problems
+
+
+def is_bgzip(path):
+    """True for a BGZF (block-gzip) file, which samtools and GATK can index; plain gzip they cannot."""
+    with open(path, "rb") as fh:
+        head = fh.read(18)
+    return len(head) == 18 and head[:2] == b"\x1f\x8b" and bool(head[3] & 4) and head[12:14] == b"BC"
 
 
 def check_isoseq(rows, params):

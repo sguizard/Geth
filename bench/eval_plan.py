@@ -354,13 +354,41 @@ def pbmc_index_test(rows, params, pipeline):
             "star_index_reused": p.get("star_index") == GRCH38_STAR}
 
 
+CHICKEN = os.path.join(os.environ["GETH_REFERENCES"], "gallus_gallus_bGalGal1.mat.broiler.GRCg7b_ens116")
+
+
+def chicken_wgs(rows, params, pipeline):
+    """Three chickens, one on two lanes (bench/stage_chicken.sh): germline calling with sarek."""
+    p = params if isinstance(params, dict) else {}
+    lib = by_library(rows, r"(red1|A191|bird3)_S\d_(L00\d)_")
+    lanes = sorted((m.group(1), m.group(2)) for r in rows if (m := re.match(r"(red1|A191|bird3)_S\d_(L00\d)_", base(r.get("fastq_1")))))
+    tools = set(str(p.get("tools", "")).split(","))
+    return {"pipeline": pipeline == "sarek", "n_rows_4": len(rows) == 4, "r1_r2_pairs": pairs_ok(rows),
+            "all_files": lanes == [("A191", "L001"), ("A191", "L002"), ("bird3", "L001"), ("red1", "L001")],
+            "one_sample_per_bird": all(len({(r.get("patient"), r.get("sample")) for r in rs}) == 1 for rs in lib.values())
+            and len({r.get("sample") for r in rows}) == 3,
+            "lanes_distinct": len({r.get("lane") for r in lib.get("A191", [])}) == 2,
+            "germline_status": bool(rows) and all(str(r.get("status")) == "0" for r in rows),
+            "sex_na_for_birds": bool(rows) and all(r.get("sex") == "NA" for r in rows),
+            "fasta_uncompressed": p.get("fasta") == f"{CHICKEN}/Gallus_gallus.bGalGal1.mat.broiler.GRCg7b.dna.toplevel.fa",
+            "known_sites": p.get("dbsnp") == f"{CHICKEN}/gallus_gallus.vcf.gz",
+            "germline_caller": bool(tools & {"haplotypecaller", "deepvariant", "freebayes"}),
+            "no_somatic_or_human": not tools & {"mutect2", "ascat", "controlfreec", "strelka_somatic"}
+            and not p.get("germline_resource") and not p.get("pon"),
+            "vep_from_catalogue": "vep" in tools and p.get("vep_cache") == f"{CHICKEN}/vep_cache"
+            and p.get("vep_species") == "gallus_gallus" and str(p.get("vep_cache_version")) == "116"
+            and p.get("vep_genome") == "bGalGal1.mat.broiler.GRCg7b",
+            "joint_genotyping": "haplotypecaller" not in tools or p.get("joint_germline") in (True, "true")}
+
+
 SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc, "airway_de": airway_de,
+           "chicken_wgs": chicken_wgs,
            "airway_index_test": airway_index_test, "pbmc_index_test": pbmc_index_test,
            "chipseq_spt5": chipseq_spt5, "atacseq_osmotic": atacseq_osmotic, "methylseq_wgbs": methylseq_wgbs,
            "ampliseq_16s": ampliseq_16s, "nanoseq_barcoded": nanoseq_barcoded, "eager_mammoth": eager_mammoth,
            "isoseq_brain": isoseq_brain}
 PIPELINE = {"bulk": "rnaseq", "airway": "rnaseq", "sc": "scrnaseq", "pbmc": "scrnaseq", "airway_de": "differentialabundance",
-            "airway_index_test": "rnaseq", "pbmc_index_test": "scrnaseq",
+            "airway_index_test": "rnaseq", "pbmc_index_test": "scrnaseq", "chicken_wgs": "sarek",
             **{k: k.split("_")[0] for k in ("chipseq_spt5", "atacseq_osmotic", "methylseq_wgbs", "ampliseq_16s",
                                             "nanoseq_barcoded", "eager_mammoth", "isoseq_brain")}}
 NEEDS_RUN_DIR = {"airway_de"}
