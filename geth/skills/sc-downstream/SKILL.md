@@ -21,7 +21,8 @@ CellBender; otherwise `star/mtx_conversions/<sample>/<sample>_filtered_matrix.h5
   Prefer data-driven thresholds (MAD-based outliers from SC_INSPECT) over fixed textbook values; do not remove
   more than ~10–15% of cells unless the data are clearly poor.
 - Doublets: `doublets.method=scrublet`; `doublets.expected_rate` ≈ 0.008 per 1,000 recovered 10x cells
-  (e.g. 0.008 for 1k cells, 0.04 for 5k); `doublets.threshold` (score cut-off, default 0.25; lower = stricter).
+  (e.g. 0.008 for 1k cells, 0.04 for 5k); `doublets.threshold=auto` (recommended: Scrublet's bimodal minimum of
+  simulated doublet scores) or a fixed score cut-off (lower = stricter).
 - Normalisation: `normalize.target_sum=10000` (log1p applied).
 - Features: `hvg.n_top_genes` (2000–3000), `hvg.flavor` (`seurat` or `cell_ranger`).
 - Embedding: `pca.n_comps` (30–50), `neighbors.n_neighbors` (10–30), `neighbors.n_pcs` (≤ pca.n_comps, 20–40).
@@ -34,7 +35,9 @@ CellBender; otherwise `star/mtx_conversions/<sample>/<sample>_filtered_matrix.h5
   (immune cells: `Immune_All_Low.pkl` fine-grained, `Immune_All_High.pkl` broad); `annotation.majority_voting=true`.
 
 ## Revision (analyst, at most once)
-After the first analysis you see the diagnostics. Revise only if a diagnostic shows a real problem, and change
+After the first analysis you see the diagnostics, ending with FLAGS computed by Geth (cells kept < 85%,
+doublet rate far from expected, clusters with CellTypist agreement < 60%, clusters under 10 cells). Address
+each flag: revise, or explain why it needs no change (e.g. a small but real population such as pDCs). Revise only if a diagnostic shows a real problem, and change
 only tunable keys (QC thresholds, doublet rate/threshold, HVG number, neighbours, Leiden resolutions/chosen).
 Add `justification=` citing the diagnostic, for example:
 - a filter removed far more cells than expected (cells kept < 85%) → relax that threshold;

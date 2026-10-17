@@ -201,7 +201,9 @@ def sc_downstream(run_dir):
                                    [["input", "", count(d["cells_input"])]]
                                    + [[s["filter"], count(s["removed"]), count(s["kept"])] for s in d["qc_steps"]])
              + f"\n\nCells kept: {count(d['cells_kept'])} of {count(d['cells_input'])} ({pct(100 * d['cells_kept_fraction'])}%). "
-             f"Doublets removed: {count(d['doublets']['detected'])} ({pct(100 * d['doublets']['rate'])}%). "
+             f"Doublets removed: {count(d['doublets']['detected'])} ({pct(100 * d['doublets']['rate'])}%"
+             + (f"; expected {pct(100 * d['doublets']['expected_rate'])}%, score threshold {d['doublets']['threshold']}"
+                if "threshold" in d["doublets"] else "") + "). "
              f"Genes kept: {count(d['genes_kept'])}.",
              "### Clustering\n" + table(["Leiden resolution", "Clusters", "Smallest cluster (cells)"],
                                         [[r, v["clusters"], v["smallest_cluster"]] for r, v in d["leiden"].items()])
@@ -215,6 +217,11 @@ def sc_downstream(run_dir):
              "### CellTypist composition (per-cell labels)\n" + table(
                  ["Cell type", "Cells", "Share (%)"],
                  [[k, count(v), pct(100 * v / d["cells_kept"])] for k, v in list(d["celltypist_composition"].items())[:15]])]
+    annotations = os.path.join(run_dir, "annotations.txt")
+    if os.path.isfile(annotations):
+        with open(annotations) as fh:
+            parts.append("### Analyst's cluster annotations\n" + "\n".join(f"- {line.strip()}" for line in fh if line.strip()))
+    parts.append("### Flags raised by the diagnostics\n" + ("\n".join(f"- {f}" for f in d.get("flags", [])) or "None."))
     figures = sorted(glob.glob(os.path.join(out, "*.png")))
     if figures:
         parts.append("Figures: " + ", ".join(f"`{f}`" for f in figures))

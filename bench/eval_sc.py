@@ -56,7 +56,10 @@ def main():
     out["expected_populations_found"] = f"{sum(p in found for p in EXPECTED)}/{len(EXPECTED)}"
     out["missing_populations"] = [p for p in EXPECTED if p not in found]
 
-    outcome = open(os.path.join(run_dir, "outcome.txt")).read() if os.path.isfile(os.path.join(run_dir, "outcome.txt")) else ""
+    source = os.path.join(run_dir, "annotations.txt")
+    if not os.path.isfile(source):
+        source = os.path.join(run_dir, "outcome.txt")
+    outcome = open(source).read() if os.path.isfile(source) else ""
     labels = {}
     for m in re.finditer(r"cluster\s*(\d+)\s*[:=]\s*([^,(\]\n]+)", outcome, re.I):
         labels[m.group(1)] = m.group(2).strip()
@@ -67,6 +70,8 @@ def main():
     out["agent_annotated_clusters"] = f"{len([k for k in labels if k in sizes])}/{len(sizes)}"
     out["agent_vs_celltypist_agreement"] = round(agree / annotated, 3) if annotated else 0.0
     out["uncertain_clusters"] = sum("uncertain" in v.lower() for v in labels.values())
+    out["flags_final"] = len(d.get("flags", []))
+    out["doublet_threshold"] = d["doublets"].get("threshold")
     check = os.path.join(run_dir, "report_check.txt")
     if os.path.isfile(check):
         m = re.search(r"(\d+)/(\d+) numbers traced", open(check).read())

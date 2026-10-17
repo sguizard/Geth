@@ -59,7 +59,7 @@ SC_MENU = {
     "qc.min_cells_per_gene": ("int", 0, 100, False),
     "doublets.method": ("choice", ("scrublet", "none"), None, True),
     "doublets.expected_rate": ("float", 0.0, 0.3, False),
-    "doublets.threshold": ("float", 0.05, 0.95, False),
+    "doublets.threshold": ("float_or_auto", 0.01, 0.95, False),
     "normalize.target_sum": ("int", 1000, 1000000, False),
     "hvg.n_top_genes": ("int", 200, 10000, False),
     "hvg.flavor": ("choice", ("seurat", "cell_ranger"), None, False),
@@ -317,6 +317,10 @@ def check_de(sheet_text, params, contrasts_text, profile, upstream):
 def sc_value(key, value):
     """Normalise one design value to its menu type; return (value, problem or None)."""
     kind, low, high, _ = SC_MENU[key]
+    if kind == "float_or_auto":
+        if str(value).strip().lower() == "auto":
+            return "auto", None
+        kind = "float"
     try:
         if kind == "int":
             v = int(value)

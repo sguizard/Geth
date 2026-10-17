@@ -19,6 +19,7 @@ import tempfile
 _cache = os.environ.get("GETH_CACHE") or tempfile.mkdtemp(prefix="geth_sc_")
 os.environ.setdefault("NUMBA_CACHE_DIR", os.path.join(_cache, "numba"))
 os.environ.setdefault("MPLCONFIGDIR", os.path.join(_cache, "mpl"))
+os.environ.setdefault("CELLTYPIST_FOLDER", os.path.join(_cache, "celltypist"))  # default ~/.celltypist is read-only in jobs
 
 import warnings  # noqa: E402
 
@@ -32,7 +33,7 @@ import scanpy as sc  # noqa: E402
 DEFAULTS = {
     "qc.min_genes": 200, "qc.max_genes": None, "qc.min_counts": None, "qc.max_counts": None,
     "qc.max_pct_mt": 20.0, "qc.min_cells_per_gene": 3,
-    "doublets.method": "scrublet", "doublets.expected_rate": 0.06, "doublets.threshold": 0.25,
+    "doublets.method": "scrublet", "doublets.expected_rate": 0.06, "doublets.threshold": "auto",
     "normalize.target_sum": 10000, "hvg.n_top_genes": 2000, "hvg.flavor": "seurat", "scale": True,
     "pca.n_comps": 50, "neighbors.n_neighbors": 15, "neighbors.n_pcs": 30,
     "leiden.resolutions": [0.5, 1.0], "leiden.chosen": 1.0,
@@ -52,6 +53,29 @@ def load(path):
     adata.var["hb"] = adata.var_names.str.upper().str.match(r"^HB(?!P)")
     sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "ribo", "hb"], inplace=True, log1p=True, percent_top=None)
     return adata
+
+
+# Thresholds behind the diagnostic flags (also stated in the sc-downstream skill).
+FLAG_MIN_KEPT = 0.85
+FLAG_MIN_AGREEMENT = 0.60
+FLAG_MIN_CLUSTER_CELLS = 10
+
+
+def bimodal_threshold(scores, bins=50):
+    """Scrublet's automatic threshold without scikit-image: smooth the histogram of simulated doublet scores
+    until it has two peaks, and return the minimum between them (the threshold_minimum method)."""
+    hist, edges = np.histogram(scores, bins=bins)
+    smooth = hist.astype(float)
+    for _ in range(10000):
+        peaks = [i for i in range(1, len(smooth) - 1) if smooth[i - 1] < smooth[i] >= smooth[i + 1]]
+        if len(peaks) <= 2:
+            break
+        smooth = np.convolve(smooth, np.ones(3) / 3, mode="same")
+    if len(peaks) != 2:
+        return None
+    lo, hi = peaks
+    valley = lo + int(np.argmin(smooth[lo:hi + 1]))
+    return float((edges[valley] + edges[valley + 1]) / 2)
 
 
 def mad_outliers(values, nmads):
@@ -120,13 +144,30 @@ def run(path, design_path, outdir):
     a.layers["counts"] = a.X.copy()
 
     if d["doublets.method"] == "scrublet":
-        # Explicit score threshold: Scrublet's automatic one needs scikit-image (absent from the container).
-        sc.pp.scrublet(a, expected_doublet_rate=float(d["doublets.expected_rate"]),
-                       threshold=float(d["doublets.threshold"]), random_state=0)
-        doublets = a.obs["predicted_doublet"].to_numpy().astype(bool)
+        # Scrublet's own automatic threshold needs scikit-image (absent from the container): run with a
+        # placeholder threshold, then apply the chosen one or the bimodal minimum of simulated scores ("auto").
+        sc.pp.scrublet(a, expected_doublet_rate=float(d["doublets.expected_rate"]), threshold=0.99, random_state=0)
+        scores = a.obs["doublet_score"].to_numpy()
+        sim = None
+        for v in (a.uns.get("scrublet") or {}).values():
+            if isinstance(v, dict) and "doublet_scores_sim" in v:
+                sim = np.asarray(v["doublet_scores_sim"])
+        if sim is None and "doublet_scores_sim" in (a.uns.get("scrublet") or {}):
+            sim = np.asarray(a.uns["scrublet"]["doublet_scores_sim"])
+        threshold = d["doublets.threshold"]
+        source = "chosen"
+        if threshold == "auto":
+            threshold = bimodal_threshold(sim) if sim is not None else None
+            source = "auto (bimodal minimum of simulated doublet scores)"
+            if threshold is None:
+                threshold, source = 0.25, "auto failed (no bimodal distribution): fallback 0.25"
+        doublets = scores > float(threshold)
         diag["doublets"] = {"detected": int(doublets.sum()), "rate": round(float(doublets.mean()), 4),
-                            "score_median": round(float(a.obs["doublet_score"].median()), 3)}
-        a = step("scrublet singlets", ~doublets)
+                            "expected_rate": float(d["doublets.expected_rate"]),
+                            "threshold": round(float(threshold), 3), "threshold_source": source,
+                            "score_quantiles": {k: round(float(np.percentile(scores, q)), 3)
+                                                for k, q in (("median", 50), ("q90", 90), ("q99", 99))}}
+        a = step(f"scrublet singlets (score <= {float(threshold):.3f})", ~doublets)
     else:
         diag["doublets"] = {"detected": 0, "rate": 0.0, "note": "doublet detection off"}
     diag["cells_kept"] = int(a.n_obs)
@@ -196,6 +237,22 @@ def run(path, design_path, outdir):
                          "n_genes_median": int(a.obs.loc[cells, "n_genes_by_counts"].median())})
     diag["clusters"] = clusters
     diag["celltypist_cluster_agreement"] = round(agree_cells / a.n_obs, 4)
+    flags = []
+    if diag["cells_kept_fraction"] < FLAG_MIN_KEPT:
+        worst = max(diag["qc_steps"], key=lambda s: s["removed"])
+        flags.append(f"cells kept {diag['cells_kept_fraction'] * 100:.1f}% < {FLAG_MIN_KEPT * 100:.0f}% "
+                     f"(largest loss: {worst['filter']} removed {worst['removed']})")
+    dbl = diag["doublets"]
+    if dbl.get("expected_rate") and (dbl["rate"] < dbl["expected_rate"] / 3 or dbl["rate"] > dbl["expected_rate"] * 3):
+        flags.append(f"doublet rate {dbl['rate'] * 100:.1f}% vs expected {dbl['expected_rate'] * 100:.1f}% "
+                     f"(threshold {dbl['threshold']}, {dbl['threshold_source']})")
+    for c in clusters:
+        if c["celltypist_agreement"] < FLAG_MIN_AGREEMENT:
+            flags.append(f"cluster {c['cluster']} CellTypist agreement {c['celltypist_agreement'] * 100:.0f}% "
+                         f"< {FLAG_MIN_AGREEMENT * 100:.0f}% (mixed population?)")
+        if c["cells"] < FLAG_MIN_CLUSTER_CELLS:
+            flags.append(f"cluster {c['cluster']} has only {c['cells']} cells")
+    diag["flags"] = flags
     comp = a.obs["celltypist_label"].value_counts()
     diag["celltypist_composition"] = {str(k): int(v) for k, v in comp.items()}
 
@@ -211,7 +268,9 @@ def summary(diag):
              f"genes kept: {diag['genes_kept']:,}", "", "| QC step | removed | kept |", "|---|---|---|"]
     lines += [f"| {s['filter']} | {s['removed']:,} | {s['kept']:,} |" for s in diag["qc_steps"]]
     dbl = diag["doublets"]
-    lines += ["", f"Doublets: {dbl['detected']:,} detected (rate {dbl['rate'] * 100:.1f}%)",
+    lines += ["", f"Doublets: {dbl['detected']:,} detected (rate {dbl['rate'] * 100:.1f}%"
+              + (f", expected {dbl['expected_rate'] * 100:.1f}%; threshold {dbl['threshold']} {dbl['threshold_source']}"
+                 if "threshold" in dbl else "") + ")",
               "Leiden: " + "; ".join(f"resolution {r}: {v['clusters']} clusters (smallest {v['smallest_cluster']} cells)"
                                      for r, v in diag["leiden"].items()),
               f"Chosen resolution: {diag['design']['leiden.chosen']}",
@@ -228,6 +287,8 @@ def summary(diag):
         lines.append("Panel cells: mean log-normalised expression (% of cells expressing).")
     if diag.get("markers_panel_missing"):
         lines.append("Panel genes not found in the matrix: " + ", ".join(diag["markers_panel_missing"]))
+    lines += ["", "FLAGS (act on each, or explain why not):" if diag.get("flags") else "FLAGS: none"]
+    lines += [f"- {f}" for f in diag.get("flags", [])]
     return "\n".join(lines)
 
 

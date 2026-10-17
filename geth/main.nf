@@ -208,6 +208,25 @@ sc_analyse.sh "${params.run_dir}" design.txt
     """
 }
 
+process SAVE_ANNOTATIONS {
+    executor 'local'
+    scratch false
+
+    input:
+    annotations: String
+
+    output:
+    saved: String = stdout()
+
+    script:
+    """
+cat > "${params.run_dir}/annotations.txt" <<'GETH_EOF'
+${annotations.trim()}
+GETH_EOF
+echo "Saved \$(grep -c . "${params.run_dir}/annotations.txt") annotation line(s)."
+    """
+}
+
 process COLLECT_RESULTS {
     executor 'local'
     scratch false
@@ -314,10 +333,14 @@ agent analyst {
         You may call SC_ANALYSE once more, only if a diagnostic shows a real problem, changing only tunable keys
         (QC thresholds, doublet rate/threshold, HVG number, neighbours, Leiden resolutions/chosen) and adding a
         line justification=... that cites the diagnostic. If STATUS: REFUSED, do not insist: report.
+        The diagnostics end with FLAGS computed by Geth: for each flag, either revise the design to address it
+        or state in your final answer why it needs no change. Do not describe the results as better than the
+        diagnostics show.
         Then annotate every cluster of the final analysis from its markers, supported by CellTypist; write
-        "uncertain" when markers and CellTypist disagree. Never claim success unless the tool printed
-        STATUS: SUCCESS.'''
-    tools 'nf:module_run:SC_ANALYSE'
+        "uncertain" when markers and CellTypist disagree, and save the annotations with SAVE_ANNOTATIONS
+        (one line per cluster: "cluster <id>: <cell type> (<key markers>)"). Never claim success unless the
+        tool printed STATUS: SUCCESS.'''
+    tools 'nf:module_run:SC_ANALYSE', 'nf:module_run:SAVE_ANNOTATIONS'
     skills 'sc-downstream'
     maxIterations 8
 
@@ -333,8 +356,9 @@ agent analyst {
     revision you may send the changed keys and the justification as key=value lines instead):
     ${plan.params_json}
     In your final answer state: whether the analysis succeeded, how many SC_ANALYSE calls you made, the OUTDIR
-    of the final analysis, every change you made to the design with its justification (or none), one
-    annotation per cluster as "cluster <id>: <cell type> (<key markers>)", and the last error (or "none").
+    of the final analysis, every change you made to the design with its justification (or none), how you
+    handled each FLAG, one annotation per cluster as "cluster <id>: <cell type> (<key markers>)" (also saved
+    with SAVE_ANNOTATIONS), and the last error (or "none").
     """
 }
 
