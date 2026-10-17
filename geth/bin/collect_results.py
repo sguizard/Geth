@@ -132,6 +132,41 @@ def scrnaseq(run_dir, outdir):
     return parts
 
 
+def short_name(column):
+    """MultiQC general-statistics column: drop the long prefix older MultiQC versions add."""
+    return column.split("generalstats-", 1)[1] if "generalstats-" in column else column
+
+
+def plain(x):
+    """A raw value as printed for the reporter: thousands with separators, otherwise up to 2 decimals."""
+    if x is None:
+        return "n/a"
+    if abs(x) >= 1000:
+        return count(x)
+    return f"{x:.2f}".rstrip("0").rstrip(".")
+
+
+def generic(run_dir, outdir, max_columns=8):
+    """Pipelines without a dedicated summary: MultiQC general statistics as MultiQC reports them,
+    and the results folders."""
+    parts = []
+    files = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_general_stats.txt"), recursive=True))
+    for path in files[:3]:
+        header, body = read_tsv(path)
+        cols = [i for i in range(1, len(header))
+                if any(i < len(r) and num(r[i]) is not None for r in body)][:max_columns]
+        rows = [[r[0]] + [plain(num(r[i])) if i < len(r) else "n/a" for i in cols] for r in body]
+        parts.append(f"### MultiQC general statistics (`{os.path.relpath(path, outdir)}`)\n"
+                     "Values exactly as MultiQC reports them: check the MultiQC report for units "
+                     "(read totals are often in millions).\n\n"
+                     + table(["Sample"] + [short_name(header[i]) for i in cols], rows))
+    if not files:
+        parts.append("### Quality control\nNo MultiQC general-statistics table found: see the MultiQC report.")
+    folders = sorted(d for d in os.listdir(outdir) if os.path.isdir(os.path.join(outdir, d)) and d != "pipeline_info")
+    parts.append("### Results folders\n" + ("\n".join(f"- `{d}/`" for d in folders) or "None."))
+    return parts
+
+
 def de_tables(outdir):
     """Per contrast: (contrast id, full results table, annotated table or None)."""
     found = []
@@ -269,7 +304,7 @@ def collect(run_dir, pipeline):
     parts = [f"Results folder: `{outdir}`"]
     if pipeline == "differentialabundance":
         return "\n\n".join(parts + differentialabundance(run_dir, outdir))
-    parts += rnaseq(run_dir, outdir) if pipeline == "rnaseq" else scrnaseq(run_dir, outdir)
+    parts += {"rnaseq": rnaseq, "scrnaseq": scrnaseq}.get(pipeline, generic)(run_dir, outdir)
     reports = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_report.html"), recursive=True))
     parts.append("MultiQC report: " + (f"`{reports[0]}`" if reports else "not found"))
     return "\n\n".join(parts)
