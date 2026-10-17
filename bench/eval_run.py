@@ -25,7 +25,8 @@ OUTPUTS = {"bulk": "*/salmon.merged.gene_counts.tsv", "airway": "*/salmon.merged
            "chipseq_spt5": "bwa/merged_library/**/*Peak", "atacseq_osmotic": "bwa/**/*Peak",
            "methylseq_wgbs": "**/*.cov.gz", "ampliseq_16s": "dada2/ASV_table.tsv", "nanoseq_barcoded": "*/*.sorted.bam",
            "eager_mammoth": "deduplication/**/*.bam", "isoseq_brain": "**/*collapsed.bed",
-           "chicken_wgs": "annotation/**/*.vcf.gz"}
+           "chicken_wgs": "annotation/**/*.vcf.gz", "taxprofiler_reads": "kraken2/**/*report*",
+           "mag_gut": "GenomeBinning/**/*.fa*"}
 # The airway DE baseline made by bench/baseline_airway_de.sh: $GETH_BASELINES_DIR/airway_de/results
 BASELINE_DE = os.path.join(os.environ.get("GETH_BASELINES_DIR")
                            or os.path.join(os.environ.get("GETH_WORK_ROOT", "."), "baselines"), "airway_de", "results")

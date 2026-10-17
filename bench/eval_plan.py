@@ -381,14 +381,48 @@ def chicken_wgs(rows, params, pipeline):
             "joint_genotyping": "haplotypecaller" not in tools or p.get("joint_germline") in (True, "true")}
 
 
+def taxprofiler_reads(rows, params, pipeline):
+    """Two metagenomes, one sequenced in three runs (two paired-end, one single-end)."""
+    p = params if isinstance(params, dict) else {}
+    run = {base(r.get("fastq_1")).split("_R1")[0]: r for r in rows}
+    db = str(p.get("databases", ""))
+    kraken = db.endswith("databases_kraken2_bracken.csv") or db.endswith("databases_kraken2.csv")
+    return {"pipeline": pipeline == "taxprofiler", "n_rows_4": len(rows) == 4,
+            "all_runs": set(run) == {"2612_A", "2612_B", "2612_C", "2613_A"},
+            "samples": [run.get(k, {}).get("sample") for k in ("2612_A", "2612_B", "2612_C", "2613_A")] == ["2612", "2612", "2612", "2613"],
+            "runs_distinct": len({r.get("run_accession") for r in rows}) == 4,
+            "single_end_run": not run.get("2612_C", {}).get("fastq_2", "x"),
+            "pairs": all(base(r.get("fastq_2")) == base(r.get("fastq_1")).replace("_R1", "_R2") for k, r in run.items() if k != "2612_C"),
+            "illumina": bool(rows) and all(r.get("instrument_platform") == "ILLUMINA" for r in rows),
+            "run_merging": p.get("perform_runmerging") in (True, "true"),
+            "catalogue_databases": db.startswith(os.environ["GETH_REFERENCES"] + "/") and os.path.isfile(db),
+            "profilers_match_sheet": (p.get("run_kraken2") in (True, "true")) if kraken else (p.get("run_metaphlan") in (True, "true"))}
+
+
+def mag_gut(rows, params, pipeline):
+    """Two mouse gut metagenomes, mouse A on two lanes; no host genome; no GTDB-Tk database."""
+    p = params if isinstance(params, dict) else {}
+    lane = {re.sub(r"_R1_001.*", "", base(r.get("short_reads_1"))): r for r in rows}
+    a1, a2, b = lane.get("mouseA_S1_L001", {}), lane.get("mouseA_S1_L002", {}), lane.get("mouseB_S2_L001", {})
+    return {"pipeline": pipeline == "mag", "n_rows_3": len(rows) == 3,
+            "lanes_one_sample": bool(a1) and a1.get("sample") == a2.get("sample") != b.get("sample"),
+            "runs_distinct": bool(a1) and a1.get("run") != a2.get("run"),
+            "pairs": bool(rows) and all(base(r.get("short_reads_2")) == base(r.get("short_reads_1")).replace("_R1_", "_R2_") for r in rows),
+            "platform": bool(rows) and all(r.get("short_reads_platform") == "ILLUMINA" for r in rows),
+            "groups_filled": bool(rows) and all(r.get("group") not in (None, "") for r in rows),
+            "no_gtdbtk_download": p.get("skip_gtdbtk") in (True, "true") or bool(p.get("gtdb_db")),
+            "no_host_invented": not p.get("host_fasta") and not p.get("host_genome")}
+
+
 SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc, "airway_de": airway_de,
-           "chicken_wgs": chicken_wgs,
+           "chicken_wgs": chicken_wgs, "taxprofiler_reads": taxprofiler_reads, "mag_gut": mag_gut,
            "airway_index_test": airway_index_test, "pbmc_index_test": pbmc_index_test,
            "chipseq_spt5": chipseq_spt5, "atacseq_osmotic": atacseq_osmotic, "methylseq_wgbs": methylseq_wgbs,
            "ampliseq_16s": ampliseq_16s, "nanoseq_barcoded": nanoseq_barcoded, "eager_mammoth": eager_mammoth,
            "isoseq_brain": isoseq_brain}
 PIPELINE = {"bulk": "rnaseq", "airway": "rnaseq", "sc": "scrnaseq", "pbmc": "scrnaseq", "airway_de": "differentialabundance",
             "airway_index_test": "rnaseq", "pbmc_index_test": "scrnaseq", "chicken_wgs": "sarek",
+            "taxprofiler_reads": "taxprofiler", "mag_gut": "mag",
             **{k: k.split("_")[0] for k in ("chipseq_spt5", "atacseq_osmotic", "methylseq_wgbs", "ampliseq_16s",
                                             "nanoseq_barcoded", "eager_mammoth", "isoseq_brain")}}
 NEEDS_RUN_DIR = {"airway_de"}

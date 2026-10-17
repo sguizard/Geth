@@ -309,8 +309,10 @@ class NewPipelines(unittest.TestCase):
                 fh.write("@r\nACGT\n+\nIIII\n")
         for name in ("genome.fa", "primers.fa", "run.subreads.bam", "run.subreads.bam.pbi", "run.ccs.bam"):
             open(os.path.join(cls.d, name), "w").write(">x\nACGT\n")
+        k2 = os.path.join(cls.d, "k2.tar.gz")
+        open(k2, "wb").write(b"placeholder")
         open(os.path.join(cls.d, "databases.csv"), "w").write(
-            "tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,/x/k2.tar.gz\nbracken,k2,;-r 150,short,/x/k2.tar.gz\n")
+            f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2,;-r 150,short,{k2}\n")
 
     @classmethod
     def tearDownClass(cls):
@@ -383,12 +385,30 @@ class NewPipelines(unittest.TestCase):
         self.assertIn("no 'metaphlan' database", text)
         self.assertTrue(any("'databases' is required" in p for p in self.check("taxprofiler", sheet, {"run_kraken2": True})))
 
+    def test_taxprofiler_databases_and_memory(self):
+        k2 = os.path.join(self.d, "k2db")
+        os.makedirs(k2, exist_ok=True)
+        open(os.path.join(k2, "hash.k2d"), "wb").write(b"\0" * 1000)
+        open(os.path.join(k2, "database150mers.kmer_distrib"), "w").write("x\n")
+        sheet_db = self.f("databases_real.csv")
+        open(sheet_db, "w").write(f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2,;-r 150,short,{k2}\n")
+        sheet = ("sample,run_accession,instrument_platform,fastq_1,fastq_2,fasta\n"
+                 f"S1,S1_run1,ILLUMINA,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},\n")
+        ok = {"databases": sheet_db, "run_kraken2": True, "run_bracken": True}
+        self.assertEqual(self.check("taxprofiler", sheet, ok), [])
+        open(sheet_db, "w").write(f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2,;-r 100,short,{k2}\n")
+        self.assertTrue(any("no Bracken distribution for read length 100" in p for p in self.check("taxprofiler", sheet, ok)))
+        self.assertIn("KRAKEN2_KRAKEN2", gc.extra_resources("taxprofiler", ok))
+        self.assertEqual(gc.extra_resources("rnaseq", ok), "")
+        self.assertEqual(gc.reference_bytes("taxprofiler", ok), 1000)
+
     def test_mag(self):
         sheet = ("sample,run,group,short_reads_1,short_reads_2,short_reads_platform,long_reads,long_reads_platform\n"
                  f"S1,1,G1,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},ILLUMINA,{self.f('ont.fastq.gz')},OXFORD_NANOPORE_HQ\n"
                  f"S2,1,G1,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')},ILLUMINA,,\n")
         ok = {"skip_gtdbtk": True, "skip_spades": True}
         self.assertEqual(self.check("mag", sheet, ok), [])
+        self.assertTrue(any("GTDB-Tk would download" in p for p in self.check("mag", sheet, {"skip_spades": True})))
         bad = sheet.replace(",OXFORD_NANOPORE_HQ", ",").replace(f"{self.f('N_L1_R2.fastq.gz')}", "")
         text = "\n".join(self.check("mag", bad, dict(ok, coassemble_group=True)))
         for expected in ("'long_reads_platform' is required", "mixes single-end and paired-end", "binning_map_mode=group"):
