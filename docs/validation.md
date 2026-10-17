@@ -118,6 +118,50 @@ round 2:
 - **Two skills clarified:** the Nanopore skill's own example used a commercial kit name. The ChIP-seq
   skill now says that `sample` is the condition, not the library.
 
+## Full runs of the new pipelines (version 1.6)
+
+One fully correct plan per delivery was approved (benchmark data) and run end to end:
+- the operator launched the nf-core pipeline
+- the reporter wrote the report
+- the report check traced its numbers
+
+| Pipeline | First run | After the fixes below | Report numbers traced |
+|---|---|---|---|
+| atacseq, methylseq, eager | succeeded, 1 attempt | not needed | 2/3, 13/13, 33/33 |
+| chipseq | failed after 3 attempts | succeeded, 1 attempt | 2/3 |
+| ampliseq | failed after 2 attempts | succeeded, 1 attempt | 47/47 |
+| nanoseq | failed after 3 attempts | succeeded, 1 attempt | 18/18 |
+| isoseq | failed after 3 attempts | succeeded, 1 attempt | 21/24 |
+
+What the first runs showed, and what changed:
+- **chipseq**
+  - The plan's input rows had dropped their trailing empty fields. Samplesheets are now written with
+    every column on every row.
+  - preseq failed on the tiny data. The operator proposed `skip_preseq`, but the gate refused it because
+    the error named the process, not the parameter. `skip_<step>` is now accepted when the error names
+    the step.
+- **nanoseq**
+  - The plan lacked `skip_quantification` for DNA. The operator then **changed the protocol from DNA to
+    cDNA** to silence the error, and the gate allowed it because the error mentioned "protocol".
+  - Parameters that describe the data (protocol, library presets, primers) are now frozen like sample
+    names.
+  - The plan check requires the RNA-only steps to be skipped for DNA.
+- **ampliseq**
+  - The release requires `config_profile_name`, which only nf-core's test profile sets. Geth now sets it.
+  - The operator passed the site profile as an analysis profile. Upstream pipelines now refuse one.
+- **isoseq**
+  - With the default 40 CCS chunks, most chunks of the small input were empty and the merge step failed.
+    The plan check requires `chunk_ccs` of 5 or fewer for inputs under 2 GB.
+  - The operator relaunched twice unchanged. A third identical launch is now refused.
+
+## Index reuse (version 1.6)
+
+The GRCh38 STAR index built by the PBMC run (29 GB, about 30 minutes) was registered in the catalogue.
+- **Planner:** in 6/6 plans on two subset deliveries (airway, PBMC), it set `star_index` to the
+  registered index, with its FASTA and GTF.
+- **Runs:** both succeeded without building an index. The airway run took 53 minutes, mostly queue waits
+  for full-size jobs; the PBMC run took 12 minutes.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or
