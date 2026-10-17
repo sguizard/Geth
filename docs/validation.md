@@ -154,6 +154,41 @@ What the first runs showed, and what changed:
     The plan check requires `chunk_ccs` of 5 or fewer for inputs under 2 GB.
   - The operator relaunched twice unchanged. A third identical launch is now refused.
 
+### Germline calling and metagenomics
+
+Three more deliveries, on references and databases shared on the site, run the same way:
+- **chicken_wgs** (nf-core/sarek): three chickens, one on two lanes; Ensembl 116 known variants and VEP cache
+- **taxprofiler_reads** (nf-core/taxprofiler): two gut metagenomes, one sequenced in two paired-end runs and a
+  single-end one; the shared Kraken2/Bracken standard database
+- **mag_gut** (nf-core/mag): two mouse gut metagenomes, one on two lanes; no host genome, no GTDB-Tk database
+
+| Pipeline | Planner (3 repeats) | Full run, after the fixes | Report numbers traced |
+|---|---|---|---|
+| sarek | 16, 16, 15 of 16 | succeeded, 1 attempt, 46 min | 42/42 |
+| taxprofiler | 13/13 three times | succeeded, 1 attempt, 6 min | 79/79 |
+| mag | 11/11 three times | succeeded, 1 attempt | 37/37 |
+
+The one planner miss left `joint_germline` unset (each chicken genotyped alone). Each pipeline's first full run
+failed, each on a gap in Geth:
+- **sarek:** the skill said to give the known-variants VCF as both `dbsnp` and `known_indels`; sarek stages
+  them together and the same file name collides. The skill now says `dbsnp` only, and the plan check refuses
+  the same file twice. The operator's fixes (dropping a parameter, adding `baserecalibrator` to `skip_tools`)
+  were refused because the gate only accepted changes to parameters the error named; it now also accepts
+  changing a file the error names, and skipping a tool it names.
+- **taxprofiler:**
+  - Merging the runs of a sample needs one endedness, unless read pairs are merged first. The error was
+    missed by Geth's error digest, which now catches nf-core's own `ERROR:` lines; the plan check requires
+    pair merging in that case.
+  - The second run showed that taxprofiler needs different `db_name`s for the kraken2 and bracken rows of
+    one database. The registration script gave both the same name; it no longer does, and the plan check
+    refuses it. The operator tried to switch off Bracken and the profile standardisation instead: the gate
+    refused both, rightly, since they would have dropped analyses the plan asked for.
+- **mag:**
+  - ALE crashes on these tiny assemblies. The gate refused `skip_ale` because step names under 4 letters
+    did not count. A 3-letter step now counts when the error names it as a word, not inside a file name.
+  - The first successful run's report had no numbers: Geth had no results summary for mag. It now gives
+    assemblies (QUAST, reads mapped back) and bins per sample and binner.
+
 ## Index reuse (version 1.6)
 
 The GRCh38 STAR index built by the PBMC run (29 GB, about 30 minutes) was registered in the catalogue.
