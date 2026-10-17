@@ -36,11 +36,12 @@ def numbers_after(text, label):
 
 
 def score(run_dir, dataset):
-    steps = {}
+    steps, settings = {}, {}  # settings: the 4th field only, so numbers quoted in the reason are not cut-offs
     for line in read(run_dir, "lab_design_steps.txt"):
         fields = [f.strip() for f in line.split("|")]
         if len(fields) == 5:
             steps[fields[0]] = steps.get(fields[0], "") + " " + " | ".join(fields[1:])
+            settings[fields[0]] = settings.get(fields[0], "") + " " + fields[3]
     stats = read(run_dir, "lab_design_statistics.txt")
     expected = " ".join(read(run_dir, "lab_design_expected.txt"))
     rationale = " ".join(read(run_dir, "lab_design_rationale.txt"))
@@ -57,7 +58,7 @@ def score(run_dir, dataset):
          "annotation_markers_and_reference": has(s("annotation"), r"marker") and has(s("annotation"), r"celltypist", r"reference", r"azimuth", r"singler")}
 
     if dataset == "kang2018":
-        genes_cut = numbers_after(s("qc"), r"genes?")
+        genes_cut = numbers_after(settings.get("qc", ""), r"genes?")
         c.update({
             "qc_keeps_filtered_cells": not genes_cut or max(genes_cut) <= 350,
             "notices_no_mito_reads": has(s("qc") + " " + rationale, r"mito\w*[^|]{0,80}(\b0 ?%|zero|absent|no reads|not present|removed|pre-?filtered|none|not available)",
@@ -75,7 +76,8 @@ def score(run_dir, dataset):
             "expects_cell_types": sum(has(expected, p) for p in (r"monocyte", r"\bT cells?\b|\bCD4\b|\bCD8\b", r"\bB cells?\b", r"\bNK\b")) >= 3,
         })
     elif dataset == "pbmc1k":
-        genes_cut, mito_cut = numbers_after(s("qc"), r"genes?"), numbers_after(s("qc"), r"mito\w*")
+        genes_cut = numbers_after(settings.get("qc", ""), r"genes?")
+        mito_cut = numbers_after(settings.get("qc", ""), r"(?:mito\w*|pct_mt|mt ?%|% ?mt)")
         c.update({
             "qc_sane": (not genes_cut or max(genes_cut) <= 500) and (not mito_cut or 5 <= max(mito_cut) <= 25),
             "doublet_detector": has(s("doublets"), r"scrublet", r"scdblfinder", r"doubletfinder", r"solo"),

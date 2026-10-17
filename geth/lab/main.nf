@@ -36,7 +36,9 @@ process LAB_LIST_FILES {
     for root in ${params.lab_data.tokenize(':').join(' ')}; do
         case "${dir}" in "\$root"|"\$root"/*) ok=1 ;; esac
     done
-    if [ \$ok = 1 ]; then
+    if [ \$ok = 1 ] && [ ! -d "${dir}" ]; then
+        echo "NOT FOUND: no folder ${dir}; list its parent folder to see what exists"
+    elif [ \$ok = 1 ]; then
         find "${dir}" -maxdepth 3 \\( -type f -o -type l \\) -printf '%p\\t%s bytes\\n' | sort | head -n 300
     else
         echo "REFUSED: the lab only lists benchmark folders: ${params.lab_data}"
@@ -61,7 +63,8 @@ process LAB_READ_TEXT {
         case "${path}" in "\$root"/*) ok=1 ;; esac
     done
     case "${path}" in *.h5ad|*.gz) ok=binary ;; esac
-    if [ \$ok = 1 ]; then head -c 8000 "${path}"
+    if [ \$ok = 1 ] && [ ! -f "${path}" ]; then echo "NOT FOUND: no file ${path}; use LAB_LIST_FILES to see what exists"
+    elif [ \$ok = 1 ]; then head -c 8000 "${path}"
     elif [ \$ok = binary ]; then echo "REFUSED: binary file; use LAB_INSPECT for count matrices"
     else echo "REFUSED: the lab only reads benchmark folders: ${params.lab_data}"
     fi
