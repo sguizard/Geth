@@ -224,6 +224,11 @@ Keep skills short (30 to 50 lines) and factual. The plan check, not the skill, i
 | `input_format` | `tsv`: the samplesheet is converted before launch (eager) |
 | `legacy_limits` | pass `--max_cpus/--max_memory/--max_time` (pre-`resourceLimits` templates) |
 
+**Data-dependent memory.** `geth_checks.py resources` writes an extra config for jobs whose memory depends on
+the data: Kraken2 loads its whole index in RAM, so taxprofiler's Kraken2 jobs ask for the index size plus a
+margin. `reference-size` sets the resource caps: small inputs on a large genome or database get the
+production caps.
+
 **Index reuse.** A registered index has a `geth_index.json` next to it: tool, version, the FASTA and GTF it
 was built from, and how it was built (`geth/references/register_star_index.sh`). The catalogue README gets
 a `STAR index:` line, which the planner sees through `LIST_REFERENCES`, and the rnaseq and scrnaseq skills
@@ -329,6 +334,10 @@ launch.
 | `bench/stage_public.sh` | Real-size public data: airway (GSE52778, 24 GB), PBMC 1k v3 (5 GB), GRCh38, CellTypist immune models. |
 | `bench/stage_deliveries.sh` | Seven realistic deliveries for the pipelines added in 1.4 (chipseq, atacseq, methylseq, ampliseq, nanoseq, eager, isoseq), built from nf-core test data. Files are renamed the way a facility would deliver them, with a free-text README and a sample table, and the traps are realistic: re-sequenced lanes, input controls shared per culture, facility IDs that are not valid sample names, a pooled Nanopore FASTQ. |
 | `bench/bench_plan.sh <tag> <repeats> <delivery>...` | Plan-only repeats, each plan scored by `eval_plan.py`. Nothing is approved or run. |
+| `bench/bench_run.sh <tag> <run>:<dataset>...` | Approves already-planned benchmark runs and runs them end to end, scored by `eval_run.py`. |
+| `bench/stage_chicken.sh` | A chicken germline delivery for sarek: three birds of DDBJ PRJDB17746, 2 million read pairs each, one bird on two lanes; plus the GRCg7b genome, known variants and VEP cache. |
+| `bench/stage_index_tests.sh` | Airway and PBMC subsets, used to test STAR index reuse quickly. |
+| `bench/snapshot.sh` | Freezes the last commit in `$GETH_WORK_ROOT/snapshots/<commit>`, so a long benchmark runs on fixed code while development goes on. A script that bash is executing must never be edited. |
 | `bench/bench.sh <tag> <repeats> [bulk] [sc]` | plan → approve → run → score on the test deliveries. |
 | `bench/bench_sc.sh <tag> <repeats> <upstream run>` | Agent-designed single-cell analyses on a finished scrnaseq run, scored. |
 | `bench/baseline.sh <pipeline> [<revision>]` | A pipeline's own test profile, without agents. |
@@ -339,6 +348,28 @@ launch.
 
 Results are appended as JSON lines to `$GETH_BENCH_DIR/<tag>.jsonl`. Benchmarks approve plans
 automatically: use public data only.
+
+## The lab (experimental, phase 11)
+
+`geth lab` (in `geth/lab/`) tests whether agents can design, and later build, a coherent single-cell
+downstream analysis. It is **not for real analyses**. It is kept apart from Geth's workflow:
+
+- its own Nextflow workflow (`geth/lab/main.nf`) and command (`geth/lab/lab.sh`)
+- its file tools only reach the benchmark folders (`GETH_LAB_DATA`, by default `$GETH_DATA_ROOT/testdata`),
+  so the truth used for scoring (`$GETH_WORK_ROOT/lab_truth/`) stays out of reach
+- runs go to `$GETH_RUNS_DIR/lab/`, and every file it writes is marked EXPERIMENTAL
+
+Arm A (`geth lab design`) asks a designer agent for a structured design and runs nothing:
+- **steps:** nine required steps, each written as `step | method | tool | key parameters | why`
+- **statistics:** one line per comparison: `comparison | unit of replication | test or model | design formula | multiple testing`
+- **expected results**
+
+`lab_checks.py` checks the format only. `bench/lab/eval_design.py` scores the science against what a
+coherent analysis of each benchmark must do. Its main test is Kang et al. 2018 (8 donors, control vs IFN-β),
+where the condition must be tested per cell type with donors as replicates (pseudobulk). The scorer was
+checked on a coherent design (20/20) and on a naive one (7/20). Arm A runs with the best-practice skill
+`sc-design-lab` (A1) and without it (A0), to separate what the model knows from what the skill tells it.
+Arms B and C (agents write the code, in a sandbox) start only after the arm A results have been reviewed.
 
 ## Lessons from the Nextflow agent preview (26.10.2, nf-agent 0.2.0)
 

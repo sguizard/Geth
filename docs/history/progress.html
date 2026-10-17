@@ -299,7 +299,9 @@ a { color: var(--accent); }
         <ul class="check">
           <li class="done">nf-core/rnaseq 3.27.0 and nf-core/scrnaseq 4.2.0 build it with the same STAR 2.7.11b module and options: one index serves both</li>
           <li class="done">The GRCh38 index built by pbmc_2 registered in the reference catalogue by hard link (no extra space), its STAR version, FASTA and GTF recorded; the plan check refuses a reused index that does not match the plan</li>
-          <li class="doing">The planner picks the index on its own (plan-only repeats), then two runs on small subsets of airway and PBMC must finish without building an index</li>
+          <li class="done">The planner picks the index on its own: 6/6 plans (airway and PBMC subsets, 3 each) set <code>star_index</code> to the registered index with its FASTA and GTF</li>
+          <li class="done">Found on the way: small inputs on a human genome got the test resource caps (16 GB), too little for STAR (about 32 GB). Caps now depend on the reference size too</li>
+          <li class="doing">Runs on the two subsets must finish without building an index</li>
           <li>Later: indexes of other aligners (Salmon, Bowtie2, BWA, Bismark)</li>
         </ul>
       </div>
@@ -307,8 +309,30 @@ a { color: var(--accent); }
     <li class="phase">
       <div class="node"><span class="dot">11</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Frontier-style pipeline writing</h3><span class="pill next">later</span></div>
-        <p>Agents write Nextflow code themselves, only once v1 is reliable.</p>
+        <div class="phase-head"><h3>Agents write analyses</h3><span class="pill warn">experimental</span></div>
+        <p>Not for real analyses. Can a small team of Qwen agents (designer, engineer, reviewer, analyst) design a coherent single-cell downstream analysis and build it as a Nextflow pipeline? Tested on PBMC 1k v3 and Kang 2018 (8 donors, control vs IFN-β, published cell types) with scores fixed in advance.</p>
+        <ul class="check">
+          <li>11.0 Lab mode: <code>geth lab</code>, benchmark data only, EXPERIMENTAL banner, sandbox for agent-written code</li>
+          <li>11.1 Benchmarks and scorers (design, execution, biology, cost)</li>
+          <li>11.2 Arm A: free-form design only, nothing executed</li>
+          <li>11.3 Arm B: agents write step scripts, Geth writes the Nextflow (after your go)</li>
+          <li>11.4 Arm C: agents write the Nextflow themselves (stretch)</li>
+          <li>11.5 Single agent vs team vs 3 designs + judge</li>
+          <li>11.6 Verdict</li>
+        </ul>
+      </div>
+    </li>
+    <li class="phase">
+      <div class="node"><span class="dot">12</span></div>
+      <div class="phase-body">
+        <div class="phase-head"><h3>Sandboxed agents, light front node</h3><span class="pill next">planned</span></div>
+        <p>Eddie allows agents only in sandboxes. Agent steps that launch no jobs (planning, design) run as small SGE jobs; every agent runs in a container that sees only what its step needs (data read-only, writes only to its run folder); at most one Geth run at a time on node1q01. Measured today: Geth's driver uses 0.4 GB and 3% of one CPU on the front node, the nf-core driver 0.6 GB.</p>
+        <ul class="check">
+          <li class="done">Feasibility on Eddie (apptainer 1.4.4, no special rights): <code>--containall --no-home</code> hides everything that is not bound (/exports invisible, root file system read-only); <code>--net --network none</code> removes all network. Limiting the network to the model service only is not possible without admin rights</li>
+          <li>Agent-written code (phase 11): no network, inputs read-only, one writable folder</li>
+          <li>Planning and design agents: one small SGE job each, in a container that sees only the run folder, the data (read-only) and the catalogue (read-only)</li>
+          <li>Pipeline drivers: stay on the front node (they submit jobs), at most one Geth run at a time</li>
+        </ul>
       </div>
     </li>
   </ol>
@@ -515,6 +539,7 @@ a { color: var(--accent); }
 </section>
 
 <footer>
+  <span>Diagrams: <a href="https://claude.ai/artifact/E6SVYKVxK7phySYEuw1Z5D">Geth Blueprint</a>.</span>
   <span>Sources: <code>docs/history/feasibility.md</code>, <code>docs/validation.md</code> and <code>spikes/*/RESULTS.md</code> in the Geth repository; run folders in <code>/exports/eddie/scratch/sguizard/Perseus_Veil/spikes</code>.</span>
   <span>Test data: nf-core test datasets staged as raw deliveries (yeast GSE110004 subset; mouse chr19 10x v2).</span>
 </footer>
