@@ -113,7 +113,8 @@ the files. A file edited after approval makes every gate call fail until a perso
       `STATUS: REFUSED`, and nothing is launched.
    3. **Plan check** (`check-plan`) of the submitted attempt. A failure is recorded as a `check` error,
       so the next attempt may fix exactly that.
-   4. Resources: `test.config` for inputs under 2 GB, `production.config` otherwise.
+   4. Resources: `test.config` for inputs under 2 GB on a reference under 500 MB, `production.config`
+      otherwise (a human genome needs large jobs whatever the read count).
    5. Per-pipeline runtime (`geth_checks.py runtime`): Nextflow version, Java, extra config,
       environment, TSV input, `--max_*` limits.
    6. Launch from `nfcore/`, with `-resume`. Geth's own driver runs in the run folder, so a separate
