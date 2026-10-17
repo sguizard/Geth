@@ -10,7 +10,11 @@ import os
 import re
 import sys
 
-ROOT = "/exports/eddie/scratch/sguizard/Perseus_Veil/testdata"
+# Where the benchmark data lives (see bench/stage_testdata.sh and bench/stage_public.sh): from env.sh.
+for _var in ("GETH_DATA_ROOT", "GETH_REFERENCES", "GETH_RUNS_DIR"):
+    if not os.environ.get(_var):
+        sys.exit(f"{_var} is not set: source env.sh first")
+ROOT = os.path.join(os.environ["GETH_DATA_ROOT"], "testdata")
 SCHEMAS = {"rnaseq": "rnaseq-3.27.0.params.json", "scrnaseq": "scrnaseq-4.2.0.params.json",
            "differentialabundance": "differentialabundance-2.0.0.params.json"}
 
@@ -89,8 +93,7 @@ def sc(rows, params, pipeline):
     return c
 
 
-DATA = "/exports/eddie/scratch/sguizard/Perseus_Veil/data"
-GRCH38 = "/exports/eddie/scratch/sguizard/Perseus_Veil/references/homo_sapiens_GRCh38_ens116"
+GRCH38 = os.path.join(os.environ["GETH_REFERENCES"], "homo_sapiens_GRCh38_ens116")
 GRCH38_FASTA = f"{GRCH38}/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
 GRCH38_GTF = f"{GRCH38}/Homo_sapiens.GRCh38.116.gtf.gz"
 AIRWAY_DEX = {"SRR1039508": False, "SRR1039509": True, "SRR1039512": False, "SRR1039513": True,
@@ -133,7 +136,7 @@ def pbmc(rows, params, pipeline):
     return c
 
 
-AIRWAY_RUN = "/exports/eddie/scratch/sguizard/Perseus_Veil/geth/runs/airway_1"
+AIRWAY_RUN = os.path.join(os.environ["GETH_RUNS_DIR"], "airway_1")
 AIRWAY_SAMPLES = {f"{d}_{t}": (d, t == "Dex") for d in ("N61311", "N052611", "N080611", "N061011") for t in ("untreated", "Dex")}
 
 

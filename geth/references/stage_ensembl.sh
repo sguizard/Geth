@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# Add an Ensembl genome + annotation to Geth's reference catalogue ($PERSEUS_VEIL/references).
+# Add an Ensembl genome + annotation to Geth's reference catalogue ($GETH_REFERENCES).
+# Downloads about 1 GB for a mammalian genome: on a cluster, run it where downloads are allowed
+# (e.g. as a job on a data-transfer queue).
 # Usage: stage_ensembl.sh <ensembl_species_dir> <assembly> <release> "<species, common name>"
 # e.g.   stage_ensembl.sh homo_sapiens GRCh38 116 "Homo sapiens (human)"
 # Uses the primary assembly when Ensembl provides one (no haplotypes/patches), else toplevel.
 # Files are checked against Ensembl's CHECKSUMS (BSD `sum`).
 set -euo pipefail
-source /exports/cmvm/eddie/eb/groups/alaw3_grp/sguizard/Dev/github/Geth/env.sh
+[ -n "${GETH_REFERENCES:-}" ] || source "${GETH_HOME:-$(cd "$(dirname "$0")/../.." && pwd)}/env.sh"
 
 species=$1; assembly=$2; release=$3; label=$4
 Species=${species^}
 base=https://ftp.ensembl.org/pub/release-$release
-dest=$PERSEUS_VEIL/references/${species}_${assembly}_ens${release}
+dest=$GETH_REFERENCES/${species}_${assembly}_ens${release}
 fasta=$Species.$assembly.dna.primary_assembly.fa.gz
 curl -fsI "$base/fasta/$species/dna/$fasta" > /dev/null || fasta=$Species.$assembly.dna.toplevel.fa.gz
 gtf=$Species.$assembly.$release.gtf.gz
 mkdir -p "$dest"
 cd "$dest"
+dest=$(pwd -P)  # the real path: the catalogue README records it for the agents
 
 fetch() {  # fetch <url_dir> <file>
     [ -s "$2" ] || curl -fsSL -o "$2.part" "$1/$2" && { [ -s "$2" ] || mv "$2.part" "$2"; }

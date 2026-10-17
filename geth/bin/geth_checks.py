@@ -18,6 +18,8 @@ Optional parts are given with  --contrasts <file>  --profile <name>  --upstream 
       Store an accepted attempt as the new baseline, with the error that may justify the next change.
   geth_checks.py revision <pipeline>
       Print the pinned revision of a pipeline (exit 1 if Geth does not run it).
+  geth_checks.py runtime <pipeline>
+      Print shell assignments for the pipeline's runtime (pinned Nextflow, Java, input format, extra config).
 
 Exit status 0 = OK, 1 = problems (described on stdout).
 """
@@ -61,9 +63,10 @@ REGISTRY = {
                 "key": ("input_file", "barcode"), "required_params": ("protocol",)},
     "methylseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1",
                   "nxf_env": {"NXF_SYNTAX_PARSER": "v1"}},
-    # eager 2.5.3 is DSL1: run with an older Nextflow (and Java 17), TSV input, max_* resource params.
+    # eager 2.5.3 is DSL1: run with an older Nextflow (and Java 17, from GETH_JAVA17_HOME), TSV input,
+    # max_* resource params.
     "eager": {"revision": "2.5.3", "key": ("R1", "BAM"), "nextflow": "22.10.8",
-              "java_home": "/usr/lib/jvm/java-17-openjdk", "input_format": "tsv", "legacy_limits": True,
+              "java": 17, "input_format": "tsv", "legacy_limits": True,
               "extra_config": "legacy_singularity.config",
               "design": ("Sample_Name", "Library_ID", "Lane", "SeqType", "Strandedness", "UDG_Treatment", "R1", "R2", "BAM")},
     "differentialabundance": {
@@ -108,7 +111,8 @@ SC_TUNABLE = {"qc.min_genes", "qc.max_genes", "qc.min_counts", "qc.max_counts", 
               "neighbors.n_neighbors", "neighbors.n_pcs", "leiden.resolutions", "leiden.chosen", "justification"}
 SC_DIAGNOSTIC_TERMS = ("cells kept", "removed", "doublet", "cluster", "smallest", "agreement", "celltypist",
                        "pct_counts_mt", "n_genes", "total_counts", "marker", "resolution")
-REFERENCES = os.environ.get("PERSEUS_VEIL", "/exports/eddie/scratch/sguizard/Perseus_Veil") + "/references"
+# Reference catalogue (genomes, CellTypist models), from the site configuration (env.sh sets it).
+REFERENCES = os.environ.get("GETH_REFERENCES", "").rstrip("/")
 BASE_FILES = ("plan_pipeline.txt", "plan_samplesheet.csv", "plan_params.json")
 PART_FILES = {"contrasts": "plan_contrasts.csv", "profile": "plan_profile.txt", "upstream": "plan_upstream.txt"}
 
@@ -652,7 +656,8 @@ def sc_value(key, value):
         return v, f"'{key}' must be a comma-separated list of values between {low} and {high} (got {value!r})"
     if kind == "list_str" and not low <= len(v) <= high:
         return v, f"'{key}' must list {low} to {high} genes (got {len(v)})"
-    if kind == "model" and not (v.startswith(REFERENCES + "/") and v.endswith(".pkl") and os.path.isfile(v)):
+    if kind == "model" and not (REFERENCES and v.startswith(REFERENCES + "/") and v.endswith(".pkl")
+                                and os.path.isfile(v)):
         return v, f"'{key}' must be a CellTypist model file from the reference catalogue ({REFERENCES}/...pkl): {v}"
     return v, None
 
@@ -990,7 +995,8 @@ def main(argv):
     if cmd == "runtime":  # shell assignments for run_nfcore.sh
         entry = REGISTRY.get(pipeline_name(argv[2]) if len(argv) > 2 else "", {})
         print(f"pipeline_nxf_ver={entry.get('nextflow', '')}")
-        print(f"pipeline_java_home={entry.get('java_home', '')}")
+        java_home = os.environ.get(f"GETH_JAVA{entry['java']}_HOME", "") if "java" in entry else ""
+        print(f"pipeline_java_home={java_home}")
         print(f"pipeline_input_format={entry.get('input_format', 'csv')}")
         print(f"pipeline_legacy_limits={'1' if entry.get('legacy_limits') else ''}")
         print(f"pipeline_extra_config={entry.get('extra_config', '')}")

@@ -14,7 +14,9 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BASELINE_DE = "/exports/eddie/scratch/sguizard/Perseus_Veil/geth/baselines/airway_de/results"
+# The airway DE baseline made by bench/baseline_airway_de.sh: $GETH_BASELINES_DIR/airway_de/results
+BASELINE_DE = os.path.join(os.environ.get("GETH_BASELINES_DIR")
+                           or os.path.join(os.environ.get("GETH_WORK_ROOT", "."), "baselines"), "airway_de", "results")
 DEX_GENES = ("DUSP1", "FKBP5", "KLF15", "PER1", "TSC22D3", "ZBTB16", "CRISPLD2")
 
 
