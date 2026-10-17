@@ -155,7 +155,7 @@ a { color: var(--accent); }
     <span>Updated 2026-10-16</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>nf-core/rnaseq 3.27.0 · nf-core/scrnaseq 4.2.0</span>
-    <span>repo sguizard/Geth · release v1.4.0</span>
+    <span>repo sguizard/Geth · release v1.5.0</span>
   </div>
 </header>
 
@@ -259,7 +259,8 @@ a { color: var(--accent); }
           <li class="done">C · Agents design the single-cell analysis on a vetted Scanpy/CellTypist toolbox: 3/3 designs found all 7 expected PBMC populations, analyst labels matched CellTypist broad types for 100% of cells, every flag answered, all report numbers traced (v1.3.0)</li>
           <li class="done">C · Fixes found by the benchmark: CellTypist cache in the job folder, automatic doublet threshold (0 → 0.8% doublets), flags computed by Geth, annotations saved through a tool (v1.3.0, v1.3.1)</li>
           <li class="done">Extra pipelines (v1.4.0): skills, schemas and checks for 10 more nf-core pipelines (23/23 tests). All 7 in scope pass their test profiles on Eddie; older templates run with their own Nextflow (legacy config parser, 23.10.4 for nanoseq, 22.10.8 + Java 17 for DSL1 eager)</li>
-          <li>Next: planner tests on realistic deliveries for the new pipelines; sarek, taxprofiler, mag once the existing database copies are wired in</li>
+          <li class="done">Public-ready (v1.5.0): every site-specific value moved to one site file (<code>site/site.env</code>, with examples for a single machine and for Eddie); documentation for users and developers in <code>docs/</code>; generic README; GPL-3.0 licence; <code>geth doctor</code>, <code>list</code>, <code>version</code>; self-contained tests; results summary for every pipeline (it crashed on nanoseq/eager samplesheets). Smoke runs through the new configuration: yeast bulk 13/13 plan checks, 42/42 report numbers; single-cell design 7/7 PBMC populations, 88/88</li>
+          <li>Next: planner tests on realistic deliveries for the new pipelines; index reuse; sarek, taxprofiler, mag once the existing database copies are wired in</li>
         </ul>
       </div>
     </li>
@@ -468,11 +469,12 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-16">2026-10-16</time><span>Phase 7 plan approved: bulk DE first, then CellBender on the gpu queue, then agent-designed single-cell downstream analysis.</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>10 more nf-core pipelines added; sarek, taxprofiler and mag wait for the existing database copies. Older pipelines run with their own Nextflow version.</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Releases v1.3.0/v1.3.1 (GPU CellBender, agent-designed single-cell analysis) and v1.4.0 (pipelines).</span></li>
+    <li><time datetime="2026-10-17">2026-10-17</time><span>Geth made generic for any site: one site configuration file; documentation as Markdown in <code>docs/</code>; licence GPL-3.0 (can be changed later while there are no outside contributors). Release v1.5.0.</span></li>
   </ul>
 </section>
 
 <footer>
-  <span>Sources: <code>FEASIBILITY.md</code> and <code>spikes/*/RESULTS.md</code> in the Geth repository; run folders in <code>/exports/eddie/scratch/sguizard/Perseus_Veil/spikes</code>.</span>
+  <span>Sources: <code>docs/history/feasibility.md</code>, <code>docs/validation.md</code> and <code>spikes/*/RESULTS.md</code> in the Geth repository; run folders in <code>/exports/eddie/scratch/sguizard/Perseus_Veil/spikes</code>.</span>
   <span>Test data: nf-core test datasets staged as raw deliveries (yeast GSE110004 subset; mouse chr19 10x v2).</span>
 </footer>
 
