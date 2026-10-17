@@ -18,6 +18,8 @@ Optional parts are given with  --contrasts <file>  --profile <name>  --upstream 
       Store an accepted attempt as the new baseline, with the error that may justify the next change.
   geth_checks.py revision <pipeline>
       Print the pinned revision of a pipeline (exit 1 if Geth does not run it).
+  geth_checks.py normalise-sheet <in.csv> <out.csv>
+      Rewrite a samplesheet with every column on every row.
   geth_checks.py runtime <pipeline>
       Print shell assignments for the pipeline's runtime (pinned Nextflow, Java, input format, extra config).
 
@@ -37,14 +39,17 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMAS = os.path.join(HERE, "..", "schemas")
-OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_version")  # set by Geth only
+OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_version",
+         "config_profile_name")  # set by Geth only
 
 # Pipelines Geth runs. "design" = samplesheet columns that define the experiment and may never change
-# after approval (None = every column). Downstream pipelines also need contrasts and an analysis profile.
+# after approval (None = every column); "design_params" = parameters that describe the data, frozen the same
+# way. Downstream pipelines also need contrasts and an analysis profile. "fixed_params" are added at launch.
 REGISTRY = {
     # "star": the STAR version the release uses; a reused star_index must have been built with it.
     "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b"},
-    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b"},
+    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b",
+                 "design_params": ("protocol",)},
     "sarek": {"revision": "3.10.0", "design": ("patient", "sample", "status", "lane", "fastq_1", "fastq_2", "bam", "cram"),
               "key": ("fastq_1", "bam", "cram", "spring_1", "vcf")},
     "isoseq": {"revision": "3.0.1", "design": ("sample", "seq_data", "start_from"), "key": "seq_data",
@@ -53,7 +58,9 @@ REGISTRY = {
                     "key": ("fastq_1", "fasta"), "required_params": ("databases",)},
     "mag": {"revision": "5.5.0", "design": ("sample", "run", "group", "short_reads_1", "short_reads_2", "long_reads"),
             "key": ("short_reads_1", "long_reads")},
-    "ampliseq": {"revision": "3.0.0", "design": ("sample", "run", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    # ampliseq 3.0.0 declares config_profile_name as a non-optional String: nf-core's test profile sets it.
+    "ampliseq": {"revision": "3.0.0", "design": ("sample", "run", "fastq_1", "fastq_2"), "key": "fastq_1",
+                 "design_params": ("primer_fwd", "primer_rev"), "fixed_params": {"config_profile_name": "Geth"}},
     # Older templates define functions in nextflow.config, which Nextflow 26's strict config parser rejects.
     "chipseq": {"revision": "2.1.0", "key": "fastq_1", "nxf_env": {"NXF_SYNTAX_PARSER": "v1"},
                 "design": ("sample", "replicate", "antibody", "control", "control_replicate", "fastq_1", "fastq_2")},
@@ -62,9 +69,11 @@ REGISTRY = {
     # nanoseq uses the `echo` process directive, removed from recent Nextflow.
     "nanoseq": {"revision": "3.1.0", "design": ("group", "replicate", "barcode", "input_file"), "nextflow": "23.10.4",
                 "extra_config": "legacy_singularity.config",
-                "key": ("input_file", "barcode"), "required_params": ("protocol",)},
+                "key": ("input_file", "barcode"), "required_params": ("protocol",), "design_params": ("protocol",)},
     "methylseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1",
-                  "nxf_env": {"NXF_SYNTAX_PARSER": "v1"}},
+                  "nxf_env": {"NXF_SYNTAX_PARSER": "v1"},
+                  "design_params": ("rrbs", "pbat", "em_seq", "single_cell", "zymo", "accel", "cegx", "epignome",
+                                    "swift", "taps", "non_directional")},
     # eager 2.5.3 is DSL1: run with an older Nextflow (and Java 17, from GETH_JAVA17_HOME), TSV input,
     # max_* resource params.
     "eager": {"revision": "2.5.3", "key": ("R1", "BAM"), "nextflow": "22.10.8",
@@ -204,6 +213,22 @@ def parse_sheet(text):
     header = [h.strip() for h in (reader.fieldnames or [])]
     rows = [{(k or "").strip(): (v or "").strip() for k, v in row.items()} for row in reader]
     return header, rows
+
+
+def normalise_sheet(text):
+    """The samplesheet as CSV with every header column on every row (trailing empty fields kept)."""
+    header, rows = parse_sheet(text)
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(header)
+    for r in rows:
+        writer.writerow([r.get(h, "") for h in header])
+    return out.getvalue()
+
+
+def launch_params(pipeline, params):
+    """The parameters given to the pipeline: the plan's plus the ones Geth always sets."""
+    return dict(params, **REGISTRY.get(pipeline, {}).get("fixed_params", {}))
 
 
 def row_key(pipeline, row):
@@ -401,6 +426,10 @@ def check_isoseq(rows, params):
         problems.append("aligner 'ultra' needs a 'gtf' annotation")
     if any(r.get("start_from") in ("ccs", "lima", "refine") for r in rows) and not params.get("primers"):
         problems.append("'primers' (FASTA of the Iso-Seq primers) is required unless every row starts from mapping")
+    size = sum(os.path.getsize(r["seq_data"]) for r in rows if os.path.isfile(r.get("seq_data", "")))
+    if any(r.get("start_from") == "ccs" for r in rows) and size < 2e9 and int(params.get("chunk_ccs", 40)) > 5:
+        problems.append(f"small input ({size / 1e6:.0f} MB of subreads): set 'chunk_ccs' to 5 or fewer; with the "
+                        "default 40 chunks most chunks are empty and the TAMA merge step fails")
     return problems
 
 
@@ -584,6 +613,11 @@ def check_nanoseq(rows, params):
                         f"got '{params.get('barcode_kit')}'")
     if params.get("protocol") not in ("DNA", "cDNA", "directRNA"):
         problems.append("'protocol' must be DNA, cDNA or directRNA")
+    if params.get("protocol") == "DNA":
+        for key, why in (("skip_quantification", "transcript quantification needs cDNA or directRNA"),
+                         ("skip_fusion_analysis", "fusion detection is for RNA")):
+            if params.get(key) is not True:
+                problems.append(f"with protocol DNA set '{key}=true' ({why})")
     return problems
 
 
@@ -892,6 +926,12 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
             problems.append("design change: the contrasts differ from the approved plan")
         if (profile or "").strip() != plan["profile"]:
             problems.append(f"design change: analysis profile must stay '{plan['profile']}' (got '{profile}')")
+    elif (profile or "").strip() or (contrasts_text or "").strip():
+        problems.append(f"nf-core/{pipeline} takes no analysis profile or contrasts: pass empty strings")
+    for key in REGISTRY[pipeline].get("design_params", ()):
+        if params.get(key) != plan["params"].get(key):
+            problems.append(f"design change: param '{key}' describes the data and must stay "
+                            f"{plan['params'].get(key)!r} as approved (got {params.get(key)!r})")
 
     state = load_state(run_dir, plan)
     error = state.get("error") or {}
@@ -932,11 +972,25 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
                 problems.append(f"param '{k}' changed ({old[k]!r} -> {params[k]!r}) but the previous error does not mention it")
     else:
         for k in added + removed + changed:
-            if not mentioned(k, text):
+            if not mentioned(k, text) and not skips_named_step(k, params.get(k), text):
                 what = "added" if k in added else "removed" if k in removed else f"changed ({old[k]!r} -> {params[k]!r})"
                 problems.append(f"param '{k}' was {what} but the previous error does not mention it"
                                 + ("" if text else " (the approved plan must be launched unchanged first)"))
+        same_sheet = normalised_csv(sheet_text) == normalised_csv(state["sheet"])
+        if error.get("kind") == "nextflow" and same_sheet and not (added or removed or changed) \
+                and state.get("repeats", 0) >= 1:
+            problems.append("this exact attempt has already failed twice: change what the error points to, "
+                            "or stop and report the error")
     return problems
+
+
+def skips_named_step(key, value, error_text):
+    """skip_<step>=true is the minimal fix when the error names that step (e.g. skip_preseq after a
+    PRESEQ_LCEXTRAP failure)."""
+    if not key.startswith("skip_") or value not in (True, "true"):
+        return False
+    step = key[len("skip_"):]
+    return any(len(w) >= 4 and re.search(re.escape(w), error_text or "", re.I) for w in {step, step.split("_")[0]})
 
 
 def sc_gate(plan, params_text_or_dict, state):
@@ -984,7 +1038,7 @@ def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_t
             contrasts_text, profile = c["contrasts"], c["profile"]
     write = lambda f, s: open(os.path.join(run_dir, f), "w").write(s.strip() + "\n")
     write("plan_pipeline.txt", pipeline)
-    write("plan_samplesheet.csv", sheet_text)
+    write("plan_samplesheet.csv", normalise_sheet(sheet_text))
     write("plan_params.json", json.dumps(params, indent=2) if params or not problems else params_text)
     write("plan_rationale.txt", rationale.strip() + note)
     if REGISTRY.get(pipeline, {}).get("downstream"):
@@ -1001,7 +1055,7 @@ def save_checked(run_dir, pipeline, sheet_text, params, contrasts_text="", profi
     checked = os.path.join(run_dir, ".checked")
     os.makedirs(checked, exist_ok=True)
     open(os.path.join(checked, "plan_pipeline.txt"), "w").write(pipeline + "\n")
-    open(os.path.join(checked, "plan_samplesheet.csv"), "w").write(sheet_text.strip() + "\n")
+    open(os.path.join(checked, "plan_samplesheet.csv"), "w").write(normalise_sheet(sheet_text))
     json.dump(params, open(os.path.join(checked, "plan_params.json"), "w"), indent=2)
     open(os.path.join(checked, PART_FILES["contrasts"]), "w").write((contrasts_text or "").strip() + "\n")
     open(os.path.join(checked, PART_FILES["profile"]), "w").write((profile or "").strip() + "\n")
@@ -1010,7 +1064,10 @@ def save_checked(run_dir, pipeline, sheet_text, params, contrasts_text="", profi
 def record(run_dir, kind, sheet_text, params_text, error_text=""):
     plan = approved_plan(run_dir)
     state = load_state(run_dir, plan)
-    state["sheet"], state["params"] = sheet_text, parse_params(params_text)
+    new_params = parse_params(params_text)
+    same = normalised_csv(sheet_text) == normalised_csv(state["sheet"]) and new_params == state["params"]
+    state["repeats"] = state.get("repeats", 0) + 1 if kind == "nextflow" and same and state.get("error") else 0
+    state["sheet"], state["params"] = sheet_text, new_params
     if kind == "analysis":  # single-cell toolbox: count analyses, keep the diagnostics as the reference
         state["analyses"] = state.get("analyses", 0) + 1
         state["error"] = {"kind": "diagnostics", "text": error_text}
@@ -1056,10 +1113,14 @@ def main(argv):
             print("\n".join(f"- {p}" for p in problems))
             return 1
         if len(argv) > 5:
-            json.dump(params, open(argv[5], "w"), indent=2)
+            json.dump(launch_params(pipeline, params), open(argv[5], "w"), indent=2)
         if save_dir:
             save_checked(save_dir, pipeline, sheet_text, params, extra["contrasts_text"], extra["profile"])
         print("PLAN CHECK: OK")
+        return 0
+    if cmd == "normalise-sheet":  # normalise-sheet <in.csv> <out.csv>
+        text = open(argv[2]).read()
+        open(argv[3], "w").write(normalise_sheet(text))
         return 0
     if cmd == "save-plan":
         extra, argv = parts(argv)

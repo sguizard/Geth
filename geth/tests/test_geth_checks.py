@@ -186,6 +186,67 @@ class StarIndexReuse(unittest.TestCase):
         self.assertTrue(any("STAR aligner" in p for p in self.problems(aligner="hisat2")))
 
 
+class RunFixes(unittest.TestCase):
+    """Failures seen in the v1.6 benchmark runs (operator retries on test deliveries), replayed."""
+
+    def setUp(self):
+        self.run = Run("rnaseq", MISTRAL_SHEET, MISTRAL_PARAMS)
+        gc.approve(self.run.dir, "tester")
+        self.params = json.loads(MISTRAL_PARAMS)
+
+    def tearDown(self):
+        self.run.close()
+
+    def fail(self, error, params=None):
+        gc.record(self.run.dir, "nextflow", MISTRAL_SHEET, json.dumps(params or self.params), error)
+
+    def gate(self, params=None, profile="", contrasts=""):
+        return gc.gate(self.run.dir, "rnaseq", MISTRAL_SHEET, json.dumps(params or self.params), contrasts, profile)
+
+    def test_samplesheet_rows_get_every_column(self):
+        self.assertEqual(gc.normalise_sheet("sample,fastq_1,fastq_2,replicate\nA,/a.fq.gz,,1\nB,/b.fq.gz\n"),
+                         "sample,fastq_1,fastq_2,replicate\nA,/a.fq.gz,,1\nB,/b.fq.gz,,\n")
+
+    def test_skipping_the_step_named_by_the_error(self):
+        self.fail("Process `NFCORE_RNASEQ:RNASEQ:QUALIMAP_RNASEQ (WT_REP1)` terminated with an error exit status (1)")
+        self.assertEqual(self.gate(dict(self.params, skip_qualimap=True, skip_dupradar=True)),
+                         [])  # both already true in the plan: unchanged
+        allowed = dict(self.params, skip_rseqc=False)
+        self.fail("Process `NFCORE_RNASEQ:RNASEQ:RSEQC_INFEREXPERIMENT` terminated")
+        self.assertEqual(self.gate(dict(allowed, skip_rseqc=True)), [])
+        self.assertTrue(self.gate(dict(self.params, skip_markduplicates=True)), "a step the error does not name")
+
+    def test_no_analysis_profile_for_upstream_pipelines(self):
+        self.assertTrue(any("takes no analysis profile" in p for p in self.gate(profile="roslin")))
+
+    def test_a_third_identical_launch_is_refused(self):
+        self.fail("Process `NFCORE_RNASEQ:RNASEQ:SALMON_QUANT` terminated (exit 140)")
+        self.assertEqual(self.gate(), [], "one identical relaunch (resume) is allowed")
+        self.fail("Process `NFCORE_RNASEQ:RNASEQ:SALMON_QUANT` terminated (exit 140)")
+        self.assertTrue(any("already failed twice" in p for p in self.gate()))
+
+    def test_parameters_describing_the_data_are_frozen(self):
+        run = Run("nanoseq", "group,replicate,barcode,input_file,fasta,gtf\nKCMF1,1,6,,,\n",
+                  json.dumps({"protocol": "DNA", "input_path": "/x.fastq.gz", "barcode_kit": "NBD103/NBD104"}))
+        try:
+            gc.approve(run.dir, "tester")
+            gc.record(run.dir, "nextflow", run.read("plan_samplesheet.csv"), run.read("plan_params.json"),
+                      "ERROR ~ Invalid protocol option if performing quantification: DNA")
+            changed = json.dumps({"protocol": "cDNA", "input_path": "/x.fastq.gz", "barcode_kit": "NBD103/NBD104"})
+            problems = gc.gate(run.dir, "nanoseq", run.read("plan_samplesheet.csv"), changed)
+            self.assertTrue(any("'protocol' describes the data" in p for p in problems), problems)
+            skip = json.dumps({"protocol": "DNA", "input_path": "/x.fastq.gz", "barcode_kit": "NBD103/NBD104",
+                               "skip_quantification": True})
+            self.assertEqual(gc.gate(run.dir, "nanoseq", run.read("plan_samplesheet.csv"), skip), [])
+        finally:
+            run.close()
+
+    def test_geth_sets_the_profile_name_ampliseq_requires(self):
+        self.assertEqual(gc.launch_params("ampliseq", {"primer_fwd": "ACGT"})["config_profile_name"], "Geth")
+        self.assertNotIn("config_profile_name", gc.parse_params("config_profile_name=mine\nprimer_fwd=ACGT"))
+        self.assertNotIn("config_profile_name", gc.launch_params("rnaseq", {}))
+
+
 class DifferentialAbundance(unittest.TestCase):
 
     def check(self, obs=OBS, params=DE_PARAMS, contrasts=CONTRASTS, profile="rnaseq", upstream=AIRWAY):
@@ -279,8 +340,9 @@ class NewPipelines(unittest.TestCase):
         sheet = ("sample,seq_data,pbi,start_from\n"
                  f"brain,{self.f('run.subreads.bam')},{self.f('run.subreads.bam.pbi')},ccs\n"
                  f"brain,{self.f('run.ccs.bam')},none,lima\n")
-        ok = {"aligner": "minimap2", "fasta": self.f("genome.fa"), "primers": self.f("primers.fa")}
+        ok = {"aligner": "minimap2", "fasta": self.f("genome.fa"), "primers": self.f("primers.fa"), "chunk_ccs": 5}
         self.assertEqual(self.check("isoseq", sheet, ok), [])
+        self.assertTrue(any("set 'chunk_ccs' to 5 or fewer" in p for p in self.check("isoseq", sheet, dict(ok, chunk_ccs=40))))
         problems = self.check("isoseq", sheet.replace(self.f("run.subreads.bam.pbi"), "none"),
                               {"aligner": "ultra", "fasta": self.f("genome.fa")})
         text = "\n".join(problems)
@@ -399,8 +461,13 @@ class MorePipelines(NewPipelines):
 
     def test_nanoseq_barcode_kit_uses_qcat_names(self):
         sheet = "group,replicate,barcode,input_file,fasta,gtf\nKCMF1,1,6,,,\nKCMF1,2,12,,,\n"
-        ok = {"protocol": "DNA", "input_path": self.f("ont.fastq.gz"), "barcode_kit": "NBD103/NBD104"}
+        ok = {"protocol": "DNA", "input_path": self.f("ont.fastq.gz"), "barcode_kit": "NBD103/NBD104",
+              "skip_quantification": True, "skip_fusion_analysis": True}
         self.assertEqual(self.check("nanoseq", sheet, ok), [])
+        no_skips = {k: v for k, v in ok.items() if not k.startswith("skip_")}
+        text = "\n".join(self.check("nanoseq", sheet, no_skips))
+        self.assertIn("set 'skip_quantification=true'", text)
+        self.assertIn("set 'skip_fusion_analysis=true'", text)
         self.assertTrue(any("qcat's kit names" in p for p in self.check("nanoseq", sheet, dict(ok, barcode_kit="EXP-NBD104"))))
 
     test_sarek = test_isoseq = test_taxprofiler = test_mag = None  # covered by NewPipelines
