@@ -27,8 +27,10 @@ Columns: `sample,fastq_1,fastq_2,run` (+ optional `control`, `quant_reading`)
   ITS (variable length): `illumina_pe_readthrough=true` instead of fixed truncation.
 - `dada_ref_taxonomy`: database matching the amplicon: 16S: `silva=138.2` or `gtdb` / default `sbdi-gtdb`;
   18S: `pr2`; ITS fungi: `unite-fungi`; COI: `coidb`. Taxonomy downloads the database at run time.
-- `metadata=<TSV>` (sample ID column + variables) and `metadata_category=<column>` for group comparisons;
-  differential abundance only on request (`ancombc=true`).
+- `metadata=<TSV>` and `metadata_category=<column>` for group comparisons; differential abundance only on
+  request (`ancombc=true`). The metadata's first column must be named `ID` and hold the **sample names**.
+  Geth cannot rewrite a delivery's metadata: if its IDs are not the sample names (or not valid names), leave
+  `metadata` unset and say in the rationale that a metadata file with matching IDs is needed.
 
 ## Typical failure causes
 - Sample names with `-`, `.` or starting with a digit.

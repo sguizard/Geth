@@ -304,7 +304,7 @@ class MorePipelines(NewPipelines):
         sheet = ("sample,fastq_1,fastq_2,replicate\n"
                  f"WT,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},1\n"
                  f"WT,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')},2\n")
-        ok = {"fasta": self.f("genome.fa"), "macs_gsize": 2.7e9, "read_length": 50, "narrow_peak": True, "mito_name": "MT"}
+        ok = {"fasta": self.f("genome.fa"), "macs_gsize": 2.7e9, "read_length": 50, "narrow_peak": True}  # no MT contig
         self.assertEqual(self.check("atacseq", sheet, ok), [])
         self.assertTrue(any("numbered 1..N" in p for p in self.check("atacseq", sheet.replace(",2\n", ",3\n"), ok)))
 
@@ -334,6 +334,37 @@ class MorePipelines(NewPipelines):
         text = "\n".join(self.check("methylseq", sheet, {"fasta": self.f("genome.fa"), "rrbs": True, "pbat": True, "taps": True}))
         self.assertIn("at most one library-prep preset", text)
         self.assertIn("aligner=bwamem", text)
+
+    def test_atacseq_mito_name_is_a_reference_contig(self):
+        fasta = self.f("yeast.fa")
+        open(fasta, "w").write(">I\nACGT\n>MT\nACGT\n")
+        sheet = f"sample,fastq_1,fastq_2,replicate\nWT,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},1\n"
+        ok = {"fasta": fasta, "macs_gsize": 1.2e7, "read_length": 50, "narrow_peak": True, "mito_name": "MT"}
+        self.assertEqual(self.check("atacseq", sheet, ok), [])
+        self.assertTrue(any("its contigs are: I, MT" in p for p in self.check("atacseq", sheet, dict(ok, mito_name="M"))))
+        unset = dict(ok); unset.pop("mito_name")
+        self.assertTrue(any("set 'mito_name'" in p and "'MT'" in p for p in self.check("atacseq", sheet, unset)))
+        self.assertEqual(self.check("atacseq", sheet, dict(unset, keep_mito=True)), [])
+
+    def test_ampliseq_metadata_ids_are_sample_names(self):
+        sheet = ("sample,fastq_1,fastq_2,run\n"
+                 f"soil_A,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},run1\n"
+                 f"soil_B,{self.f('N_L1_R1.fastq.gz')},{self.f('N_L1_R2.fastq.gz')},run2\n")
+        meta = self.f("metadata.tsv")
+        ok = {"primer_fwd": "GTGYCAGCMGCCGCGGTAA", "primer_rev": "GGACTACNVGGGTWTCTAAT", "metadata": meta,
+              "metadata_category": "treatment"}
+        open(meta, "w").write("ID\ttreatment\nsoil_A\tcontrol\nsoil_B\twarmed\n")
+        self.assertEqual(self.check("ampliseq", sheet, ok), [])
+        open(meta, "w").write("facility_id\ttreatment\n1\tcontrol\n2\twarmed\n")
+        text = "\n".join(self.check("ampliseq", sheet, dict(ok, metadata_category="plot")))
+        for expected in ("first column must be named 'ID'", "not found: 1, 2", "'plot' is not a column"):
+            self.assertIn(expected, text)
+
+    def test_nanoseq_barcode_kit_uses_qcat_names(self):
+        sheet = "group,replicate,barcode,input_file,fasta,gtf\nKCMF1,1,6,,,\nKCMF1,2,12,,,\n"
+        ok = {"protocol": "DNA", "input_path": self.f("ont.fastq.gz"), "barcode_kit": "NBD103/NBD104"}
+        self.assertEqual(self.check("nanoseq", sheet, ok), [])
+        self.assertTrue(any("qcat's kit names" in p for p in self.check("nanoseq", sheet, dict(ok, barcode_kit="EXP-NBD104"))))
 
     test_sarek = test_isoseq = test_taxprofiler = test_mag = None  # covered by NewPipelines
 
