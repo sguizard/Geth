@@ -29,7 +29,8 @@ if tool == "kraken2":
     sheet = ["tool,db_name,db_params,db_type,db_path", f"kraken2,{os.path.basename(entry)},,short;long,{db}"]
     if lengths:
         length = min(lengths, key=lambda n: abs(n - 150))
-        sheet.append(f"bracken,{os.path.basename(entry)},;-r {length},short,{db}")
+        # taxprofiler needs a db_name unique across kraken2 and bracken, even for the same database
+        sheet.append(f"bracken,{os.path.basename(entry)}_bracken,;-r {length},short,{db}")
         lines.append(f"Bracken: read lengths {', '.join(map(str, lengths))} available; the sheet uses {length}")
     name = "databases_kraken2_bracken.csv" if lengths else "databases_kraken2.csv"
     lines.append(f"Memory: Kraken2 loads the {hash_gb:.0f} GB index in RAM: Geth asks for enough memory for its jobs")

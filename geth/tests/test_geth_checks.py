@@ -350,7 +350,7 @@ class NewPipelines(unittest.TestCase):
         k2 = os.path.join(cls.d, "k2.tar.gz")
         open(k2, "wb").write(b"placeholder")
         open(os.path.join(cls.d, "databases.csv"), "w").write(
-            f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2,;-r 150,short,{k2}\n")
+            f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2_bracken,;-r 150,short,{k2}\n")
 
     @classmethod
     def tearDownClass(cls):
@@ -439,11 +439,15 @@ class NewPipelines(unittest.TestCase):
         open(os.path.join(k2, "database150mers.kmer_distrib"), "w").write("x\n")
         sheet_db = self.f("databases_real.csv")
         open(sheet_db, "w").write(f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2,;-r 150,short,{k2}\n")
+        self.assertTrue(any("unique across both tools" in p for p in self.check("taxprofiler", "sample,run_accession,"
+                        f"instrument_platform,fastq_1,fastq_2,fasta\nS1,S1_run1,ILLUMINA,{self.f('S1_R1.fastq.gz')},"
+                        f"{self.f('S1_R2.fastq.gz')},\n", {"databases": sheet_db, "run_kraken2": True, "run_bracken": True})))
+        open(sheet_db, "w").write(f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2_bracken,;-r 150,short,{k2}\n")
         sheet = ("sample,run_accession,instrument_platform,fastq_1,fastq_2,fasta\n"
                  f"S1,S1_run1,ILLUMINA,{self.f('S1_R1.fastq.gz')},{self.f('S1_R2.fastq.gz')},\n")
         ok = {"databases": sheet_db, "run_kraken2": True, "run_bracken": True}
         self.assertEqual(self.check("taxprofiler", sheet, ok), [])
-        open(sheet_db, "w").write(f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2,;-r 100,short,{k2}\n")
+        open(sheet_db, "w").write(f"tool,db_name,db_params,db_type,db_path\nkraken2,k2,,short,{k2}\nbracken,k2_bracken,;-r 100,short,{k2}\n")
         self.assertTrue(any("no Bracken distribution for read length 100" in p for p in self.check("taxprofiler", sheet, ok)))
         self.assertIn("KRAKEN2_KRAKEN2", gc.extra_resources("taxprofiler", ok))
         self.assertEqual(gc.extra_resources("rnaseq", ok), "")

@@ -525,6 +525,10 @@ def check_taxprofiler(rows, params):
         for sample in sorted(s for s, l in layouts.items() if len(l) > 1):
             problems.append(f"sample '{sample}' mixes single-end short-read runs with other runs: merging its runs needs read pairs "
                             "merged first (perform_shortread_qc=true and shortread_qc_mergepairs=true), or no run merging")
+    names = [r.get("db_name", "") for r in db_rows(params) if r.get("tool") in ("kraken2", "bracken")]
+    for name in sorted({n for n in names if names.count(n) > 1}):
+        problems.append(f"databases sheet: db_name '{name}' is used by both kraken2 and bracken; taxprofiler needs a "
+                        "name unique across both tools, even for the same database (e.g. add '_bracken')")
     for i, r in enumerate(db_rows(params), start=2):
         path, tool = r.get("db_path", ""), r.get("tool", "")
         if not os.path.exists(path):
