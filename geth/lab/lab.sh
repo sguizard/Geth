@@ -92,7 +92,9 @@ case "$cmd" in
             [ -d "$d" ] || continue
             pid=$(ls "$d"/.geth_*.pid 2>/dev/null | head -n 1 || true)
             if [ -n "$pid" ] && driver_alive "$pid"; then state=$(basename "$pid" .pid | sed 's/^\.geth_//; s/_/ round /')
-            elif [ -f "$d/build_state.txt" ]; then state=$(cat "$d/build_state.txt")
+            elif [ -f "$d/build_state.txt" ]; then
+                state=$(cat "$d/build_state.txt")
+                case $state in done*|failed*) ;; *) state="$state (waiting for a slot)" ;; esac
             elif [ -f "$d/lab_design_check.txt" ]; then state=$(head -n 1 "$d/lab_design_check.txt")
             elif [ -f "$d/geth_design.log" ]; then state="failed (see geth_design.log)"
             else state="waiting for a slot"
