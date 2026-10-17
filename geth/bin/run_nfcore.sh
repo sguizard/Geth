@@ -53,7 +53,8 @@ if ! python3 "$checks" check-plan "$pipeline" "$attempt/samplesheet.csv" "$attem
     exit 0
 fi
 
-# Resources: small test data gets capped requests (fast scheduling); real data gets nf-core's own.
+# Resources: small test data on a small reference gets capped requests (fast scheduling); real data gets
+# nf-core's own. A large genome needs large jobs whatever the read count (e.g. STAR loads a human index in RAM).
 input_bytes=$(python3 -c 'import csv, os, sys
 print(sum(os.path.getsize(v) for r in csv.DictReader(open(sys.argv[1])) for v in r.values()
           if v and v.startswith("/") and os.path.isfile(v)))' "$attempt/samplesheet.csv")
@@ -72,7 +73,20 @@ if [ "$pipeline" = scrnaseq ] && [ "${GETH_GPU:-no}" = yes ] && \
 fi
 profile_args=()
 [ -n "$profiles" ] && profile_args=(-profile "$profiles")
-if [ "$input_bytes" -lt 2000000000 ]; then resources=test; else resources=production; fi
+reference_bytes=$(python3 -c 'import json, os, sys
+p = json.load(open(sys.argv[1]))
+fasta = p.get("fasta") or ""
+if p.get("genome") or p.get("star_index"):
+    print(10 ** 10)  # an iGenomes genome or a prebuilt index: assume a large genome
+elif fasta.startswith("/") and os.path.isfile(fasta):
+    print(os.path.getsize(fasta) * (3 if fasta.endswith(".gz") else 1))
+else:
+    print(0)' "$attempt/params.json")
+if [ "$input_bytes" -lt 2000000000 ] && [ "$reference_bytes" -lt 500000000 ]; then
+    resources=test
+else
+    resources=production
+fi
 
 # Per-pipeline runtime: older pipelines pin their Nextflow (and Java), eager reads a TSV and takes max_* params.
 eval "$(python3 "$checks" runtime "$pipeline")"

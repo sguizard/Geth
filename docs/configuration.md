@@ -147,9 +147,11 @@ nextflow run nf-core/<pipeline> -r <pinned revision>
     --outdir <run>/results -w <run>/work -resume
 ```
 
-- **Resource caps by input size.** Inputs under 2 GB get `test.config` (at most 4 CPUs, 16 GB and 4 h
-  per task) so that small jobs start quickly. Larger inputs get `production.config` (at most 16 CPUs,
-  128 GB and 48 h). To match your nodes, set `process.resourceLimits` in `GETH_NFCORE_CONFIG`, as in
+- **Resource caps by input and reference size.** Inputs under 2 GB on a reference under 500 MB get
+  `test.config` (at most 4 CPUs, 16 GB and 4 h per task) so that small jobs start quickly. Everything else
+  gets `production.config` (at most 16 CPUs, 128 GB and 48 h). That includes small inputs on a large
+  genome, an iGenomes genome or a prebuilt index, because STAR alone needs about 32 GB for a human genome.
+  To match your nodes, set `process.resourceLimits` in `GETH_NFCORE_CONFIG`, as in
   `site/examples/local-nfcore.config`.
 - **Analysis profile.** Downstream pipelines take one, e.g. `rnaseq` for differentialabundance. The
   planner chooses it from an allowlist.
