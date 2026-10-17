@@ -162,6 +162,56 @@ The GRCh38 STAR index built by the PBMC run (29 GB, about 30 minutes) was regist
 - **Runs:** both succeeded without building an index. The airway run took 53 minutes, mostly queue waits
   for full-size jobs; the PBMC run took 12 minutes.
 
+## Geth lab, arm A: agents designing single-cell analyses (experimental, version 1.6)
+
+Can a designer agent write a coherent single-cell downstream analysis? Arm A asks for a structured design
+(steps, statistics, expected results, rationale) and runs nothing. Each design is scored by
+`bench/lab/eval_design.py`; the answers are kept out of the agent's reach.
+- **Kang 2018** (20 checks): PBMCs of 8 donors, control and interferon-beta stimulated, with demuxlet
+  calls. The question: which genes respond in each cell type? The cell labels are removed. The matrix is
+  already filtered and has no mitochondrial genes.
+- **PBMC 1k** (12 checks): the CellBender matrix of Geth's PBMC run (1,351 cells). The question: which
+  cell types, and their markers?
+- **A1** gives the designer a best-practice skill (`geth/lab/skills/sc-design-lab`); **A0** does not.
+
+| Arm | Kang 2018 (out of 20) | PBMC 1k (out of 12) |
+|---|---|---|
+| A1, with the skill | 19, 19, 18, 18, 18, 17 (mean 18.2) | 12, 12, 12, 12, 12, 11 (mean 11.8) |
+| A0, no skill | 15, 15, 16 (mean 15.3) | 11, 11, 10 (mean 10.7) |
+
+Two designs ended on a tool error (below) and are left out: one per arm.
+
+**With the skill**, every design:
+- kept the demuxlet singlets instead of running a doublet detector
+- tested conditions on pseudobulk counts per cell type and donor (pyDESeq2, `~ donor + condition`), with
+  Benjamini-Hochberg correction
+- integrated across donors or conditions (Harmony) on Kang, and not on the single PBMC sample
+- predicted the interferon-stimulated genes (IFIT1, ISG15, MX1), with the strongest response in monocytes
+
+On PBMC every design set data-driven QC (MAD rules per metric). One also added a 25% mitochondrial cap,
+after noticing that 5% of the cells are near-empty with over 95% mitochondrial reads.
+
+**Without the skill**, the Kang designs:
+- tested conditions with MAST and donor as a random effect instead of pseudobulk (2/3). This accounts for
+  donors, but it is the weaker choice in published benchmarks.
+- did not notice that the matrix has no mitochondrial reads (3/3)
+- skipped integration across conditions (2/3)
+
+**Both arms** annotated with a CellTypist model alone, without checking canonical markers. This happened
+in all Kang designs and in 4 of the 9 PBMC designs. Kang designs also rarely listed the expected cell types.
+That check may be too strict for a question about the interferon response.
+
+The first round exposed four faults in the lab harness, all fixed:
+- `--lab_skill false` reached Nextflow as the text "false", which is true in Groovy. The first six "A0"
+  designs had the skill too; they are counted as A1 above.
+- The file tools failed on a misspelt path, which ended the run, instead of answering "not found".
+- The scorer read numbers quoted in a step's reason as cut-offs.
+- The scorer did not recognise `pca_umap` as PCA.
+
+**Conclusion:** with the skill, Qwen 3.5 designs analyses that follow current best practice and avoid
+pseudoreplication. Without it, the designs remain plausible but statistically weaker. Arms B and C (agents
+writing and running the analysis code, in a sandbox) wait for a go.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or

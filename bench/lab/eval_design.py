@@ -53,7 +53,7 @@ def score(run_dir, dataset):
     c = {"format_ok": "DESIGN CHECK: OK" in check, "all_steps": all(k in steps for k in STEPS),
          "log_normalisation": has(s("normalisation"), r"log", r"sctransform", r"pearson"),
          "hvg_1000_5000": any(1000 <= n <= 5000 for n in map(int, re.findall(r"\d+", s("feature_selection")))),
-         "pca": has(s("dimensionality_reduction"), r"\bpca\b", r"principal"),
+         "pca": has(s("dimensionality_reduction"), r"(?<![a-z])pca(?![a-z])", r"principal", r"n_pcs"),  # pca_umap counts
          "graph_clustering": has(s("clustering"), r"leiden", r"louvain"),
          "annotation_markers_and_reference": has(s("annotation"), r"marker") and has(s("annotation"), r"celltypist", r"reference", r"azimuth", r"singler")}
 
