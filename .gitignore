@@ -5,3 +5,7 @@ __pycache__/
 work/
 results/
 *.o[0-9]*
+
+# Site configuration: personal paths, project codes and keys stay local
+site/site.env
+site/*.local.*
