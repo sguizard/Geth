@@ -10,6 +10,7 @@
 #   geth list                                  all runs and where they stand
 #   geth doctor                                check the installation and the site configuration
 #   geth version                               print Geth's version
+#   geth lab ...                               EXPERIMENTAL agent-designed analyses (not for real analyses)
 source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)/env.sh" || exit 1
 set -euo pipefail
 
@@ -186,6 +187,9 @@ case "$cmd" in
         ;;
     version)
         version
+        ;;
+    lab)
+        exec "$GETH_HOME/geth/lab/lab.sh" "$@"
         ;;
     *) usage ;;
 esac
