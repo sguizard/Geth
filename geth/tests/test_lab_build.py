@@ -40,6 +40,7 @@ class Build(unittest.TestCase):
         self.run = tempfile.mkdtemp(prefix="geth_build_")
         os.makedirs(os.path.join(self.run, "subset"))
         open(os.path.join(self.run, "subset", "output.h5ad"), "w").write("subset")
+        open(os.path.join(self.run, "subset", "genes.txt"), "w").write("ISG15\nIFIT1\nMX1\nCD3E\n")
 
     def tearDown(self):
         shutil.rmtree(self.run)
@@ -121,8 +122,25 @@ class Build(unittest.TestCase):
     def test_review_is_saved_as_approve_or_revise(self):
         out(lb.save_review, self.run, "1", "approve", "")
         self.assertEqual(open(os.path.join(self.run, "review_1.txt")).read(), "VERDICT: approve\n")
-        out(lb.save_review, self.run, "2", "maybe", "de: contrast reversed\n")
+        self.assertIn("REFUSED", out(lb.save_review, self.run, "2", "maybe", "x"))
+        out(lb.save_review, self.run, "2", "maybe", "- de: contrast reversed\n", True)
         self.assertIn("VERDICT: revise\n- de: contrast reversed", open(os.path.join(self.run, "review_2.txt")).read())
+
+    def test_record_does_not_overwrite_a_submitted_review(self):
+        """The structured answer can leak the model's commentary ('The model failed to output valid JSON')."""
+        out(lb.save_review, self.run, "1", "approve", "")
+        text = out(lb.save_review, self.run, "1", "revise", "The model failed to output valid JSON\n", True)
+        self.assertIn("already submitted", text)
+        self.assertEqual(open(os.path.join(self.run, "review_1.txt")).read(), "VERDICT: approve\n")
+
+    def test_results_contract_wants_symbols_and_cell_types(self):
+        self.write("de")
+        self.sandbox_run("de", "input", table=("de_results.tsv", "cell_type\tgene\tlog2fc\tpadj\nB\tENSG00000187608\t5\t0.001\n"))
+        self.assertIn("gene symbols", out(lb.check_spec, self.run, "de | 2 | 8 | 10\n"))
+        self.sandbox_run("de", "input", table=("de_results.tsv", "cell_type\tgene\tlog2fc\tpadj\n0\tISG15\t5\t0.001\n3\tMX1\t4\t0.01\n"))
+        self.assertIn("holds numbers", out(lb.check_spec, self.run, "de | 2 | 8 | 10\n"))
+        self.sandbox_run("de", "input", table=("de_results.tsv", "cell_type\tgene\tlog2fc\tpadj\nB cells\tISG15\t5\t0.001\n"))
+        self.assertIn("SPEC CHECK: OK", out(lb.check_spec, self.run, "de | 2 | 8 | 10\n"))
 
 
 class ShellQuoting(unittest.TestCase):
