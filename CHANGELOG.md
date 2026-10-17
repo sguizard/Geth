@@ -48,6 +48,9 @@ Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/vali
   - mag skips ALE on test-size data
 - **Geth lab (experimental):** `geth lab design`, `show` and `list` for agent-designed single-cell analyses
   (phase 11, arm A), on benchmark data only. `geth list` shows real runs only and points to `geth lab list`.
+- **Geth lab, arm B (experimental):** `geth lab build` has an engineer agent write a checked design as Python
+  steps, tested on a subset in a sandbox (no network, no host files, no keys), and a reviewer agent check them;
+  Geth then runs the steps on the full data from a pipeline it renders itself.
 - `bench/snapshot.sh` runs benchmarks on a frozen commit.
 - **fish support:** `source env.fish` gives fish the same environment as `env.sh` (it imports what
   `env.sh` exports), with tab completion of commands, run names, lab runs and options.
