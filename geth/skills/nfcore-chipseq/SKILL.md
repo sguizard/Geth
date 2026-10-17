@@ -13,7 +13,11 @@ Use this pipeline for **ChIP-seq** (transcription factors, histone marks): align
 - One row per FASTQ (pair). **IP** rows: `antibody` = the antibody/mark (e.g. `H3K27ac`, `CTCF`),
   `control` = the `sample` name of its input/IgG control, `control_replicate` = that control's replicate.
 - **Control (input) rows**: same columns, but `antibody`, `control` and `control_replicate` empty.
-- Biological replicates: same `sample`, `replicate` = 1, 2, 3... (must start at 1, no gaps).
+- `sample` is the **condition** (antibody + treatment or time point, e.g. `SPT5_T0`), not the library:
+  biological replicates of one condition share `sample`, with `replicate` = 1, 2, 3... (start at 1, no gaps).
+  Never one sample per library.
+- Inputs: one input `sample` with a replicate per culture/batch (or one input sample per condition). Each IP's
+  `control` + `control_replicate` must name the input library from the **same** culture/batch.
 - Re-sequenced library (several FASTQs of one replicate): repeat the row with the same `sample` and `replicate`.
 - `fastq_2` empty for single-end. Absolute paths, gzipped.
 

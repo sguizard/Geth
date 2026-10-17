@@ -20,8 +20,9 @@ Columns: `sample,fastq_1,fastq_2,replicate` (+ `control,control_replicate` only 
 - `macs_gsize`: effective genome size (human ≈ 2.7e9, mouse ≈ 1.87e9) with a custom genome.
 - `read_length`: nearest of 50, 75, 100, 150, 200.
 - `narrow_peak=true`: standard for ATAC-seq (Tn5 cut sites); broad only on request.
-- Mitochondrial reads are removed by default: set `mito_name` to the mitochondrial contig name of the
-  reference (`MT` for Ensembl, `chrM` for UCSC); `keep_mito=true` only if asked.
+- Mitochondrial reads are removed by default: set `mito_name` to the mitochondrial contig name exactly as
+  in the reference FASTA (often `MT` for Ensembl, `chrM` for UCSC); if it is wrong, CHECK_PLAN lists the
+  FASTA's contigs. `keep_mito=true` only if asked.
 - `blacklist=<BED>` if available for the assembly.
 
 ## Typical failure causes

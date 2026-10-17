@@ -80,8 +80,7 @@ What Geth is **not**:
 - It does not replace scientific judgement. The plan and the report are a starting point that a person
   reviews.
 - It is not validated for every data type. The [validation page](validation.md) shows exactly what was
-  tested. Pipelines marked "planner not yet validated" pass their own test runs, but agents have not yet
-  planned real deliveries for them.
+  tested. Some pipelines are validated on test-size deliveries only.
 - It is not a pipeline writer. It plans and runs existing nf-core pipelines.
 
 ## What you need

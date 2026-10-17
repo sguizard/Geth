@@ -80,8 +80,43 @@ settings (`bench/baseline.sh`):
 | nanoseq 3.1.0 | 26 | Nextflow 23.10.4, singularity engine |
 | eager 2.5.3 | 26 | Nextflow 22.10.8 + Java 17, singularity engine |
 
-Their plan checks are unit-tested. Planner benchmarks on realistic deliveries for these pipelines are the
-next step.
+Their plan checks are unit-tested.
+
+## The planner on realistic deliveries
+
+`bench/stage_deliveries.sh` builds one delivery per pipeline above from nf-core test data. The files are
+renamed the way a sequencing facility would deliver them, and each delivery has a free-text README and a
+sample table. Each also holds a trap that real deliveries hold:
+
+| Delivery | What the planner must work out |
+|---|---|
+| chipseq_spt5 | Two time points of a Spt5 ChIP, two cultures each, and one input DNA per culture: group the replicates, and link each ChIP to the input of its own culture. |
+| atacseq_osmotic | Two conditions, two replicates each; one library sequenced on two lanes; the mitochondrial contig name. |
+| methylseq_wgbs | One bisulfite library on three lanes; no library-preparation preset. |
+| ampliseq_16s | Primers given in the README; two sequencing runs; facility sample numbers that are not valid sample names; metadata that cannot be used as is. |
+| nanoseq_barcoded | One pooled FASTQ to demultiplex; the kit's commercial name, not the demultiplexer's; replicates as barcodes. |
+| eager_mammoth | Two libraries with different sequencers (colour chemistry), layouts and UDG treatments. |
+| isoseq_brain | Raw subreads with their index, primers, and a reference subset with its annotation. |
+
+Plans were scored check by check against the known design (`bench/eval_plan.py`, 9 to 13 checks per
+delivery), 3 plan-only repeats each:
+
+| Delivery | Round 1 | Round 2 |
+|---|---|---|
+| methylseq_wgbs, eager_mammoth, isoseq_brain | 3/3 fully correct each | not needed |
+| atacseq_osmotic | 2/3 (one guessed `mito_name=M`; the contig is `MT`) | 3/3 |
+| ampliseq_16s | 2/3 (one used metadata whose IDs match no sample name: the run would fail) | 3/3 |
+| chipseq_spt5 | 2/3 (one made every library its own sample: replicates never grouped) | 3/3 |
+| nanoseq_barcoded | 0/3 (commercial kit name `EXP-NBD104` instead of qcat's `NBD103/NBD104`) | 3/3 |
+
+Every plan of round 1 passed the plan check, so the failures showed what the check could not see. Before
+round 2:
+- **Three new plan checks:**
+  - `mito_name` must be one of the reference FASTA's contigs (they are listed when it is not)
+  - ampliseq metadata IDs must be the sample names, and the metadata category one of its columns
+  - Nanopore barcode kits must use qcat's names
+- **Two skills clarified:** the Nanopore skill's own example used a commercial kit name. The ChIP-seq
+  skill now says that `sample` is the condition, not the library.
 
 ## Not yet tested
 

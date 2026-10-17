@@ -317,11 +317,13 @@ launch.
 |---|---|
 | `bench/stage_testdata.sh` | Two small deliveries from nf-core test data, with free-text READMEs: yeast bulk RNA-seq (mixed SE/PE, technical replicates), mouse 10x scRNA-seq (two samples, lanes). |
 | `bench/stage_public.sh` | Real-size public data: airway (GSE52778, 24 GB), PBMC 1k v3 (5 GB), GRCh38, CellTypist immune models. |
+| `bench/stage_deliveries.sh` | Seven realistic deliveries for the pipelines added in 1.4 (chipseq, atacseq, methylseq, ampliseq, nanoseq, eager, isoseq), built from nf-core test data. Files are renamed the way a facility would deliver them, with a free-text README and a sample table, and the traps are realistic: re-sequenced lanes, input controls shared per culture, facility IDs that are not valid sample names, a pooled Nanopore FASTQ. |
+| `bench/bench_plan.sh <tag> <repeats> <delivery>...` | Plan-only repeats, each plan scored by `eval_plan.py`. Nothing is approved or run. |
 | `bench/bench.sh <tag> <repeats> [bulk] [sc]` | plan → approve → run → score on the test deliveries. |
 | `bench/bench_sc.sh <tag> <repeats> <upstream run>` | Agent-designed single-cell analyses on a finished scrnaseq run, scored. |
 | `bench/baseline.sh <pipeline> [<revision>]` | A pipeline's own test profile, without agents. |
 | `bench/baseline_airway_de.sh` | The hand-made textbook DE analysis of airway that Geth's DE runs are compared with. |
-| `bench/eval_plan.py <run> <dataset>` | Scores a plan against the known truth: `bulk`, `sc`, `airway`, `pbmc`, `airway_de`. |
+| `bench/eval_plan.py <run> <dataset>` | Scores a plan against the known truth: `bulk`, `sc`, `airway`, `pbmc`, `airway_de`, and the seven deliveries. Each scorer was checked with a hand-written correct plan (full marks, passes the plan check) and with injected mistakes. |
 | `bench/eval_run.py <run> <dataset> <plan_s> <run_s>` | Plan score, design kept in every launched attempt, success, report check, attempts and refusals. For `airway_de`, the overlap with the baseline and the known dexamethasone genes. |
 | `bench/eval_sc.py <run>` | Expected PBMC populations and markers, CellTypist agreement, QC sanity. |
 
@@ -354,8 +356,8 @@ automatically: use public data only.
 
 ## Limitations and roadmap
 
-- Validated with agents on four analysis types. The planner still has to be benchmarked on realistic
-  deliveries for the other pipelines.
+- Validated with agents on real-size data for four analysis types. The planner of the other pipelines is
+  validated on test-size deliveries only.
 - One organism and one experiment per plan.
 - Built indexes (e.g. STAR for GRCh38, about 25 minutes and 65 GB) are rebuilt for every run. Reuse
   through the reference catalogue is planned.

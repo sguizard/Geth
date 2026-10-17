@@ -26,6 +26,7 @@ Exit status 0 = OK, 1 = problems (described on stdout).
 import csv
 import difflib
 import getpass
+import gzip
 import hashlib
 import io
 import json
@@ -457,8 +458,41 @@ def check_chipseq(rows, params):
     return problems
 
 
+def fasta_contigs(path, max_bytes=500_000_000):
+    """Contig names of a local FASTA, from its .fai or by reading the headers of a file small enough to scan
+    quickly (None when they cannot be known cheaply)."""
+    if not isinstance(path, str) or not os.path.isfile(path):
+        return None
+    for fai in (path + ".fai", re.sub(r"\.gz$", "", path) + ".fai"):
+        if os.path.isfile(fai):
+            with open(fai) as fh:
+                return [line.split("\t", 1)[0] for line in fh if line.strip()]
+    if os.path.getsize(path) > max_bytes:
+        return None
+    with (gzip.open(path, "rt") if path.endswith(".gz") else open(path)) as fh:
+        return [line[1:].split()[0] for line in fh if line.startswith(">") and line[1:].strip()]
+
+
+def check_mito_name(params):
+    """ATAC-seq: mitochondrial reads are removed only if mito_name names the reference's mitochondrial contig."""
+    if params.get("genome") or params.get("keep_mito") is True:
+        return []
+    contigs = fasta_contigs(params.get("fasta"))
+    if contigs is None:
+        return []
+    mito = params.get("mito_name")
+    if mito and mito not in contigs:
+        return [f"'mito_name' '{mito}' is not a contig of the reference FASTA; its contigs are: "
+                f"{', '.join(contigs[:40])}{' ...' if len(contigs) > 40 else ''}"]
+    likely = [c for c in contigs if c.lower() in ("mt", "chrm", "mito", "chrmt", "m", "mitochondrion")]
+    if not mito and likely:
+        return [f"set 'mito_name' to the reference's mitochondrial contig ('{likely[0]}') so that mitochondrial "
+                "reads are removed (or keep_mito=true to keep them)"]
+    return []
+
+
 def check_atacseq(rows, params):
-    problems = check_replicates(rows, "samplesheet")
+    problems = check_replicates(rows, "samplesheet") + check_mito_name(params)
     if params.get("with_control") is True:
         problems += check_controls(rows, "samplesheet", False)
     elif any(r.get("control") for r in rows):
@@ -478,7 +512,28 @@ def check_ampliseq(rows, params):
     paired = {bool(r.get("fastq_2")) for r in rows}
     if paired == {False} and params.get("sequencing_type", "illumina_pe") == "illumina_pe":
         problems.append("single-end reads: set 'sequencing_type' to illumina_se (or the right technology)")
+    meta = params.get("metadata")
+    if isinstance(meta, str) and os.path.isfile(meta):
+        with open(meta) as fh:
+            header = [h.strip() for h in fh.readline().rstrip("\n").split("\t")]
+            ids = [line.split("\t")[0].strip() for line in fh if line.strip()]
+        samples = {r.get("sample") for r in rows}
+        if header[0] != "ID":
+            problems.append(f"metadata: its first column must be named 'ID' and hold the sample names (got '{header[0]}')")
+        unknown = sorted(set(ids) - samples)
+        if unknown or not set(ids) & samples:
+            problems.append(f"metadata IDs must be sample names of the samplesheet (not found: {', '.join(unknown[:10])}). "
+                            "Geth cannot rewrite a delivery's metadata: name the samples as the metadata IDs if those "
+                            "are valid sample names, or leave 'metadata' unset and say so in the rationale")
+        for cat in filter(None, str(params.get("metadata_category") or "").split(",")):
+            if cat.strip() not in header:
+                problems.append(f"'metadata_category' '{cat.strip()}' is not a column of the metadata ({', '.join(header)})")
     return problems
+
+
+# nanoseq 3.1.0 demultiplexes with qcat, which names kits its own way (from the schema's help text).
+QCAT_KITS = ("Auto", "RBK001", "RBK004", "NBD103/NBD104", "NBD114", "NBD104/NBD114", "PBC001", "PBC096",
+             "RPB004/RLB001", "RPB004/LWB001", "RAB204", "VMK001")
 
 
 def check_nanoseq(rows, params):
@@ -495,6 +550,10 @@ def check_nanoseq(rows, params):
             problems.append(f"samplesheet line {i}: fasta file does not exist: {fasta}")
     if demux and not (params.get("input_path") and params.get("barcode_kit")):
         problems.append("demultiplexing needs 'input_path' (pooled reads) and 'barcode_kit'")
+    elif demux and params.get("barcode_kit") not in QCAT_KITS:
+        problems.append(f"'barcode_kit' must be one of qcat's kit names: {', '.join(QCAT_KITS)} "
+                        f"(e.g. NBD103/NBD104 for the EXP-NBD103 and EXP-NBD104 native barcoding kits); "
+                        f"got '{params.get('barcode_kit')}'")
     if params.get("protocol") not in ("DNA", "cDNA", "directRNA"):
         problems.append("'protocol' must be DNA, cDNA or directRNA")
     return problems
