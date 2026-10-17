@@ -31,7 +31,7 @@ cluster.
 git clone https://github.com/sguizard/Geth.git && cd Geth
 cp site/site.env.example site/site.env      # describe your site: folders, model endpoint, scheduler
 export GETH_LLM_API_KEY=...                 # the key of your model endpoint (never stored in a file)
-source env.sh && geth doctor                # checks the installation
+source env.sh && geth doctor                # checks the installation (fish: source env.fish)
 
 geth plan /data/my_experiment "Compare the treated and untreated samples." my_experiment
 geth show my_experiment                     # review the plan; edit the plan files if needed

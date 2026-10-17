@@ -110,6 +110,17 @@ source /path/to/Geth/env.sh
 Add this line to your `~/.bashrc` to make the `geth` command available in every shell. `env.sh` loads
 `site/site.env`. To use another site file, set `GETH_SITE_ENV=/path/to/other.env` before sourcing it.
 
+With fish, source `env.fish` instead (add it to `~/.config/fish/config.fish`):
+
+```fish
+source /path/to/Geth/env.fish
+```
+
+`env.fish` runs `env.sh` in bash and copies the result into fish, so the site file stays a bash file and
+both shells get the same settings. It also loads tab completion for `geth`: commands, run names (with
+their pipeline), lab runs (with their arm), and options such as `--from`, `--yes`, `--detach` and
+`--no-skill`.
+
 ## 6. Fill the reference catalogue
 
 The reference catalogue is a folder of reference genomes, annotations and annotation models. The planner

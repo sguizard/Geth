@@ -17,6 +17,7 @@ agents decide; the gates verify; a person approves.
 
 ```
 env.sh                     source first: loads site/site.env, derives defaults, exports everything
+env.fish                   the same for fish: imports what env.sh exports (geth/bin/env_export.sh), loads completions
 VERSION                    release number (bumped on release branches)
 site/
   site.env.example         documented template of the site configuration (copy to site/site.env)
@@ -33,6 +34,8 @@ geth/
     collect_results.py     ready-to-copy result tables for the reporter
     check_report.py        traces every number and link of the report to the facts
     geth_doctor.sh         installation checks (geth doctor)
+    env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
+  completions/geth.fish    fish tab completion (loaded by env.fish)
   conf/                    configs added to nf-core runs: resource caps, legacy singularity engine
   schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release
   skills/                  planner skills: one SKILL.md per pipeline, plus sc-downstream
@@ -301,6 +304,9 @@ are often read-only in jobs.
 - `env.sh` is the only place that reads `site/site.env`. Everything else reads environment variables.
   `geth/nextflow.config` turns them into `params.model`, `params.allowed_models`, `params.data_root`,
   `params.runs_dir` and `params.references`, and configures the `agent` scope.
+- `env.fish` does not re-implement `env.sh`: it imports the changes `env.sh` makes in bash
+  (`geth/bin/env_export.sh`). Fish completions are in `geth/completions/geth.fish`; update them when a
+  command or option changes.
 - The local tools (`executor 'local'`) inherit the driver's environment, so `run_nfcore.sh` and the
   checks see the site settings. Scheduler jobs do not: `SC_ANALYSE` exports `GETH_REFERENCES` itself,
   and the containers get `-B` binds for the three Geth folders.
