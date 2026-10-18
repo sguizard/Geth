@@ -259,8 +259,11 @@ def save_review(run_dir, round_, verdict, issues, fallback=False):
     lines = [l.strip().lstrip("-* ").strip() for l in issues.splitlines() if l.strip()]
     if verdict == "revise" and not lines:
         lines = ["(the reviewer asked for changes without naming them)"]
+    text = f"VERDICT: {verdict}\n" + "".join(f"- {l}\n" for l in lines)
     with open(path, "w") as fh:
-        fh.write(f"VERDICT: {verdict}\n" + "".join(f"- {l}\n" for l in lines))
+        fh.write(text)
+    with open(path[:-4] + "_history.txt", "a") as fh:  # every submission, for the record: the last one counts
+        fh.write(f"== {time.strftime('%Y-%m-%dT%H:%M:%S')} ({'final answer' if fallback else 'SUBMIT_REVIEW'})\n{text}")
     log(run_dir, "review", round_, verdict, len(lines), "record" if fallback else "tool")
     print(f"VERDICT: {verdict} ({len(lines)} issue(s)) saved." + ("" if fallback else
           " Your review is complete: do not submit it again; end with your final answer (the same verdict and issues)."))
