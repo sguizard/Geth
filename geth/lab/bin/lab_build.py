@@ -265,11 +265,17 @@ def render(run_dir, image, models, data_file):
     procs, calls = [], []
     for i, r in enumerate(rows, start=1):
         proc = f"S{i:02d}_{r['step']}"
+        # a step killed for memory or time (exit 137, 140, 143) is retried twice with twice, then four times
+        # the resources (at most 128 GB and 8 h), as nf-core pipelines do
+        mem = [min(r["memory"] * k, 128) for k in (1, 2, 4)]
+        mins = [min(r["minutes"] * k, 480) for k in (1, 2, 4)]
         procs.append(f"""process {proc} {{
     tag '{r['step']}'
     cpus {r['cpus']}
-    memory '{r['memory']} GB'
-    time '{r['minutes'] + 15}m'
+    memory {{ ['{mem[0]} GB', '{mem[1]} GB', '{mem[2]} GB'][task.attempt - 1] }}
+    time {{ ['{mins[0] + 15}m', '{mins[1] + 15}m', '{mins[2] + 15}m'][task.attempt - 1] }}
+    errorStrategy {{ task.exitStatus in [137, 140, 143] && task.attempt < 3 ? 'retry' : 'terminate' }}
+    maxRetries 2
     publishDir "${{params.outdir}}/{i:02d}_{r['step']}", mode: 'copy', saveAs: {{ f -> f.startsWith('out/') ? f.substring(4) : null }}
 
     input:
@@ -281,7 +287,7 @@ def render(run_dir, image, models, data_file):
 
     script:
     \"\"\"
-    {sandbox} --strict {image} {os.path.join(pipe, 'steps', r['step'] + '.py')} ${{h5ad}} {models} {r['cpus']} {r['minutes']} out
+    {sandbox} --strict {image} {os.path.join(pipe, 'steps', r['step'] + '.py')} ${{h5ad}} {models} {r['cpus']} ${{[{mins[0]}, {mins[1]}, {mins[2]}][task.attempt - 1]}} out
     \"\"\"
 }}
 """)

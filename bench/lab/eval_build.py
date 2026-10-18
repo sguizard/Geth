@@ -42,12 +42,19 @@ def table(results, name):
 
 
 def symbols(df, var):
-    """The contract says 'gene' but not 'symbol': translate Ensembl IDs through the dataset's own gene table, and
-    say so."""
-    if "gene_ids" not in var or df["gene"].astype(str).isin(var.index).mean() > 0.5:
+    """Genes written as Ensembl IDs: translate them through the dataset's own gene table, and say so. The IDs
+    are the var names (with symbols in a column, PBMC) or a column (with symbols as var names, Kang)."""
+    genes = df["gene"].astype(str)
+    if not genes.str.startswith("ENS").mean() > 0.5:
         return df, False
-    to_symbol = dict(zip(var["gene_ids"].astype(str), var.index.astype(str)))
-    return df.assign(gene=df["gene"].astype(str).map(lambda g: to_symbol.get(g, g))), True
+    column = next((c for c in ("gene_symbol", "gene_symbols", "feature_name", "gene_name") if c in var), None)
+    if column and genes.isin(var.index).mean() > 0.5:
+        to_symbol = dict(zip(var.index.astype(str), var[column].astype(str)))
+    elif "gene_ids" in var:
+        to_symbol = dict(zip(var["gene_ids"].astype(str), var.index.astype(str)))
+    else:
+        return df, True
+    return df.assign(gene=genes.map(lambda g: to_symbol.get(g, g))), True
 
 
 def by_cell_type(df, obs):
