@@ -296,8 +296,25 @@ The first round exposed faults in the harness, all fixed before round 2:
 After round 2, the rendered pipelines retry a step killed for memory or time with twice, then four times,
 the resources; and the agents substitute a Python method for an R tool a design names (the image has no R).
 
-**PBMC 1k** (the expected populations and their markers): round 2 was invalidated by a fault in the
-contract (gene symbols for a matrix whose names are Ensembl IDs); the builds are being rerun.
+**PBMC 1k** (the expected populations and their canonical markers; B1 only). Round 2 was invalidated by a
+fault in the contract: it asked for gene symbols "as the var names", but this matrix's var names are
+Ensembl IDs, so the reviewer and the spec check pulled in opposite directions. After the fix (round 3):
+
+| Design | Annotation model in the design | Review | Populations found | Canonical markers | Cells kept | Caught by the reviewer in round 1, then fixed |
+|---|---|---|---|---|---|---|
+| 1 | broad (Immune_All_High) | approve | 5 | 3/4 | 78.5% | mitochondrial genes looked up by Ensembl ID, so no cell had any |
+| 2 | fine (Immune_All_Low) | approve | 7 | 6/6 | 96.2% | 30 principal components where the design said 50 |
+| 3 | broad (Immune_All_High) | approve | 5 | 4/5 | 85.4% | markers on normalised values and per cell type, where the design said raw counts and per cluster |
+
+All three were deliverable. A broad model cannot separate CD4 from CD8 T cells or the two monocyte types,
+so those designs find 5 populations. Design 1's mitochondrial rule (3 MADs above the median, no cap) removes
+21% of the cells: strict for this sample, but what the design asked for.
+
+**Conclusion:** with the coding skill, Qwen 3.5 builds working, correct analyses from a checked design in
+most cases (8 of 9 builds deliverable). The reviewer is what makes the result trustworthy: it flagged every
+defect the scores revealed, from a missing donor term to a mitochondrial lookup on the wrong identifiers,
+and it approved no build whose results scored wrong. Without the skill the code is weaker and the engineer often cannot fix what the
+reviewer finds (2 of 6). Arm C (agents writing the Nextflow themselves) waits for a go.
 
 ## Not yet tested
 
