@@ -262,7 +262,8 @@ def save_review(run_dir, round_, verdict, issues, fallback=False):
     with open(path, "w") as fh:
         fh.write(f"VERDICT: {verdict}\n" + "".join(f"- {l}\n" for l in lines))
     log(run_dir, "review", round_, verdict, len(lines), "record" if fallback else "tool")
-    print(f"VERDICT: {verdict} ({len(lines)} issue(s))")
+    print(f"VERDICT: {verdict} ({len(lines)} issue(s)) saved." + ("" if fallback else
+          " Your review is complete: do not submit it again; end with your final answer (the same verdict and issues)."))
 
 
 def render(run_dir, image, models, data_file):

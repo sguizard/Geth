@@ -30,7 +30,7 @@ lab_nf() {  # lab_nf <run_dir> <mode> <tag> [params...]: one lab stage, one driv
     local d=$1 mode=$2 tag=$3 rc
     shift 3
     acquire_slots "$d" "$tag" 1
-    nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
+    sandboxed "$d" -- nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
         --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" \
         -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1
     rc=$?
@@ -80,7 +80,7 @@ case "$cmd" in
         mkdir -p "$d"
         cd "$d"
         acquire_slots "$d" design 1
-        nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
+        sandboxed "$d" -- nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
             --mode design --question "$question" --data_dir "$data_dir" --run_dir "$d" --lab_skill "$skill" \
             -w "$d/geth_work" -with-trace "$d/geth_trace_design.txt" -ansi-log false > "$d/geth_design.log" 2>&1 \
             || { rm -f "$d/.geth_design.pid"; echo "Design failed: see $d/geth_design.log" >&2; exit 1; }

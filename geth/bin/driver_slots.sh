@@ -44,3 +44,13 @@ driver_alive() {  # driver_alive <pid file>
     [ -z "$pid" ] && { pid=$host; host=$(hostname); }
     [ "$host" = "$(hostname)" ] && kill -0 "$pid" 2>/dev/null
 }
+
+sandboxed() {  # sandboxed <run_dir> [--ro <folder>]... -- <command...>: in the agent sandbox when the site asks
+    if [ "${GETH_AGENT_SANDBOX:-no}" = yes ]; then
+        "$GETH_HOME/geth/bin/agent_sandbox.sh" "$@"
+    else
+        while [ "$1" != -- ]; do shift; done
+        shift
+        "$@"
+    fi
+}
