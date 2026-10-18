@@ -13,6 +13,26 @@ validate every plan against the pinned pipeline's own schemas, freeze the approv
 which changes a retry may make. A finished report is checked number by number against the results. The
 agents decide; the gates verify; a person approves.
 
+## Where to start reading
+
+Follow one analysis through the code, in the order things happen:
+
+1. `geth/geth`: the commands. `geth plan` and `geth run` both end in `nf()`, which starts
+   `geth/main.nf` with a mode. Each driver goes through `sandboxed` (`geth/bin/driver_slots.sh`), inside
+   the agent sandbox when the site asks for it.
+2. `geth/main.nf`, from the bottom: the `workflow` block picks the mode. Read the `planner` agent above it:
+   its instruction, its tools and its record. Each tool is a short `process` (`LIST_FILES`, `CHECK_PLAN` ...).
+3. `geth/bin/geth_checks.py`: what the tools call. `REGISTRY` describes every pipeline; `check_plan` is the
+   plan check; `approve` fingerprints the plan; `gate` is the plan-diff gate the operator meets on every
+   launch.
+4. `geth/bin/run_nfcore.sh`: the operator's only way to start a pipeline, with the gate before and the error
+   digest after.
+5. `geth/bin/collect_results.py` and `check_report.py`: what the reporter sees, and how its report is
+   checked.
+6. A skill, e.g. `geth/skills/nfcore-rnaseq/SKILL.md`: what the planner is told about a pipeline.
+
+Then the tests (`geth/tests/test_geth_checks.py`) show each gate rule on a real failure that motivated it.
+
 ## Repository layout
 
 ```
