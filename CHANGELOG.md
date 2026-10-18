@@ -2,6 +2,24 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 1.7.0 (2026-10-18)
+
+- **Agents in a container (phase 12):** with `GETH_AGENT_SANDBOX=yes`, every agent driver runs in apptainer on
+  the submit host (`geth/bin/agent_sandbox.sh`).
+  - It keeps the network and can still submit jobs.
+  - It sees only its run folder, Nextflow's home and the image cache (read-write), plus Geth, its run's data
+    and the catalogue (read-only).
+  - The API key reaches the agents through the environment only.
+  - Validated with rnaseq, nanoseq and eager full runs and a lab design; on by default in the Eddie example.
+  - `geth status` and `geth lab show` say whether the agents were sandboxed.
+- **Time limits for agent stages:** `GETH_AGENT_TIMEOUT`, `GETH_ENGINEER_TIMEOUT`, `GETH_RUN_TIMEOUT`.
+- **Geth lab, arm C (experimental):** `geth lab build-c`. Agents write the whole Nextflow pipeline; its driver
+  runs only in the sandbox, as one job with no network. 6 of 6 builds were deliverable once the image held
+  what the designs need ([validation](docs/validation.md)).
+- **Lab image:** now with scikit-image (Scrublet's automatic threshold) and scikit-misc (seurat_v3). Image
+  paths are set once in `env.sh` (`GETH_LAB_IMAGE`, `GETH_AGENT_IMAGE`).
+- **Lab reviews:** every review submission is kept (`review_<n>_history.txt`).
+
 ## 1.6.0 (2026-10-18)
 
 - **Planner benchmark on realistic deliveries** for isoseq, ampliseq, chipseq, atacseq, methylseq, nanoseq

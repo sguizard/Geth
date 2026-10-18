@@ -9,6 +9,8 @@
 #                                                                  design as step scripts (tested on a subset in a
 #                                                                  sandbox), a reviewer agent checks them (2 rounds
 #                                                                  at most), then Geth runs them on the full data
+#   geth lab build-c <design run> <name>                           arm C: the engineer writes the whole Nextflow
+#                                                                  pipeline; its driver runs only in the sandbox
 #
 # The lab works only on benchmark data (GETH_LAB_DATA, default $GETH_DATA_ROOT/testdata) and writes to
 # $GETH_RUNS_DIR/lab/<name>.
@@ -18,7 +20,7 @@ export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
 lab=$GETH_RUNS_DIR/lab
 source "$GETH_HOME/geth/bin/driver_slots.sh"
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 banner() { echo "*** Geth lab: EXPERIMENTAL, not for real analyses ***" >&2; }
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
@@ -28,7 +30,7 @@ lab_nf() {  # lab_nf <run_dir> <mode> <tag> [params...]: one lab stage, one driv
     local d=$1 mode=$2 tag=$3 rc
     shift 3
     acquire_slots "$d" "$tag" 1
-    nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
+    sandboxed "$d" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
         --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" \
         -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1
     rc=$?
@@ -41,8 +43,14 @@ show_build() {
     echo "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     echo "State    : $(cat "$d/build_state.txt" 2>/dev/null || echo -)"
-    echo; echo "== spec (step | cpus | memory GB | minutes)"; sed 's/^/  /' "$d/build_spec.txt" 2>/dev/null || echo "  none yet"
-    for f in "$d"/review_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
+    echo "Agents   : $([ -d "$d/.agent_home" ] && echo "driver in the agent sandbox" || echo "driver not sandboxed") (agent-written code always runs in the lab sandbox)"
+    if [ -f "$d/build_spec_c.txt" ]; then
+        echo; echo "== pipeline (written by the agent): $(cd "$d/project" 2>/dev/null && ls main.nf bin/*.py 2>/dev/null | tr '\n' ' ')"
+        echo "   full run: $(head -n 1 "$d/build_spec_c.txt") (cpus | memory GB | minutes)"
+    else
+        echo; echo "== spec (step | cpus | memory GB | minutes)"; sed 's/^/  /' "$d/build_spec.txt" 2>/dev/null || echo "  none yet"
+    fi
+    for f in "$d"/review_[0-9].txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
     for f in "$d"/engineer_notes_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
     if [ -d "$d/results" ]; then
         echo; echo "== results ($d/results)"
@@ -73,7 +81,7 @@ case "$cmd" in
         mkdir -p "$d"
         cd "$d"
         acquire_slots "$d" design 1
-        nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
+        sandboxed "$d" -- timeout "$(stage_limit design)" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
             --mode design --question "$question" --data_dir "$data_dir" --run_dir "$d" --lab_skill "$skill" \
             -w "$d/geth_work" -with-trace "$d/geth_trace_design.txt" -ansi-log false > "$d/geth_design.log" 2>&1 \
             || { rm -f "$d/.geth_design.pid"; echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
@@ -133,7 +141,7 @@ case "$cmd" in
             [ "$verdict" = approve ] && break
         done
         build_state "$d" "full run (review: $verdict)"
-        python3 "$GETH_HOME/geth/lab/bin/lab_build.py" render "$d" "${GETH_LAB_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_lab_sc_f4e5ea0d66d15d6c.sif}" \
+        python3 "$GETH_HOME/geth/lab/bin/lab_build.py" render "$d" "$GETH_LAB_IMAGE" \
             "${GETH_LAB_MODELS:-$GETH_REFERENCES/celltypist_immune_v2}" "${data[0]}" \
             || { build_state "$d" "failed: could not render the pipeline"; exit 1; }
         acquire_slots "$d" pipeline 1
@@ -141,6 +149,46 @@ case "$cmd" in
             -with-trace "$d/pipeline_trace.txt" -ansi-log false > "$d/pipeline_run.log" 2>&1 && rc=0 || rc=$?
         rm -f "$d/.geth_pipeline.pid"
         if [ $rc -eq 0 ]; then build_state "$d" "done (review: $verdict)"; else build_state "$d" "failed: full run (review: $verdict; see pipeline_run.log)"; fi
+        show_build "$d"
+        exit $rc
+        ;;
+    build-c)
+        [ $# -eq 2 ] || usage
+        src=$(run_dir_of "$1"); d=$(run_dir_of "$2")
+        head -n 1 "$src/lab_design_check.txt" 2>/dev/null | grep -q '^DESIGN CHECK: OK' \
+            || { echo "Lab run '$1' has no checked design: run geth lab design first." >&2; exit 1; }
+        [ -e "$d" ] && { echo "Lab run '$2' already exists: choose another name." >&2; exit 1; }
+        data=("$(cat "$src/data_dir.txt")"/*.h5ad)
+        [ ${#data[@]} -eq 1 ] && [ -f "${data[0]}" ] || { echo "The design's data folder must hold exactly one .h5ad file." >&2; exit 1; }
+        # Java and Nextflow for the sandboxed driver: the ones this Geth runs with, read-only in the sandbox
+        java_home=$(readlink -f "${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")}")
+        tools=(--lab_java_home "$java_home" --lab_nxf_launcher "$(readlink -f "$(command -v nextflow)")"
+               --lab_nxf_framework "$NXF_HOME/framework/$NXF_VER" --data_file "${data[0]}")
+        [ -d "$NXF_HOME/framework/$NXF_VER" ] || { echo "No Nextflow $NXF_VER in $NXF_HOME/framework" >&2; exit 1; }
+        mkdir -p "$d"
+        cp "$src"/lab_design_{steps,statistics,expected,rationale}.txt "$src/question.txt" "$src/data_dir.txt" "$d/"
+        echo "$1" > "$d/design_from.txt"
+        echo "C build (agent-written Nextflow), from design $1" > "$d/lab_arm.txt"
+        cd "$d"
+        verdict=none
+        for round in 1 2; do
+            rm -f "$d/build_spec_c.txt"
+            build_state "$d" "engineer round $round"
+            lab_nf "$d" engineer_c "engineer_$round" --build_round "$round" "${tools[@]}" \
+                || { build_state "$d" "failed: engineer round $round (see geth_engineer_$round.log)"; exit 1; }
+            [ -f "$d/build_spec_c.txt" ] || { build_state "$d" "failed: no checked pipeline after round $round"; exit 1; }
+            build_state "$d" "review round $round"
+            lab_nf "$d" review_c "review_$round" --build_round "$round" "${tools[@]}" \
+                || { build_state "$d" "failed: review round $round (see geth_review_$round.log)"; exit 1; }
+            verdict=$(sed -n 's/^VERDICT: //p' "$d/review_$round.txt")
+            [ "$verdict" = approve ] && break
+        done
+        python3 "$GETH_HOME/geth/lab/bin/lab_build.py" freeze-c "$d" || { build_state "$d" "failed: could not freeze the project"; exit 1; }
+        read -r cpus memory minutes < <(head -n 1 "$d/build_spec_c.txt" | tr -d '|')
+        build_state "$d" "full run (review: $verdict)"
+        lab_nf "$d" run_c pipeline --full_cpus "$cpus" --full_memory "$memory" --full_minutes "$minutes" "${tools[@]}" && rc=0 || rc=$?
+        rm -rf "$d/results" && [ -d "$d/full_c/results" ] && cp -r "$d/full_c/results" "$d/results"
+        if [ $rc -eq 0 ]; then build_state "$d" "done (review: $verdict)"; else build_state "$d" "failed: full run (review: $verdict; see geth_pipeline.log)"; fi
         show_build "$d"
         exit $rc
         ;;

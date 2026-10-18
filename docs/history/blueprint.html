@@ -324,7 +324,7 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
         <li class="station done"><span class="dot">9</span><span class="name">Public release</span><span class="ver">v1.5</span></li>
         <li class="station done"><span class="dot">10</span><span class="name">Reusing indexes</span><span class="ver">v1.6</span></li>
         <li class="station exp"><span class="dot">11</span><span class="name">Agents write analyses</span><span class="ver">experimental</span></li>
-        <li class="station plan"><span class="dot">12</span><span class="name">Sandboxed agents</span><span class="ver">planned</span></li>
+        <li class="station done"><span class="dot">12</span><span class="name">Sandboxed agents</span><span class="ver">v1.7</span></li>
       </ol>
       <div class="roadmap-legend">
         <span><i class="mini done"></i>done</span>
@@ -369,7 +369,7 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
           <div class="node"><b>Done: the skill matters</b><small>with the skill 18.2/20 (Kang), 11.8/12 (PBMC); without it 15.3/20, 10.7/12</small></div>
         </div>
       </div>
-      <div class="lab-gate"><div class="node person"><b>Your go</b><small>given for arm B (2026-10-17, done); arm C waits for your go</small></div><span class="zone-note">Arms B and C run code written by agents.</span></div>
+      <div class="lab-gate"><div class="node person"><b>Your go</b><small>given for arms B (2026-10-17) and C (2026-10-18): both done</small></div><span class="zone-note">Arms B and C run code written by agents.</span></div>
       <div class="sandbox">
         <span class="sandbox-title">Sandbox (built, escape test passed): pinned image · no network · inputs read-only · writes only to its own folder · clean environment, no keys · allowed imports only · ≤ 8 CPUs, 64 GB, 4 h per step</span>
         <div class="arms">
@@ -383,11 +383,11 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
           </div>
           <span class="arm-id">C · 11.4</span>
           <div class="arm-row">
-            <div class="node"><b>Raw main.nf</b><small>the agent writes the Nextflow itself</small></div>
+            <div class="node"><b>main.nf + scripts</b><small>the agent writes the Nextflow itself; its driver runs in the sandbox too</small></div>
             <div class="arrow"></div>
-            <div class="node gate"><b>Lint + stub run</b><small>dropped if 0/3 pass after 10 rounds</small></div>
+            <div class="node gate"><b>Lint, subset test, review</b><small>only a pipeline that passed on its current files is kept</small></div>
             <div class="arrow"></div>
-            <div class="node job"><b>Subset, then full data</b><small>same limits as arm B</small></div>
+            <div class="node job"><b>Full data, one sandboxed job</b><small>done: 6 of 6 builds deliverable, matching arm B</small></div>
           </div>
         </div>
       </div>
@@ -401,9 +401,9 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
 
   <section aria-labelledby="sand-h">
     <div class="section-head">
-      <span class="eyebrow">Diagram 5 · phase 12 <span class="status-tag plan">planned</span></span>
-      <h2 id="sand-h">Agents in sandboxes, off the front node</h2>
-      <p class="caption">Eddie allows agents only inside sandboxes. Phase 12 moves every agent step that launches no jobs to a small job on a worker node, and puts each agent in a container that only sees what its step needs. Checked: worker nodes reach the model service, and jobs carry no key. Open: how a job gets the key, or whether agents stay on node1q01 in a container.</p>
+      <span class="eyebrow">Diagram 5 · phase 12</span>
+      <h2 id="sand-h">Agents in sandboxes</h2>
+      <p class="caption">Eddie allows agents only inside sandboxes. Your choice: the agents stay on the front node, but each driver runs in a container that only sees what its run needs; the key reaches it through the environment, never a file. Working end to end: a lab design, and full runs of rnaseq, nanoseq and eager (each with its own Nextflow).</p>
     </div>
     <div class="compare">
       <div class="zone">
@@ -419,15 +419,15 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
         </div>
       </div>
       <div class="zone">
-        <h3>Phase 12</h3>
+        <h3>Phase 12 (GETH_AGENT_SANDBOX=yes)</h3>
         <div class="split">
           <div class="stack"><span class="sub-title">Front node</span>
-            <div class="node"><b><code>geth</code> command</b><small>submits, waits, at most one run at a time</small></div>
-            <div class="node job"><b>Run drivers in a sandbox</b><small>the drivers that must launch jobs stay here</small></div>
+            <div class="node"><b><code>geth</code> command</b><small>driver slots cap how many run at once</small></div>
+            <div class="node job"><b>Geth and nf-core drivers in a container</b><small>agents and their tools see only the run, its data and the catalogue; jobs still submitted</small></div>
           </div>
           <div class="stack"><span class="sub-title">Worker nodes</span>
-            <div class="node job"><b>Planning and design agents</b><small>small jobs in sandboxes: they launch nothing</small></div>
             <div class="node job"><b>Pipeline and toolbox jobs</b></div>
+            <div class="node job"><b>Agent-written code</b><small>in the lab sandbox: no network at all</small></div>
           </div>
         </div>
         <div class="node gate"><b>Every sandbox</b><small>data and references read-only, writes only to its run folder, no home folder; agents keep the network (they need the model service: limiting it to that service needs admin rights); agent-written code gets none</small></div>

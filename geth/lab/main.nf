@@ -9,6 +9,8 @@
  *                   --lab_skill false: the engineer has no coding skill (arm B0).
  *   --mode review  : arm B, a reviewer agent reads the scripts and their test outputs: approve or revise.
  *                   geth lab build runs these rounds, then the pipeline Geth renders from the spec.
+ *   --mode engineer_c, review_c, run_c: arm C, the engineer writes the whole Nextflow pipeline (main.nf and
+ *                   bin/*.py), tested on the subset with its driver inside the sandbox; geth lab build-c runs it.
  *
  * The lab is separate from Geth's workflow: its file tools only reach the benchmark folders (GETH_LAB_DATA), so
  * the truth used to score designs stays out of the agents' reach.
@@ -276,6 +278,120 @@ process SAVE_SPEC {
     """
 }
 
+// ---------------------------------------------------------------- arm C tools
+// The agent-written pipeline (driver included) only ever runs inside lab_nf_sandbox.sh.
+
+process WRITE_FILE {
+    executor 'local'
+    scratch false
+
+    input:
+    path_name: String
+    content: String
+
+    output:
+    report: String = stdout()
+
+    script:
+    def quoted = content.replace("'", "'\\''")
+    def safe = path_name.replace("'", "'\\''")
+    """
+    printf '%s' '${quoted}' | lab_build.py write-file "${params.run_dir}" '${safe}'
+    """
+}
+
+process LINT_PIPELINE {  // a scheduler job: it starts the sandbox, which an agent sandbox cannot do
+    cpus 1
+    memory 2.GB
+    time 15.m
+
+    input:
+    note: String
+
+    output:
+    report: String = stdout()
+
+    script:
+    """
+    export LAB_JAVA_HOME="${params.lab_java_home}" LAB_NXF_LAUNCHER="${params.lab_nxf_launcher}" LAB_NXF_FRAMEWORK="${params.lab_nxf_framework}"
+    lab_build.py lint-pipeline "${params.run_dir}" "${params.lab_image}"
+    """
+}
+
+process TEST_PIPELINE {
+    cpus 4
+    memory 16.GB
+    time 60.m
+
+    input:
+    note: String
+
+    output:
+    report: String = stdout()
+
+    script:
+    """
+    export LAB_JAVA_HOME="${params.lab_java_home}" LAB_NXF_LAUNCHER="${params.lab_nxf_launcher}" LAB_NXF_FRAMEWORK="${params.lab_nxf_framework}"
+    lab_build.py test-pipeline "${params.run_dir}" "${params.lab_image}" "${params.lab_models}" 4 14 40
+    """
+}
+
+process READ_PROJECT {
+    executor 'local'
+    scratch false
+
+    input:
+    what: String
+
+    output:
+    text: String = stdout()
+
+    script:
+    def safe = what.replace("'", "'\\''")
+    """
+    lab_build.py read-c "${params.run_dir}" '${safe}'
+    """
+}
+
+process SAVE_PIPELINE {
+    executor 'local'
+    scratch false
+
+    input:
+    resources: String
+
+    output:
+    report: String = stdout()
+
+    script:
+    def quoted = resources.replace("'", "'\\''")
+    """
+    printf '%s' '${quoted}' | lab_build.py check-pipeline "${params.run_dir}"
+    """
+}
+
+// The full run of a frozen arm C project: one SGE job, the whole pipeline inside the sandbox.
+process RUN_PROJECT {
+    cpus { params.full_cpus as int }
+    memory { "${(params.full_memory as int) * task.attempt} GB" }
+    time { "${((params.full_minutes as int) + 20) * task.attempt}m" }
+    errorStrategy { task.exitStatus in [137, 140, 143] && task.attempt < 3 ? 'retry' : 'terminate' }
+    maxRetries 2
+
+    input:
+    data_file: String
+
+    output:
+    report: String = stdout()
+
+    script:
+    """
+    export LAB_JAVA_HOME="${params.lab_java_home}" LAB_NXF_LAUNCHER="${params.lab_nxf_launcher}" LAB_NXF_FRAMEWORK="${params.lab_nxf_framework}"
+    lab_nf_sandbox.sh --strict "${params.lab_image}" "${params.run_dir}/pipeline_c" "${data_file}" "${params.lab_models}" \\
+        ${params.full_cpus} ${(params.full_memory as int) * task.attempt - 2} ${(params.full_minutes as int) * task.attempt} "${params.run_dir}/full_c"
+    """
+}
+
 // ---------------------------------------------------------------- agents
 // The two designers differ only by the skill (arm A1 has it, A0 does not).
 
@@ -498,6 +614,99 @@ agent reviewer {
     """
 }
 
+// Arm C: the engineer writes the whole Nextflow pipeline; the reviewer reads it with fresh eyes.
+
+agent engineer_c {
+    model "openai/${params.model}"
+    instruction '''You are an EXPERIMENTAL pipeline engineer in Geth's lab. You implement an analysis design that a
+    person has already checked, as a complete Nextflow pipeline: main.nf, with Python scripts in bin/. Geth runs it
+    in a sandbox: Nextflow 26.10 (strict syntax), local executor, no containers, no network, no files but its
+    inputs. Geth runs "nextflow run main.nf --input <count matrix .h5ad> --outdir <results folder> --models
+    <folder of CellTypist models: Immune_All_Low.pkl, Immune_All_High.pkl>". Scripts in bin/ are on the PATH of
+    every task (start them with "#!/usr/bin/env python3"); they have Python 3 with scanpy, anndata, celltypist,
+    pydeseq2, harmonypy, numpy, pandas, scipy, scikit-learn, statsmodels, matplotlib, seaborn.
+    Results contract: publish to params.outdir final.h5ad (the annotated data, with obs["cell_type"]), and
+    de_results.tsv for condition comparisons and/or markers.tsv for markers, tab separated, with at least the
+    columns cell_type, gene, log2fc, padj, one row per gene and group, gene symbols in gene and a cell-type label
+    in cell_type (markers per cluster also get a cluster column). Keep raw counts for the statistics the design
+    asks of them. If the design names a tool the image lacks (an R package such as scDblFinder or edgeR), use the
+    closest available method and print the substitution. If the var names are IDs (Ensembl), the gene symbols
+    are in a var column such as gene_symbol.
+    Work in small steps: WRITE_FILE saves main.nf or bin/<name>.py (Python scripts are checked); LINT_PIPELINE
+    checks main.nf; TEST_PIPELINE runs the whole pipeline on a 3000-cell subset and shows the Nextflow output,
+    the error output of failed tasks, and what was published. READ_PROJECT shows the design ("design"), the
+    subset ("subset"), your files ("project", "file:<path>"), the last test ("test") and its published tables
+    ("result:<table>"). Fix and test again until the pipeline runs and its results look right (cells kept,
+    columns, plausible values). Then call SAVE_PIPELINE with the resources for the full data, "<cpus> | <memory
+    GB> | <minutes>" for the whole pipeline (at most 8 cpus, 64 GB, 240 minutes), until it prints "PIPELINE
+    CHECK: OK".'''
+    tools 'nf:module_run:WRITE_FILE', 'nf:module_run:LINT_PIPELINE', 'nf:module_run:TEST_PIPELINE',
+        'nf:module_run:READ_PROJECT', 'nf:module_run:SAVE_PIPELINE'
+    skills 'sc-build-lab', 'nf-build-lab'
+    maxIterations 120
+
+    input:
+    question: String
+    design: String
+    review: String
+    subset: String
+
+    output:
+    notes: LabNotes
+
+    prompt:
+    """
+    Request: ${question}
+
+    The checked design:
+    ${design}
+
+    Review of the previous round: ${review}
+
+    The subset for tests: ${subset}
+
+    When SAVE_PIPELINE has printed "PIPELINE CHECK: OK", answer with short notes: one line per process on what
+    it does, and anything a reviewer should know.
+    """
+}
+
+agent reviewer_c {
+    model "openai/${params.model}"
+    instruction '''You are an EXPERIMENTAL code reviewer in Geth's lab. A person checked an analysis design; an
+    engineer implemented it as a Nextflow pipeline (main.nf and Python scripts in bin/), tested it on a 3000-cell
+    subset, and saved it. Review it with fresh eyes. READ_PROJECT shows the design ("design"), the files
+    ("project", "file:main.nf", "file:bin/<name>.py"), the last test ("test") and the tables it published
+    ("result:<table>"). Read every file. Check that each design step is implemented as designed (method,
+    thresholds, what is compared with what, the unit of replication, the design formula); that the processes
+    pass the right data from one to the next; that raw counts are used where the design needs them (pseudobulk
+    sums, DESeq2) and normalised values elsewhere; that no step silently drops cells, genes or samples, mixes up
+    conditions or reverses a contrast; that the published results follow the contract (final.h5ad with obs
+    cell_type; de_results.tsv or markers.tsv with cell_type, gene, log2fc, padj, gene symbols, cell-type labels,
+    per-cluster markers with a cluster column); and that the subset results look plausible. Give your verdict
+    with SUBMIT_REVIEW: verdict "approve" or "revise", and issues as one line per required change, naming the
+    file and what to change (no issues when you approve). Ask only for changes that affect correctness, not for
+    style. The image has Python only: accept a printed substitution for an R tool the design names (scrublet for
+    scDblFinder, pydeseq2 for DESeq2 or edgeR) when it does the same job. Then answer with the same verdict and
+    issues.'''
+    tools 'nf:module_run:READ_PROJECT', 'nf:module_run:SUBMIT_REVIEW'
+    maxIterations 40
+
+    input:
+    question: String
+    design: String
+
+    output:
+    review: LabReview
+
+    prompt:
+    """
+    Request: ${question}
+
+    The checked design:
+    ${design}
+    """
+}
+
 // ---------------------------------------------------------------- bookkeeping
 
 process SAVE_DESIGN {
@@ -604,7 +813,26 @@ workflow {
             SAVE_REVIEW(reviewer(question, design)).view()
         }
     }
+    else if( params.mode == 'engineer_c' || params.mode == 'review_c' || params.mode == 'run_c' ) {
+        def question = file(params.run_dir).resolve('question.txt').text.trim()
+        def design = ['steps', 'statistics', 'expected'].collect { part ->
+            "${part}:\n" + file(params.run_dir).resolve("lab_design_${part}.txt").text.readLines().findAll { line -> !line.startsWith('#') }.join('\n')
+        }.join('\n\n')
+        if( !params.data_file || !params.data_file.startsWith("${params.data_dir}/") )
+            error "--data_file must be in the design's data folder (${params.data_dir})"
+        if( params.mode == 'engineer_c' ) {
+            def previous = file(params.run_dir).resolve("review_${(params.build_round.toString() as int) - 1}.txt")
+            def review = previous.exists() ? previous.text : 'none (first round)'
+            SAVE_NOTES(engineer_c(question, design, review, MAKE_SUBSET(params.data_file))).view()
+        }
+        else if( params.mode == 'review_c' ) {
+            SAVE_REVIEW(reviewer_c(question, design)).view()
+        }
+        else {
+            RUN_PROJECT(params.data_file).view()
+        }
+    }
     else {
-        error "--mode must be 'design', 'engineer' or 'review' (arm C comes later)"
+        error "--mode must be 'design', 'engineer', 'review', 'engineer_c', 'review_c' or 'run_c'"
     }
 }

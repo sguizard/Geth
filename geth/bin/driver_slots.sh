@@ -44,3 +44,21 @@ driver_alive() {  # driver_alive <pid file>
     [ -z "$pid" ] && { pid=$host; host=$(hostname); }
     [ "$host" = "$(hostname)" ] && kill -0 "$pid" 2>/dev/null
 }
+
+stage_limit() {  # stage_limit <mode>: how long an agent stage may run (a hung agent must not hold its slot forever)
+    case $1 in
+        run|pipeline) echo "${GETH_RUN_TIMEOUT:-72h}" ;;
+        engineer*) echo "${GETH_ENGINEER_TIMEOUT:-4h}" ;;
+        *) echo "${GETH_AGENT_TIMEOUT:-2h}" ;;
+    esac
+}
+
+sandboxed() {  # sandboxed <run_dir> [--ro <folder>]... -- <command...>: in the agent sandbox when the site asks
+    if [ "${GETH_AGENT_SANDBOX:-no}" = yes ]; then
+        "$GETH_HOME/geth/bin/agent_sandbox.sh" "$@"
+    else
+        while [ "$1" != -- ]; do shift; done
+        shift
+        "$@"
+    fi
+}

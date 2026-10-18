@@ -2,7 +2,8 @@
 """Geth lab (EXPERIMENTAL), trusted helper run inside the sandbox container.
 
   lab_h5ad.py subset <in.h5ad> <out.h5ad> [n]   n random cells (default 3000, seed 0), every column kept
-  lab_h5ad.py summary <folder>                   what a step wrote: its output AnnData and the heads of its tables
+  lab_h5ad.py summary <folder> [h5ad name]       what a step wrote: its output AnnData (output.h5ad) and the
+                                                 heads of its tables (in subfolders too)
 """
 import os
 import sys
@@ -47,19 +48,20 @@ def describe(a):
     return lines
 
 
-def summary(folder):
+def summary(folder, h5_name="output.h5ad"):
     import anndata as ad
     import pandas as pd
     out = []
-    h5 = os.path.join(folder, "output.h5ad")
+    h5 = os.path.join(folder, h5_name)
     if os.path.isfile(h5):
         try:
-            out += ["--- output.h5ad ---"] + describe(ad.read_h5ad(h5))
+            out += [f"--- {h5_name} ---"] + describe(ad.read_h5ad(h5))
         except Exception as e:
-            out.append(f"--- output.h5ad could not be read: {type(e).__name__}: {e}")
+            out.append(f"--- {h5_name} could not be read: {type(e).__name__}: {e}")
     else:
-        out.append("--- no output.h5ad was written")
-    tables = sorted(f for f in os.listdir(folder) if f.endswith((".tsv", ".csv")))
+        out.append(f"--- no {h5_name} was written")
+    tables = sorted(os.path.relpath(os.path.join(d, f), folder) for d, _, fs in os.walk(folder)
+                    for f in fs if f.endswith((".tsv", ".csv")))
     for name in tables[:10]:
         path = os.path.join(folder, name)
         try:
@@ -76,6 +78,6 @@ if __name__ == "__main__":
     if sys.argv[1] == "subset":
         subset(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 3000)
     elif sys.argv[1] == "summary":
-        summary(sys.argv[2])
+        summary(sys.argv[2], *sys.argv[3:4])
     else:
         sys.exit(__doc__)

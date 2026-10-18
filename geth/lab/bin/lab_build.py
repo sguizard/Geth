@@ -10,6 +10,15 @@
                                                       file:<name>/<file>
   lab_build.py save-review <run_dir> <round> <verdict>   issues (on stdin) -> review_<round>.txt
   lab_build.py render <run_dir> <image> <models> <data file>   pipeline/main.nf + nextflow.config from the spec
+Arm C, an agent-written Nextflow project in <run_dir>/project (main.nf, bin/*.py):
+  lab_build.py write-file <run_dir> <path>            file (on stdin) -> project/<path> (+ static check for .py)
+  lab_build.py lint-pipeline <run_dir> <image>        nextflow lint, in the sandbox
+  lab_build.py test-pipeline <run_dir> <image> <models> <cpus> <memory GB> <minutes>
+                                                      the whole pipeline on the subset, in the sandbox
+  lab_build.py check-pipeline <run_dir>               resources (on stdin) -> build_spec_c.txt if the last test
+                                                      passed on the current files and the contract holds
+  lab_build.py read-c <run_dir> <what>                design | subset | project | file:<path> | test | result:<table>
+  lab_build.py freeze-c <run_dir>                     the tested project -> pipeline_c/ for the full run
 
 Agent text only reaches this script on stdin or as names checked against NAME, so it cannot change the
 commands that run it. Every command prints its answer and exits 0, like every Geth tool.
@@ -130,6 +139,30 @@ def parse_spec(text):
     return rows, problems
 
 
+def table_problems(run_dir, paths):
+    """The results contract for de_results.tsv and markers.tsv: columns, gene symbols, cell-type labels."""
+    problems = []
+    genes_file = os.path.join(run_dir, "subset", "genes.txt")
+    known = set(open(genes_file).read().split()) if os.path.isfile(genes_file) else None
+    for t in paths:
+        with open(t) as fh:
+            table_rows = list(csv.DictReader(fh, delimiter="\t"))
+        header = set(table_rows[0].keys()) if table_rows else set(open(t).readline().rstrip("\n").split("\t"))
+        name = os.path.relpath(t, run_dir)
+        if not RESULT_COLUMNS <= header:
+            problems.append(f"{name} lacks the columns {', '.join(sorted(RESULT_COLUMNS - header))} (tab-separated)")
+            continue
+        genes = [r["gene"] for r in table_rows[:2000]]
+        if known is not None and genes and sum(g in known for g in genes) < 0.5 * len(genes):
+            example = next((g for g in sorted(known) if not g.startswith("ENS")), sorted(known)[0])
+            problems.append(f"{name}: 'gene' must hold gene symbols (e.g. {example}); found e.g. {genes[0]}")
+        labels = {r["cell_type"] for r in table_rows}
+        if labels and all(re.fullmatch(r"\d+", l or "") for l in labels):
+            problems.append(f"{name}: 'cell_type' holds numbers (cluster IDs?): put the cell-type label in cell_type "
+                            "and the cluster in a 'cluster' column")
+    return problems
+
+
 def check_spec(run_dir, text):
     rows, problems = parse_spec(text)
     if not rows and not problems:
@@ -162,23 +195,7 @@ def check_spec(run_dir, text):
         found = [t for t in tables if os.path.isfile(t)]
         if not found:
             problems.append("no step wrote de_results.tsv or markers.tsv")
-        genes_file = os.path.join(run_dir, "subset", "genes.txt")
-        known = set(open(genes_file).read().split()) if os.path.isfile(genes_file) else None
-        for t in found:
-            with open(t) as fh:
-                table_rows = list(csv.DictReader(fh, delimiter="\t"))
-            header = set(table_rows[0].keys()) if table_rows else set(open(t).readline().rstrip("\n").split("\t"))
-            name = os.path.relpath(t, run_dir)
-            if not RESULT_COLUMNS <= header:
-                problems.append(f"{name} lacks the columns {', '.join(sorted(RESULT_COLUMNS - header))} (tab-separated)")
-                continue
-            genes = [r["gene"] for r in table_rows[:2000]]
-            if known is not None and genes and sum(g in known for g in genes) < 0.5 * len(genes):
-                problems.append(f"{name}: 'gene' must hold gene symbols, the var names (e.g. {sorted(known)[0]}); found e.g. {genes[0]}")
-            labels = {r["cell_type"] for r in table_rows}
-            if labels and all(re.fullmatch(r"\d+", l or "") for l in labels):
-                problems.append(f"{name}: 'cell_type' holds numbers (cluster IDs?): put the cell-type label in cell_type "
-                                "and the cluster in a 'cluster' column")
+        problems += table_problems(run_dir, found)
     if problems:
         log(run_dir, "spec", "refused", len(problems))
         return print(f"SPEC CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems))
@@ -242,10 +259,14 @@ def save_review(run_dir, round_, verdict, issues, fallback=False):
     lines = [l.strip().lstrip("-* ").strip() for l in issues.splitlines() if l.strip()]
     if verdict == "revise" and not lines:
         lines = ["(the reviewer asked for changes without naming them)"]
+    text = f"VERDICT: {verdict}\n" + "".join(f"- {l}\n" for l in lines)
     with open(path, "w") as fh:
-        fh.write(f"VERDICT: {verdict}\n" + "".join(f"- {l}\n" for l in lines))
+        fh.write(text)
+    with open(path[:-4] + "_history.txt", "a") as fh:  # every submission, for the record: the last one counts
+        fh.write(f"== {time.strftime('%Y-%m-%dT%H:%M:%S')} ({'final answer' if fallback else 'SUBMIT_REVIEW'})\n{text}")
     log(run_dir, "review", round_, verdict, len(lines), "record" if fallback else "tool")
-    print(f"VERDICT: {verdict} ({len(lines)} issue(s))")
+    print(f"VERDICT: {verdict} ({len(lines)} issue(s)) saved." + ("" if fallback else
+          " Your review is complete: do not submit it again; end with your final answer (the same verdict and issues)."))
 
 
 def render(run_dir, image, models, data_file):
@@ -303,6 +324,181 @@ def render(run_dir, image, models, data_file):
     print(f"Rendered {len(rows)} steps into {pipe}/main.nf")
 
 
+# ---------------------------------------------------------------- arm C: an agent-written Nextflow project
+
+PROJECT_FILE = re.compile(r"^(main\.nf|bin/[a-z][a-z0-9_]{0,39}\.py)$")
+CAPS_C = {"cpus": 8, "memory": 64, "minutes": 240}
+
+
+def project_files(run_dir):
+    root = os.path.join(run_dir, "project")
+    files = ["main.nf"] if os.path.isfile(os.path.join(root, "main.nf")) else []
+    if os.path.isdir(os.path.join(root, "bin")):
+        files += sorted("bin/" + f for f in os.listdir(os.path.join(root, "bin")) if f.endswith(".py"))
+    return files
+
+
+def project_sha(run_dir):
+    h = hashlib.sha256()
+    for f in project_files(run_dir):
+        h.update(f.encode() + b"\0" + open(os.path.join(run_dir, "project", f), "rb").read() + b"\0")
+    return h.hexdigest()
+
+
+def write_file(run_dir, path):
+    if not PROJECT_FILE.match(path):
+        return print("REFUSED: the project holds main.nf and Python scripts bin/<name>.py (lower-case letters, digits, '_')")
+    text = stdin_text()
+    if not text.strip():
+        return print("REFUSED: the file is empty")
+    if len(text) > 100000:
+        return print("REFUSED: files are limited to 100,000 characters")
+    full = os.path.join(run_dir, "project", path)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "w") as fh:
+        fh.write(text if text.endswith("\n") else text + "\n")
+    report = "saved"
+    if path.endswith(".py"):
+        problems = lab_step_check.check(full, need_argv=False)
+        report = "STEP CHECK: OK" if not problems else f"STEP CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems)
+        with open(full[:-3] + ".check", "w") as fh:
+            fh.write(report + "\n")
+    log(run_dir, "write", path, "ok" if report in ("saved", "STEP CHECK: OK") else "refused", len(text.splitlines()))
+    print(f"Saved {path} ({len(text.splitlines())} lines). {report}")
+
+
+def check_scripts(run_dir):
+    bad = []
+    for f in project_files(run_dir):
+        if f.endswith(".py"):
+            check = os.path.join(run_dir, "project", f[:-3] + ".check")
+            if not (os.path.isfile(check) and open(check).read().startswith("STEP CHECK: OK")):
+                bad.append(f)
+    return bad
+
+
+def lint_pipeline(run_dir, image):
+    if "main.nf" not in project_files(run_dir):
+        return print("REFUSED: write main.nf first")
+    result = subprocess.run([os.path.join(HERE, "lab_nf_sandbox.sh"), "--lint", image, os.path.join(run_dir, "project")],
+                            capture_output=True, text=True)
+    text = "\n".join(l for l in (result.stdout + result.stderr).splitlines() if not l.startswith("INFO: "))
+    ok = "had no errors" in text
+    log(run_dir, "lint", "ok" if ok else "errors")
+    print(("LINT: OK\n" if ok else "LINT: errors\n") + text[-8000:])
+
+
+def test_pipeline(run_dir, image, models, cpus, memory, minutes):
+    if "main.nf" not in project_files(run_dir):
+        return print("REFUSED: write main.nf first")
+    bad = check_scripts(run_dir)
+    if bad:
+        return print(f"REFUSED: these scripts have not passed their check: {', '.join(bad)}")
+    src = input_of(run_dir, "input")
+    if not os.path.isfile(src):
+        return print("REFUSED: the subset is missing")
+    out = os.path.join(run_dir, "test_c")
+    if os.path.isdir(out):
+        subprocess.run(["rm", "-rf", "--", out], check=False)
+    os.makedirs(out)
+    meta = {"project_sha": project_sha(run_dir), "input_sha": sha(src)}
+    result = subprocess.run([os.path.join(HERE, "lab_nf_sandbox.sh"), image, os.path.join(run_dir, "project"), src, models,
+                             str(cpus), str(memory), str(minutes), out], capture_output=True, text=True)
+    text = "\n".join(l for l in (result.stdout + result.stderr).splitlines() if not l.startswith("INFO: "))
+    m = re.search(r"SANDBOX EXIT: (\d+)", text)
+    meta["exit"] = int(m.group(1)) if m else -1
+    with open(os.path.join(out, "test_meta.json"), "w") as fh:
+        json.dump(meta, fh)
+    log(run_dir, "test", "pipeline", "input", meta["exit"])
+    print(f"TEST of the pipeline on the subset: {'OK' if meta['exit'] == 0 else 'FAILED'}\n{text}"[:16000])
+
+
+def check_pipeline(run_dir, text):
+    lines = [l for l in text.splitlines() if l.strip() and not l.startswith("#")]
+    problems, res = [], None
+    f = [x.strip() for x in lines[0].split("|")] if lines else []
+    try:
+        res = {"cpus": int(f[0]), "memory": int(re.sub(r"\s*GB$", "", f[1], flags=re.I)), "minutes": int(f[2])}
+        for k, cap in CAPS_C.items():
+            if not 1 <= res[k] <= cap:
+                problems.append(f"{k} must be between 1 and {cap}")
+    except (ValueError, IndexError):
+        problems.append("write the resources as '<cpus> | <memory GB> | <minutes>'")
+    meta_path = os.path.join(run_dir, "test_c", "test_meta.json")
+    meta = json.load(open(meta_path)) if os.path.isfile(meta_path) else {}
+    if not meta:
+        problems.append("the pipeline has not been tested")
+    elif meta["exit"] != 0:
+        problems.append("its last test failed")
+    elif meta["project_sha"] != project_sha(run_dir):
+        problems.append("the project changed after its last test: test it again")
+    if check_scripts(run_dir):
+        problems.append(f"these scripts have not passed their check: {', '.join(check_scripts(run_dir))}")
+    if not problems:
+        results = os.path.join(run_dir, "test_c", "results")
+        summary = open(os.path.join(run_dir, "test_c", "summary.txt")).read() if os.path.isfile(os.path.join(run_dir, "test_c", "summary.txt")) else ""
+        if not os.path.isfile(os.path.join(results, "final.h5ad")):
+            problems.append("the pipeline published no final.h5ad to params.outdir")
+        elif "obs 'cell_type'" not in summary:
+            problems.append("final.h5ad has no obs['cell_type'] (the annotation)")
+        tables = [os.path.join(d, t) for d, _, fs in os.walk(results) for t in fs if t in ("de_results.tsv", "markers.tsv")]
+        if not tables:
+            problems.append("the pipeline published no de_results.tsv or markers.tsv")
+        problems += table_problems(run_dir, tables)
+    if problems:
+        log(run_dir, "spec", "refused", len(problems))
+        return print(f"PIPELINE CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems))
+    with open(os.path.join(run_dir, "build_spec_c.txt"), "w") as fh:
+        fh.write(f"{res['cpus']} | {res['memory']} | {res['minutes']}\n{meta['project_sha']}\n")
+    log(run_dir, "spec", "ok", len(project_files(run_dir)))
+    print(f"PIPELINE CHECK: OK ({', '.join(project_files(run_dir))}; full run with {res['cpus']} cpus, {res['memory']} GB, {res['minutes']} min)")
+
+
+def read_c(run_dir, what):
+    def text(path, limit=20000):
+        if not os.path.isfile(path) or os.path.islink(path):
+            return f"(no {os.path.relpath(path, run_dir)})"
+        data = open(path, errors="replace").read()
+        return data[:limit] + (f"\n[cut at {limit} characters]" if len(data) > limit else "")
+    if what in ("design", "subset"):
+        return read(run_dir, what)
+    if what == "project":
+        meta_path = os.path.join(run_dir, "test_c", "test_meta.json")
+        meta = json.load(open(meta_path)) if os.path.isfile(meta_path) else {}
+        lines = []
+        for f in project_files(run_dir):
+            check = os.path.join(run_dir, "project", f[:-3] + ".check")
+            status = text(check).splitlines()[0] if f.endswith(".py") else ""
+            lines.append(f"{f}  {status}".rstrip())
+        last = "not tested" if not meta else ("last test OK" if meta["exit"] == 0 else "last test FAILED") + \
+            ("" if meta and meta["project_sha"] == project_sha(run_dir) else " (files changed since)" if meta else "")
+        return print("\n".join(lines + [last, "spec: " + text(os.path.join(run_dir, "build_spec_c.txt")).splitlines()[0]]) if lines else "(no files yet)")
+    m = re.match(r"^(file|result):(.+)$", what)
+    if m and m.group(1) == "file" and PROJECT_FILE.match(m.group(2)):
+        return print(text(os.path.join(run_dir, "project", m.group(2))))
+    if what == "test":
+        d = os.path.join(run_dir, "test_c")
+        return print("== Nextflow output (last 60 lines)\n" + "\n".join(text(os.path.join(d, "nextflow_console.txt")).splitlines()[-60:])
+                     + "\n\n== failed tasks\n" + text(os.path.join(d, "failed_tasks.txt"), 8000)
+                     + "\n\n== published results\n" + text(os.path.join(d, "summary.txt")))
+    if m and m.group(1) == "result" and FILE.match(m.group(2)) and ".." not in m.group(2) and m.group(2).endswith(TEXT_TYPES):
+        return print(text(os.path.join(run_dir, "test_c", "results", m.group(2))))
+    print("REFUSED: read 'design', 'subset', 'project', 'file:main.nf', 'file:bin/<name>.py', 'test' or "
+          "'result:<table>' (a text file the last test published)")
+
+
+def freeze_c(run_dir):
+    spec = open(os.path.join(run_dir, "build_spec_c.txt")).read().splitlines()
+    if len(spec) < 2 or spec[1] != project_sha(run_dir):
+        sys.exit("the project is not the one that passed its test: check it again")
+    dest = os.path.join(run_dir, "pipeline_c")
+    os.makedirs(os.path.join(dest, "bin"), exist_ok=True)
+    for f in project_files(run_dir):
+        with open(os.path.join(run_dir, "project", f), "rb") as src, open(os.path.join(dest, f), "wb") as out:
+            out.write(src.read())
+    print(f"Froze {len(project_files(run_dir))} files into {dest}; full run: {spec[0]}")
+
+
 if __name__ == "__main__":
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "write-step":
@@ -317,5 +513,17 @@ if __name__ == "__main__":
         save_review(args[0], args[1], args[2], stdin_text(), fallback="--fallback" in args[3:])
     elif cmd == "render":
         render(*args)
+    elif cmd == "write-file":
+        write_file(*args)
+    elif cmd == "lint-pipeline":
+        lint_pipeline(*args)
+    elif cmd == "test-pipeline":
+        test_pipeline(*args)
+    elif cmd == "check-pipeline":
+        check_pipeline(args[0], stdin_text())
+    elif cmd == "read-c":
+        read_c(*args)
+    elif cmd == "freeze-c":
+        freeze_c(*args)
     else:
         sys.exit(__doc__)
