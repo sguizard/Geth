@@ -4,6 +4,8 @@
  * Phase 11: can language-model agents design (and later build) a coherent single-cell downstream analysis?
  *   --mode design : arm A, a designer agent writes a structured design for the question; nothing runs on the data.
  *                   --lab_skill false gives the designer no best-practice skill (arm A0), true gives it one (arm A1).
+ *   --mode judge   : phase 11.5, a judge agent reads several designs (candidates.txt), checks them against the
+ *                   data and writes the best one.
  *   --mode engineer: arm B, an engineer agent implements a checked design as Python step scripts, testing each
  *                   one on a subset in the sandbox, then saves the pipeline spec (--build_round 1 or 2).
  *                   --lab_skill false: the engineer has no coding skill (arm B0).
@@ -707,6 +709,51 @@ agent reviewer_c {
     """
 }
 
+// Phase 11.5: three designs and a judge. The judge reads independent designs, checks them against the data, and
+// writes the best one (the same format and check as a designer's).
+
+agent judge {
+    model "openai/${params.model}"
+    instruction '''You are an EXPERIMENTAL judge in Geth's lab. Several designers answered the same request
+    independently, each with a design for the downstream analysis of single-cell RNA-seq count data. Compare
+    their designs against the data and best practice, then write the single best design: for each step and each
+    comparison take the soundest choice from any of them, and correct them where they are all wrong. Check
+    their claims about the data yourself: list the data folder, read its README, call LAB_INSPECT on the count
+    matrix and LIST_REFERENCES for annotation models. Write the design in the same format as the designers.
+    steps: one line per step, "<step> | <method> | <tool> | <key parameters> | <why>", where <step> is one of
+      qc, doublets, normalisation, feature_selection, dimensionality_reduction, integration, clustering,
+      annotation, differential_expression (all nine; write the method "none" and why if a step is not needed).
+    statistics: one line per comparison the question needs, "<comparison> | <unit of replication> |
+      <test or model> | <design formula> | <multiple testing>".
+    expected: what the results should show if the analysis works, one expectation per line.
+    Call CHECK_DESIGN with the steps, statistics and expected lines until it prints "DESIGN CHECK: OK". In the
+    rationale, say for each main choice which design it comes from (A, B, C) or why you changed it.'''
+    tools 'nf:module_run:LAB_LIST_FILES', 'nf:module_run:LAB_READ_TEXT', 'nf:module_run:LAB_INSPECT',
+        'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_DESIGN'
+    skills 'sc-design-lab'
+    maxIterations 30
+
+    input:
+    question: String
+    data_dir: String
+    candidates: String
+
+    output:
+    design: LabDesign
+
+    prompt:
+    """
+    Request: ${question}
+    Data folder: ${data_dir}
+
+    The designs to judge:
+    ${candidates}
+
+    In your final answer give the steps, the statistics and the expected results exactly as checked, each as a
+    list of lines, and a rationale that says where each main choice comes from.
+    """
+}
+
 // ---------------------------------------------------------------- bookkeeping
 
 process SAVE_DESIGN {
@@ -793,6 +840,12 @@ workflow {
         def design = with_skill ? designer_skill(params.question, params.data_dir) : designer_plain(params.question, params.data_dir)
         SAVE_DESIGN(design).view()
     }
+    else if( params.mode == 'judge' ) {
+        def question = file(params.run_dir).resolve('question.txt').text.trim()
+        def candidates = file(params.run_dir).resolve('candidates.txt').text
+        file(params.run_dir).resolve('lab_arm.txt').text = 'A1 judged design, from three designs\n'
+        SAVE_DESIGN(judge(question, params.data_dir, candidates)).view()
+    }
     else if( params.mode == 'engineer' || params.mode == 'review' ) {
         def question = file(params.run_dir).resolve('question.txt').text.trim()
         def design = ['steps', 'statistics', 'expected'].collect { part ->
@@ -833,6 +886,6 @@ workflow {
         }
     }
     else {
-        error "--mode must be 'design', 'engineer', 'review', 'engineer_c', 'review_c' or 'run_c'"
+        error "--mode must be 'design', 'judge', 'engineer', 'review', 'engineer_c', 'review_c' or 'run_c'"
     }
 }

@@ -5,6 +5,8 @@
 #                                                                  nothing runs on the data
 #   geth lab show <name>                                           print the design and its format check
 #   geth lab list                                                  all lab runs and where they stand
+#   geth lab judge <name> <design run> <design run> [...]          a judge agent compares designs of the same
+#                                                                  request and writes the best one
 #   geth lab build <design run> <name> [--no-skill]                arm B: an engineer agent implements a checked
 #                                                                  design as step scripts (tested on a subset in a
 #                                                                  sandbox), a reviewer agent checks them (2 rounds
@@ -20,7 +22,7 @@ export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
 lab=$GETH_RUNS_DIR/lab
 source "$GETH_HOME/geth/bin/driver_slots.sh"
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 banner() { echo "*** Geth lab: EXPERIMENTAL, not for real analyses ***" >&2; }
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
@@ -151,6 +153,34 @@ case "$cmd" in
         if [ $rc -eq 0 ]; then build_state "$d" "done (review: $verdict)"; else build_state "$d" "failed: full run (review: $verdict; see pipeline_run.log)"; fi
         show_build "$d"
         exit $rc
+        ;;
+    judge)
+        [ $# -ge 3 ] || usage
+        d=$(run_dir_of "$1"); shift
+        [ -e "$d" ] && { echo "Lab run '$(basename "$d")' already exists: choose another name." >&2; exit 1; }
+        first=$(run_dir_of "$1")
+        for r in "$@"; do
+            src=$(run_dir_of "$r")
+            head -n 1 "$src/lab_design_check.txt" 2>/dev/null | grep -q '^DESIGN CHECK: OK' \
+                || { echo "Lab run '$r' has no checked design." >&2; exit 1; }
+            cmp -s "$src/question.txt" "$first/question.txt" && cmp -s "$src/data_dir.txt" "$first/data_dir.txt" \
+                || { echo "Lab run '$r' answers another request or data: a judge compares designs of the same request." >&2; exit 1; }
+        done
+        mkdir -p "$d"
+        cp "$first/question.txt" "$first/data_dir.txt" "$d/"
+        printf '%s\n' "$@" > "$d/judged_from.txt"
+        letter=A
+        for r in "$@"; do  # the designs, labelled A, B, C... (the judge does not see their run names or scores)
+            src=$(run_dir_of "$r")
+            { echo "== Design $letter"
+              for part in steps statistics expected rationale; do
+                  echo "$part:"; grep -v '^# EXPERIMENTAL' "$src/lab_design_$part.txt"; echo
+              done; } >> "$d/candidates.txt"
+            letter=$(echo "$letter" | tr 'A-Y' 'B-Z')
+        done
+        cd "$d"
+        lab_nf "$d" judge judge || { echo "Judging failed: see $d/geth_judge.log" >&2; exit 1; }
+        show "$d"
         ;;
     build-c)
         [ $# -eq 2 ] || usage
