@@ -148,14 +148,14 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill ok">v1.5.0 released</span>
+    <span class="pill ok">v1.6.0 released</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (13 pinned pipelines, from RNA-seq to metagenomics) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model. An experimental lab tests agents that design and write analyses themselves.</p>
   <div class="meta">
-    <span>Updated 2026-10-17</span>
+    <span>Updated 2026-10-18</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>13 nf-core pipelines + a single-cell toolbox</span>
-    <span>repo sguizard/Geth · release v1.5.0 · v1.6.0 on develop</span>
+    <span>repo sguizard/Geth · release v1.6.0</span>
   </div>
 </header>
 
@@ -449,7 +449,7 @@ a { color: var(--accent); }
   </div>
   <p>Expected populations: CD4 T, CD8 T, NK, B, classical and non-classical monocytes, dendritic cells. The analyst never revised the design: it answered each flag (e.g. 8 plasma cells kept as a real rare population; platelets hard for classifiers).</p>
 
-  <h3>Pipelines Geth can run (v1.6.0 on develop)</h3>
+  <h3>Pipelines Geth can run (v1.6.0)</h3>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Pipeline</th><th>Version</th><th>Nested Nextflow</th><th>Test profile on Eddie</th><th>Validated with agents</th></tr></thead>
@@ -585,6 +585,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-17">2026-10-17</time><span>Go given for arm B (agent-written code, in a sandbox). Arm C waits for arm B's results.</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Phase 8 done: all 10 added pipelines run end to end with agents. fish support added (<code>env.fish</code>, tab completion).</span></li>
     <li><time datetime="2026-10-18">2026-10-18</time><span>Arm B done: with the coding skill, agents build correct analyses in 8 of 9 cases; the reviewer is what makes them trustworthy. Arm C waits for a go.</span></li>
+    <li><time datetime="2026-10-18">2026-10-18</time><span>Release v1.6.0: 10 more pipelines validated with agents on test deliveries, index reuse, fish support, driver slots, the experimental lab (arms A and B).</span></li>
   </ul>
 </section>
 
