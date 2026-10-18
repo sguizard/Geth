@@ -367,15 +367,18 @@ because its agents call the model service, and it can still submit scheduler job
 | What a driver sees | its run folder, Nextflow's home and the image cache (read-write); Geth, its run's data folder, the catalogue, Java, Nextflow (read-only). Hidden: the lab's scoring truth, other runs, other deliveries, the home folder, group storage |
 | Lab design (PBMC), driver sandboxed | design check OK, 11/12; its inspection job was submitted from inside |
 | Yeast RNA-seq plan, approve, run, all sandboxed | plan 13/13; run succeeded in 1 attempt, the nested nf-core driver submitting its 215 jobs from inside; 42/42 report numbers traced |
-| nanoseq (Nextflow 23.10.4, singularity engine) and eager (Nextflow 22.10.8, Java 17), sandboxed | PENDING |
+| nanoseq (Nextflow 23.10.4, singularity engine), plan to report, sandboxed | plan 12/12; succeeded in 1 attempt; 18/18 report numbers traced |
+| eager (Nextflow 22.10.8 on the system's Java 17), plan to report, sandboxed | plan 13/13; succeeded in 1 attempt; 39/39 report numbers traced |
 
-Getting there took four faults, all fixed:
+Getting there took five faults, all fixed:
 - the site's settings file switched the sandbox off over the environment, so two early "sandboxed" tests
   were not (the run folder now records it, and `geth status` says so)
 - `NXF_OPTS` was mangled by apptainer's env-file format (it reads single quotes, not `\` escapes)
 - the site's task prelude (`module load`) failed inside: it is a no-op there
 - a symbolic link (`/exports/applications`): mounted at its resolved path, the scheduler's client was missing
   from `PATH`
+- the system's Java 17 keeps its configuration, certificates and time zones behind links into `/etc/java`,
+  `/etc/pki` and `/usr/share`, and reads `/etc/crypto-policies`: their targets are now mounted read-only
 
 A failed tool once left the designer agent hanging for an hour; agent stages now run under time limits.
 Not tested: pulling a pipeline image that is not yet in the cache, from inside the sandbox.
