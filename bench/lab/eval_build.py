@@ -37,7 +37,7 @@ def read(path, default=""):
 
 
 def table(results, name):
-    paths = sorted(glob.glob(os.path.join(results, "*", name)))
+    paths = sorted(glob.glob(os.path.join(results, "**", name), recursive=True))
     return pd.read_csv(paths[-1], sep="\t") if paths else None
 
 
@@ -83,6 +83,10 @@ def score(run, dataset, truth_dir, input_h5ad):
          "step_check_refusals": sum(1 for l in log if len(l) > 3 and l[1] == "write" and l[3] == "refused"),
          "spec_refusals": sum(1 for l in log if len(l) > 2 and l[1] == "spec" and l[2] == "refused")}
     final = os.path.join(results, f"{len(spec):02d}_{spec[-1]}", "output.h5ad") if spec else ""
+    if os.path.isfile(os.path.join(run, "build_spec_c.txt")):  # arm C: the agent's own pipeline
+        spec = sorted(os.path.basename(p) for p in glob.glob(os.path.join(run, "pipeline_c", "bin", "*.py")))
+        s["steps"] = len(spec)
+        final = os.path.join(results, "final.h5ad")
     s["pipeline_ran"] = bool(spec) and os.path.isfile(final)
     s["deliverable"] = s["pipeline_ran"] and s["review"] == "approve"  # a build counts only once the reviewer approved
     if not s["pipeline_ran"]:
@@ -111,7 +115,8 @@ def score(run, dataset, truth_dir, input_h5ad):
             s["cell_types_with_isg_response"] = int((up >= 5).sum())
             s["monocytes_respond"] = any(broad(t) == "CD14+ Monocytes" and up.get(t, 0) >= 5 for t in tested)
             s["isg_direction_up"] = bool(len(de)) and float(de["log2fc"].median()) > 0
-        code = " ".join(read(p) for p in glob.glob(os.path.join(run, "pipeline", "steps", "*.py")))
+        code = " ".join(read(p) for p in glob.glob(os.path.join(run, "pipeline", "steps", "*.py"))
+                        + glob.glob(os.path.join(run, "pipeline_c", "bin", "*.py")))
         s["pseudobulk_deseq2"] = bool(re.search(r"DeseqDataSet", code)) and bool(re.search(r"\.sum\(", code))
     else:
         found = labels.value_counts(normalize=True)

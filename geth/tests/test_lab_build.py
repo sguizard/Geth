@@ -143,6 +143,80 @@ class Build(unittest.TestCase):
         self.assertIn("SPEC CHECK: OK", out(lb.check_spec, self.run, "de | 2 | 8 | 10\n"))
 
 
+class ArmC(unittest.TestCase):
+    """An agent-written Nextflow project: files, the pipeline check, freezing, reading."""
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp(prefix="geth_build_c_")
+        os.makedirs(os.path.join(self.run, "subset"))
+        open(os.path.join(self.run, "subset", "output.h5ad"), "w").write("subset")
+        open(os.path.join(self.run, "subset", "genes.txt"), "w").write("ISG15\nMX1\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.run)
+
+    def write(self, path, text):
+        return out(lb.write_file, self.run, path, stdin=text)
+
+    def tested(self, ok=True, final=True, tsv="cell_type\tgene\tlog2fc\tpadj\nB cells\tISG15\t5\t0.001\n"):
+        """What lab_build.test_pipeline leaves behind, without running the sandbox (it starts from an empty folder)."""
+        shutil.rmtree(os.path.join(self.run, "test_c"), ignore_errors=True)
+        d = os.path.join(self.run, "test_c", "results")
+        os.makedirs(d, exist_ok=True)
+        if final:
+            open(os.path.join(d, "final.h5ad"), "w").write("h5ad")
+        open(os.path.join(d, "de_results.tsv"), "w").write(tsv)
+        open(os.path.join(self.run, "test_c", "summary.txt"), "w").write("obs 'cell_type': 3 values")
+        json.dump({"project_sha": lb.project_sha(self.run), "input_sha": lb.sha(lb.input_of(self.run, "input")),
+                   "exit": 0 if ok else 1}, open(os.path.join(self.run, "test_c", "test_meta.json"), "w"))
+
+    def test_only_main_nf_and_bin_scripts(self):
+        self.assertIn("REFUSED", self.write("nextflow.config", "process.executor = 'sge'"))
+        self.assertIn("REFUSED", self.write("bin/../../x.py", GOOD))
+        self.assertIn("REFUSED", self.write("bin/run.sh", "echo hi"))
+        self.assertIn("saved", self.write("main.nf", "workflow { }"))
+        self.assertIn("module 'subprocess' is not allowed", self.write("bin/net.py", "import subprocess\n"))
+        self.assertIn("STEP CHECK: OK", self.write("bin/qc.py", "import scanpy as sc\n"))  # no sys.argv needed
+        self.assertEqual(lb.project_files(self.run), ["main.nf", "bin/net.py", "bin/qc.py"])
+        self.assertEqual(lb.check_scripts(self.run), ["bin/net.py"])
+
+    def test_pipeline_check(self):
+        self.write("main.nf", "workflow { }")
+        self.write("bin/qc.py", "import scanpy as sc\n")
+        self.assertIn("has not been tested", out(lb.check_pipeline, self.run, "4 | 32 | 60"))
+        self.tested(ok=False)
+        self.assertIn("last test failed", out(lb.check_pipeline, self.run, "4 | 32 | 60"))
+        self.tested()
+        self.assertIn("memory must be between 1 and 64", out(lb.check_pipeline, self.run, "4 | 128 | 60"))
+        self.assertIn("PIPELINE CHECK: OK", out(lb.check_pipeline, self.run, "4 | 32 | 60"))
+        self.write("main.nf", "workflow { println 'changed' }")
+        self.assertIn("changed after its last test", out(lb.check_pipeline, self.run, "4 | 32 | 60"))
+        self.tested(final=False)
+        self.assertIn("no final.h5ad", out(lb.check_pipeline, self.run, "4 | 32 | 60"))
+        self.tested(tsv="cell_type\tgene\tlog2fc\tpadj\n0\tENSG00000187608\t5\t0.001\n")
+        text = out(lb.check_pipeline, self.run, "4 | 32 | 60")
+        self.assertIn("gene symbols", text)
+        self.assertIn("holds numbers", text)
+
+    def test_freeze_runs_exactly_the_tested_project(self):
+        self.write("main.nf", "workflow { }")
+        self.tested()
+        out(lb.check_pipeline, self.run, "2 | 8 | 30")
+        out(lb.freeze_c, self.run)
+        self.assertEqual(open(os.path.join(self.run, "pipeline_c", "main.nf")).read(), "workflow { }\n")
+        self.write("main.nf", "workflow { println 'edited after the check' }")
+        with self.assertRaises(SystemExit):
+            out(lb.freeze_c, self.run)
+
+    def test_read_stays_in_the_project(self):
+        self.write("main.nf", "workflow { }")
+        self.tested()
+        self.assertIn("workflow", out(lb.read_c, self.run, "file:main.nf"))
+        self.assertIn("ISG15", out(lb.read_c, self.run, "result:de_results.tsv"))
+        self.assertIn("REFUSED", out(lb.read_c, self.run, "file:../../etc/passwd"))
+        self.assertIn("REFUSED", out(lb.read_c, self.run, "result:../test_meta.json"))
+        self.assertIn("last test OK", out(lb.read_c, self.run, "project"))
+
 class ShellQuoting(unittest.TestCase):
     """main.nf passes agent text as '<text>' with each ' replaced by '\\'' (Groovy: replace("'", "'\\\\''"))."""
 
