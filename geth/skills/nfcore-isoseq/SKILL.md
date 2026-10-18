@@ -27,6 +27,9 @@ Columns: `sample,seq_data,pbi,start_from`
   primers file provided with the data; never invent primer sequences.
 - `chunk_ccs`, `chunk_mapping`: parallelism; keep defaults.
 
+- `chunk_ccs` (default 40) splits CCS into parallel chunks: for small inputs (under about 2 GB of subreads,
+  e.g. test subsets) use 5 or fewer, or most chunks are empty and the TAMA merge step fails.
+
 ## Typical failure causes
 - `start_from` that does not match the file type (subreads vs CCS vs FASTA).
 - Missing `.pbi` for a subreads BAM, or a `pbi` path given for a non-subreads row.

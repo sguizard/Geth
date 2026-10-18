@@ -13,7 +13,11 @@ Use this pipeline for **ChIP-seq** (transcription factors, histone marks): align
 - One row per FASTQ (pair). **IP** rows: `antibody` = the antibody/mark (e.g. `H3K27ac`, `CTCF`),
   `control` = the `sample` name of its input/IgG control, `control_replicate` = that control's replicate.
 - **Control (input) rows**: same columns, but `antibody`, `control` and `control_replicate` empty.
-- Biological replicates: same `sample`, `replicate` = 1, 2, 3... (must start at 1, no gaps).
+- `sample` is the **condition** (antibody + treatment or time point, e.g. `SPT5_T0`), not the library:
+  biological replicates of one condition share `sample`, with `replicate` = 1, 2, 3... (start at 1, no gaps).
+  Never one sample per library.
+- Inputs: one input `sample` with a replicate per culture/batch (or one input sample per condition). Each IP's
+  `control` + `control_replicate` must name the input library from the **same** culture/batch.
 - Re-sequenced library (several FASTQs of one replicate): repeat the row with the same `sample` and `replicate`.
 - `fastq_2` empty for single-end. Absolute paths, gzipped.
 
@@ -26,6 +30,8 @@ Use this pipeline for **ChIP-seq** (transcription factors, histone marks): align
   (broad, default) for broad marks (H3K27me3, H3K36me3, H3K9me3). Keep one peak type per antibody.
 - `blacklist=<BED>` (ENCODE blacklist for the assembly) if available in the catalogue.
 - `aligner`: `bwa` (default), `bowtie2`, `chromap`, `star`.
+
+- Tiny test data (a few thousand reads per library): `skip_preseq=true` (preseq needs more reads).
 
 ## Typical failure causes
 - `control`/`control_replicate` pointing to a sample/replicate that does not exist.

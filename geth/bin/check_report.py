@@ -4,9 +4,11 @@
 Usage: check_report.py <report.md> <run_dir> <pipeline> <attempts>
 Prints the report (fences stripped, plus a warning section when something cannot be traced)
 and writes <run_dir>/report_check.txt.
-Facts = collected results + approved plan + question + number of attempts.
+Facts = collected results + approved plan + question + number of attempts + the error reports of the
+attempts (a report on a failed run quotes them).
 Small integers (<= 20) are not checked: they are counts of samples, files or attempts.
 """
+import glob
 import os
 import re
 import sys
@@ -60,6 +62,8 @@ def main():
         p = os.path.join(run_dir, f)
         if os.path.isfile(p):
             fact_text += open(p).read() + "\n"
+    for p in sorted(glob.glob(os.path.join(run_dir, "attempt_*", "error.txt"))):
+        fact_text += open(p, errors="replace").read() + "\n"
     facts = {v for _, v in numbers(scrub(fact_text))} | set(raw_values(run_dir))
 
     checked, unverified = 0, []

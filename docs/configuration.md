@@ -63,6 +63,15 @@ another provider's key by accident.
 | `GETH_NFCORE_CONFIG` | none | Extra config for every nf-core run, applied last, so it wins. Use it for resource limits, queues, or anything your profile lacks. |
 | `GETH_MODULES` | none | Environment modules to load, e.g. `"java/21 apptainer/1.4"`. |
 | `GETH_DRIVER_CPUS` | `2` | CPUs that each Nextflow driver JVM may use. Outside scheduler jobs, `env.sh` sets `NXF_OPTS` (`-Xmx4g`, active processor count). |
+| `GETH_MAX_DRIVERS` | `0` (no limit) | Nextflow drivers allowed at once on this machine: a plan or a lab design uses 1, a run 2 (Geth's and the pipeline's). A command that would exceed it waits for a free slot. On a shared login node, set it so that drivers × `GETH_DRIVER_CPUS` stays within your allowance. |
+
+### Lab (experimental)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GETH_LAB_DATA` | `$GETH_DATA_ROOT/testdata` | The only folders the lab's agents may read (`:`-separated). |
+| `GETH_LAB_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_lab_sc_f4e5ea0d66d15d6c.sif` | The pinned image agent-written steps run in (arm B): scanpy 1.11.5, celltypist 1.7.1, pydeseq2 0.5.4, harmonypy 0.0.10, from Seqera Containers (`oras://community.wave.seqera.io/library/python_scanpy_celltypist_pydeseq2_pruned:f4e5ea0d66d15d6c`). |
+| `GETH_LAB_MODELS` | `$GETH_REFERENCES/celltypist_immune_v2` | CellTypist models copied into each step's sandbox. |
 
 Anything else your institutional profile reads from the environment goes in `site.env` too, for example
 `NXF_SGE_PROJECT` for a profile that passes a project code to `qsub -P`.
@@ -147,9 +156,11 @@ nextflow run nf-core/<pipeline> -r <pinned revision>
     --outdir <run>/results -w <run>/work -resume
 ```
 
-- **Resource caps by input size.** Inputs under 2 GB get `test.config` (at most 4 CPUs, 16 GB and 4 h
-  per task) so that small jobs start quickly. Larger inputs get `production.config` (at most 16 CPUs,
-  128 GB and 48 h). To match your nodes, set `process.resourceLimits` in `GETH_NFCORE_CONFIG`, as in
+- **Resource caps by input and reference size.** Inputs under 2 GB on a reference under 500 MB get
+  `test.config` (at most 4 CPUs, 16 GB and 4 h per task) so that small jobs start quickly. Everything else
+  gets `production.config` (at most 16 CPUs, 128 GB and 48 h). That includes small inputs on a large
+  genome, an iGenomes genome or a prebuilt index, because STAR alone needs about 32 GB for a human genome.
+  To match your nodes, set `process.resourceLimits` in `GETH_NFCORE_CONFIG`, as in
   `site/examples/local-nfcore.config`.
 - **Analysis profile.** Downstream pipelines take one, e.g. `rnaseq` for differentialabundance. The
   planner chooses it from an allowlist.

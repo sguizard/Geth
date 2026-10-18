@@ -32,6 +32,7 @@ Columns: `sample,run,group,short_reads_1,short_reads_2,short_reads_platform,long
   - CAT (~200 GB): `cat_db=<path>`; GUNC: `run_gunc=true` with `gunc_db=<path>`
   - MetaEuk: `metaeuk_db=<path>` or `skip_metaeuk=true`
 - Bin size filters: `bin_min_size`, `bin_max_size` (set `min_length_unbinned_contigs` with them).
+- Test-size data (a few MB of reads): `skip_ale=true` (the ALE assembly evaluation crashes on tiny assemblies).
 
 ## Typical failure causes
 - Platform columns missing for given reads; mixing single- and paired-end short reads.

@@ -17,6 +17,7 @@ agents decide; the gates verify; a person approves.
 
 ```
 env.sh                     source first: loads site/site.env, derives defaults, exports everything
+env.fish                   the same for fish: imports what env.sh exports (geth/bin/env_export.sh), loads completions
 VERSION                    release number (bumped on release branches)
 site/
   site.env.example         documented template of the site configuration (copy to site/site.env)
@@ -33,6 +34,8 @@ geth/
     collect_results.py     ready-to-copy result tables for the reporter
     check_report.py        traces every number and link of the report to the facts
     geth_doctor.sh         installation checks (geth doctor)
+    env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
+  completions/geth.fish    fish tab completion (loaded by env.fish)
   conf/                    configs added to nf-core runs: resource caps, legacy singularity engine
   schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release
   skills/                  planner skills: one SKILL.md per pipeline, plus sc-downstream
@@ -113,7 +116,8 @@ the files. A file edited after approval makes every gate call fail until a perso
       `STATUS: REFUSED`, and nothing is launched.
    3. **Plan check** (`check-plan`) of the submitted attempt. A failure is recorded as a `check` error,
       so the next attempt may fix exactly that.
-   4. Resources: `test.config` for inputs under 2 GB, `production.config` otherwise.
+   4. Resources: `test.config` for inputs under 2 GB on a reference under 500 MB, `production.config`
+      otherwise (a human genome needs large jobs whatever the read count).
    5. Per-pipeline runtime (`geth_checks.py runtime`): Nextflow version, Java, extra config,
       environment, TSV input, `--max_*` limits.
    6. Launch from `nfcore/`, with `-resume`. Geth's own driver runs in the run folder, so a separate
@@ -215,12 +219,26 @@ Keep skills short (30 to 50 lines) and factual. The plan check, not the skill, i
 | `required_params` | parameters the plan must set (schema `required` flags are unreliable: profiles and defaults fill many) |
 | `downstream`, `profiles` | follow-up pipeline: takes contrasts and an analysis profile from this allowlist |
 | `toolbox` | Geth's own single-cell toolbox, validated against `SC_MENU` instead of a schema |
+| `star` | STAR version of the release: a reused `star_index` must have been built with it |
 | `nextflow` | Nextflow version for the nested run (`NXF_VER`) |
 | `java` | Java major version for the nested run, resolved from `GETH_JAVA<n>_HOME` |
 | `nxf_env` | extra environment for the nested run, e.g. `NXF_SYNTAX_PARSER=v1` |
 | `extra_config` | a config from `geth/conf/` added to the nested run |
 | `input_format` | `tsv`: the samplesheet is converted before launch (eager) |
 | `legacy_limits` | pass `--max_cpus/--max_memory/--max_time` (pre-`resourceLimits` templates) |
+
+**Data-dependent memory.** `geth_checks.py resources` writes an extra config for jobs whose memory depends on
+the data: Kraken2 loads its whole index in RAM, so taxprofiler's Kraken2 jobs ask for the index size plus a
+margin. `reference-size` sets the resource caps: small inputs on a large genome or database get the
+production caps.
+
+**Index reuse.** A registered index has a `geth_index.json` next to it: tool, version, the FASTA and GTF it
+was built from, and how it was built (`geth/references/register_star_index.sh`). The catalogue README gets
+a `STAR index:` line, which the planner sees through `LIST_REFERENCES`, and the rnaseq and scrnaseq skills
+say when to use it. `check_star_index()` refuses three cases: an index without `geth_index.json`, a STAR
+version other than the registry's `star`, and a plan whose `fasta` or `gtf` differ from the recorded ones. A
+STAR index stores the annotation's transcript and gene models, so STARsolo counts and Salmon's transcriptome
+BAM depend on it.
 
 Pipeline-specific rules live in `EXTRA_CHECKS`, one function per pipeline taking the rows and params.
 Examples: tumour/normal status in sarek, IP-to-control links in chipseq, the UDG treatment and its
@@ -286,6 +304,9 @@ are often read-only in jobs.
 - `env.sh` is the only place that reads `site/site.env`. Everything else reads environment variables.
   `geth/nextflow.config` turns them into `params.model`, `params.allowed_models`, `params.data_root`,
   `params.runs_dir` and `params.references`, and configures the `agent` scope.
+- `env.fish` does not re-implement `env.sh`: it imports the changes `env.sh` makes in bash
+  (`geth/bin/env_export.sh`). Fish completions are in `geth/completions/geth.fish`; update them when a
+  command or option changes.
 - The local tools (`executor 'local'`) inherit the driver's environment, so `run_nfcore.sh` and the
   checks see the site settings. Scheduler jobs do not: `SC_ANALYSE` exports `GETH_REFERENCES` itself,
   and the containers get `-B` binds for the three Geth folders.
@@ -317,16 +338,81 @@ launch.
 |---|---|
 | `bench/stage_testdata.sh` | Two small deliveries from nf-core test data, with free-text READMEs: yeast bulk RNA-seq (mixed SE/PE, technical replicates), mouse 10x scRNA-seq (two samples, lanes). |
 | `bench/stage_public.sh` | Real-size public data: airway (GSE52778, 24 GB), PBMC 1k v3 (5 GB), GRCh38, CellTypist immune models. |
+| `bench/stage_deliveries.sh` | Seven realistic deliveries for the pipelines added in 1.4 (chipseq, atacseq, methylseq, ampliseq, nanoseq, eager, isoseq), built from nf-core test data. Files are renamed the way a facility would deliver them, with a free-text README and a sample table, and the traps are realistic: re-sequenced lanes, input controls shared per culture, facility IDs that are not valid sample names, a pooled Nanopore FASTQ. |
+| `bench/bench_plan.sh <tag> <repeats> <delivery>...` | Plan-only repeats, each plan scored by `eval_plan.py`. Nothing is approved or run. |
+| `bench/bench_run.sh <tag> <run>:<dataset>...` | Approves already-planned benchmark runs and runs them end to end, scored by `eval_run.py`. |
+| `bench/stage_chicken.sh` | A chicken germline delivery for sarek: three birds of DDBJ PRJDB17746, 2 million read pairs each, one bird on two lanes; plus the GRCg7b genome, known variants and VEP cache. |
+| `bench/stage_index_tests.sh` | Airway and PBMC subsets, used to test STAR index reuse quickly. |
+| `bench/snapshot.sh` | Freezes the last commit in `$GETH_WORK_ROOT/snapshots/<commit>`, so a long benchmark runs on fixed code while development goes on. A script that bash is executing must never be edited. |
 | `bench/bench.sh <tag> <repeats> [bulk] [sc]` | plan → approve → run → score on the test deliveries. |
 | `bench/bench_sc.sh <tag> <repeats> <upstream run>` | Agent-designed single-cell analyses on a finished scrnaseq run, scored. |
 | `bench/baseline.sh <pipeline> [<revision>]` | A pipeline's own test profile, without agents. |
 | `bench/baseline_airway_de.sh` | The hand-made textbook DE analysis of airway that Geth's DE runs are compared with. |
-| `bench/eval_plan.py <run> <dataset>` | Scores a plan against the known truth: `bulk`, `sc`, `airway`, `pbmc`, `airway_de`. |
+| `bench/eval_plan.py <run> <dataset>` | Scores a plan against the known truth: `bulk`, `sc`, `airway`, `pbmc`, `airway_de`, and the seven deliveries. Each scorer was checked with a hand-written correct plan (full marks, passes the plan check) and with injected mistakes. |
 | `bench/eval_run.py <run> <dataset> <plan_s> <run_s>` | Plan score, design kept in every launched attempt, success, report check, attempts and refusals. For `airway_de`, the overlap with the baseline and the known dexamethasone genes. |
 | `bench/eval_sc.py <run>` | Expected PBMC populations and markers, CellTypist agreement, QC sanity. |
 
 Results are appended as JSON lines to `$GETH_BENCH_DIR/<tag>.jsonl`. Benchmarks approve plans
 automatically: use public data only.
+
+## The lab (experimental, phase 11)
+
+`geth lab` (in `geth/lab/`) tests whether agents can design, and later build, a coherent single-cell
+downstream analysis. It is **not for real analyses**. It is kept apart from Geth's workflow:
+
+- its own Nextflow workflow (`geth/lab/main.nf`) and command (`geth/lab/lab.sh`)
+- its file tools only reach the benchmark folders (`GETH_LAB_DATA`, by default `$GETH_DATA_ROOT/testdata`),
+  so the truth used for scoring (`$GETH_WORK_ROOT/lab_truth/`) stays out of reach
+- runs go to `$GETH_RUNS_DIR/lab/`, and every file it writes is marked EXPERIMENTAL
+
+Arm A (`geth lab design`) asks a designer agent for a structured design and runs nothing:
+- **steps:** nine required steps, each written as `step | method | tool | key parameters | why`
+- **statistics:** one line per comparison: `comparison | unit of replication | test or model | design formula | multiple testing`
+- **expected results**
+
+`lab_checks.py` checks the format only. `bench/lab/eval_design.py` scores the science against what a
+coherent analysis of each benchmark must do. Its main test is Kang et al. 2018 (8 donors, control vs IFN-β),
+where the condition must be tested per cell type with donors as replicates (pseudobulk). The scorer was
+checked on a coherent design (20/20) and on a naive one (7/20). Arm A runs with the best-practice skill
+`sc-design-lab` (A1) and without it (A0), to separate what the model knows from what the skill tells it.
+
+Arm B (`geth lab build <design run> <name>`) has agents write the code of a checked design, and runs it:
+
+1. **Engineer** (skill `sc-build-lab`): writes one Python script per step with `WRITE_STEP`, and tests each
+   on a 3,000-cell subset with `TEST_STEP` (an SGE task), the first from the subset and every other from the
+   previous step's test output. When all pass, it saves the spec (`step | cpus | memory GB | minutes`) with
+   `SAVE_SPEC`.
+2. **Reviewer:** reads the design, the scripts and their test outputs (`READ_BUILD`, read-only) and answers
+   `approve` or `revise` with one line per required change. A `revise` starts a second engineer round
+   (at most two).
+3. **Geth** renders `pipeline/main.nf` from the spec, with a frozen copy of the tested scripts, and runs it on
+   the full data as SGE jobs (`results/<NN>_<step>/`).
+
+The rules live in deterministic code, not in the prompts:
+- **Sandbox** (`geth/lab/bin/lab_sandbox.sh`): every agent-written script runs in the pinned lab image with
+  `apptainer exec --containall`. Its only writable folder (also its home) is `/work`; `/in` holds the script,
+  the input and the models, read-only. `--net --network none` removes the network, and the environment is
+  clean (no keys). Only regular files come back, never links. `bench/lab/sandbox_test.sh` runs an escape
+  test (network, host folders, secret-like variables, writes and links) on the machine where it runs.
+- **Static check** (`lab_step_check.py`): an import allowlist, no `eval`/`exec`, no process or file-system
+  calls, no absolute paths, and `sys.argv` for input and output. It catches misuse early; the sandbox is what
+  enforces the rules.
+- **Bookkeeping** (`lab_build.py`): each test records fingerprints of the script and its input. The spec is
+  accepted only when every step passed, in order, on its current code, and the results contract holds:
+  `obs["cell_type"]` in the last output, and `de_results.tsv` or `markers.tsv` with
+  `cell_type, gene, log2fc, padj`. The renderer refuses code that changed after its test.
+- **Agent text** reaches the shell only inside single quotes, with each `'` written as `'\''`, and
+  `lab_build.py` checks every name and path again.
+
+`bench/lab/reference/kang2018/` holds hand-written reference steps that exercise the whole path and give a
+baseline: 86% agreement with the published cell types, and the interferon response in all 8 cell types tested.
+`bench/lab/eval_build.py` (run by `score_build.sh`, inside the image) scores a build:
+- execution: steps, rounds, review verdict, tests and refusals
+- Kang: agreement with the published labels, and interferon-stimulated genes up in each cell type
+- PBMC: populations found and their canonical markers
+
+`bench/lab/bench_build.sh` runs the benchmark. Arm C (agents write the Nextflow themselves) waits for arm B's
+results.
 
 ## Lessons from the Nextflow agent preview (26.10.2, nf-agent 0.2.0)
 
@@ -354,11 +440,11 @@ automatically: use public data only.
 
 ## Limitations and roadmap
 
-- Validated with agents on four analysis types. The planner still has to be benchmarked on realistic
-  deliveries for the other pipelines.
+- Validated with agents on real-size data for four analysis types. The planner of the other pipelines is
+  validated on test-size deliveries only.
 - One organism and one experiment per plan.
-- Built indexes (e.g. STAR for GRCh38, about 25 minutes and 65 GB) are rebuilt for every run. Reuse
-  through the reference catalogue is planned.
+- Only STAR indexes can be registered for reuse so far (`geth/references/register_star_index.sh`); other
+  aligners' indexes (Salmon, Bowtie2, BWA, Bismark...) are still built by each run.
 - sarek, taxprofiler and mag wait for their databases to be added to the catalogue.
 - The single-cell analyst is lenient: in the benchmark it answered every flag but never chose to
   revise a design.

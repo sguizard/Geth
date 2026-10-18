@@ -1,0 +1,439 @@
+<title>Geth Blueprint</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column of captioned figures; each diagram is a grid of typed nodes joined by labelled connectors. */
+:root {
+  --bg: #f2f4f6; --panel: #ffffff; --ink: #15212b; --muted: #586874; --line: #d5dce2; --edge: #8a9aa6;
+  --accent: #137fa6; --accent-soft: #e1f0f6;
+  --agent: #6a4bc4; --agent-soft: #efebfb;
+  --gate: #9a6512; --gate-soft: #f7ecd9;
+  --person: #b0306a; --person-soft: #f9e6ef;
+  --job: #137fa6; --job-soft: #e1f0f6;
+  --store: #4f5f6b; --store-soft: #e7ebef;
+  --ext: #3e5a8a; --ext-soft: #e5ebf6;
+  --ok: #2b7a4b; --ok-soft: #e3f2e9;
+  --zone: #e9edf0;
+  --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f161c; --panel: #16212a; --ink: #e3eaef; --muted: #93a4b1; --line: #2a3843; --edge: #5f717e;
+    --accent: #4cc0e3; --accent-soft: #15323f;
+    --agent: #b7a5f6; --agent-soft: #262041; --gate: #e5b45c; --gate-soft: #3a2d14;
+    --person: #f193bf; --person-soft: #3c1a2b; --job: #4cc0e3; --job-soft: #15323f;
+    --store: #aab9c5; --store-soft: #222f39; --ext: #a3baE6; --ext-soft: #1c2940;
+    --ok: #6fcf97; --ok-soft: #173426; --zone: #131c23;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f161c; --panel: #16212a; --ink: #e3eaef; --muted: #93a4b1; --line: #2a3843; --edge: #5f717e;
+  --accent: #4cc0e3; --accent-soft: #15323f;
+  --agent: #b7a5f6; --agent-soft: #262041; --gate: #e5b45c; --gate-soft: #3a2d14;
+  --person: #f193bf; --person-soft: #3c1a2b; --job: #4cc0e3; --job-soft: #15323f;
+  --store: #aab9c5; --store-soft: #222f39; --ext: #a3bae6; --ext-soft: #1c2940;
+  --ok: #6fcf97; --ok-soft: #173426; --zone: #131c23;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.page { max-width: 1080px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2rem, 5vw, 2.8rem); font-weight: 600; letter-spacing: 0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; }
+p { margin: 0; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.lede { max-width: 66ch; color: var(--muted); font-size: 1.02rem; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+a { color: var(--accent); }
+header { display: grid; gap: 12px; }
+section { display: grid; gap: 14px; }
+.section-head { display: grid; gap: 6px; }
+.caption { max-width: 72ch; color: var(--muted); }
+.figure { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.figure-inner { padding: 22px; }
+.status-tag { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.status-tag.exp { color: var(--agent); }
+.status-tag.plan { color: var(--muted); }
+
+/* Legend */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--muted); }
+.swatch { width: 18px; height: 14px; border-radius: 4px; border: 1.5px solid; flex: none; }
+.swatch.agent { background: var(--agent-soft); border-color: var(--agent); border-radius: 7px; }
+.swatch.gate { background: var(--gate-soft); border-color: var(--gate); transform: rotate(45deg) scale(0.75); border-radius: 2px; }
+.swatch.person { background: var(--person-soft); border-color: var(--person); border-radius: 999px; }
+.swatch.job { background: var(--job-soft); border-color: var(--job); }
+.swatch.store { background: var(--store-soft); border-color: var(--store); border-radius: 3px 3px 8px 8px; }
+.swatch.ext { background: var(--ext-soft); border-color: var(--ext); border-style: dashed; }
+.swatch.file { background: var(--panel); border-color: var(--edge); }
+
+/* Nodes */
+.node { position: relative; border: 1.5px solid var(--edge); border-radius: 8px; background: var(--panel); padding: 9px 11px; min-width: 0; }
+.node b { display: block; font-weight: 600; font-size: 0.92rem; line-height: 1.25; }
+.node small { display: block; color: var(--muted); font-size: 0.78rem; line-height: 1.35; margin-top: 3px; }
+.node.agent { border-color: var(--agent); background: var(--agent-soft); border-radius: 14px; }
+.node.agent b::before { content: "agent · "; font-family: var(--font-mono); font-weight: 500; font-size: 0.72rem; color: var(--agent); }
+.node.gate { border-color: var(--gate); background: var(--gate-soft); }
+.node.gate b::before { content: "◆ "; color: var(--gate); }
+.node.person { border-color: var(--person); background: var(--person-soft); border-radius: 999px; padding-inline: 16px; }
+.node.job { border-color: var(--job); background: var(--job-soft); }
+.node.store { border-color: var(--store); background: var(--store-soft); border-radius: 6px 6px 14px 14px; }
+.node.ext { border-color: var(--ext); background: var(--ext-soft); border-style: dashed; }
+.node.ghost { border-style: dashed; background: transparent; }
+.node .meter { margin-top: 6px; font-family: var(--font-mono); font-size: 0.72rem; color: var(--ok); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-family: var(--font-mono); font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--edge); background: var(--panel); white-space: nowrap; }
+.chip.agent { border-color: var(--agent); color: var(--agent); background: var(--agent-soft); }
+.chip.gate { border-color: var(--gate); color: var(--gate); background: var(--gate-soft); }
+
+/* Connectors */
+.arrow { position: relative; flex: none; display: grid; place-items: center; min-width: 46px; align-self: center; }
+.arrow::before { content: ""; display: block; width: 100%; height: 0; border-top: 1.6px solid var(--edge); }
+.arrow::after { content: ""; position: absolute; right: -1px; top: 50%; transform: translateY(-50%); border: 5px solid transparent; border-left: 8px solid var(--edge); border-right: 0; }
+.arrow.left::after { right: auto; left: -1px; border-left: 0; border-right: 8px solid var(--edge); }
+.arrow span { position: absolute; bottom: calc(50% + 4px); font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+.down { display: grid; justify-items: center; gap: 2px; color: var(--muted); font-family: var(--font-mono); font-size: 0.7rem; }
+.down::before { content: ""; width: 0; height: 18px; border-left: 1.6px solid var(--edge); }
+.down::after { content: ""; border: 5px solid transparent; border-top: 8px solid var(--edge); border-bottom: 0; }
+
+/* Lifecycle */
+.flow-row { display: flex; align-items: stretch; gap: 0; }
+.flow-row > .node { flex: 1 1 0; }
+.lane { display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: center; }
+.lane + .lane { margin-top: 16px; }
+.lane-label { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.flow-row > .stack.alt { flex: 2 1 0; display: grid; gap: 8px; }
+.loop { margin: 8px 0 0 96px; font-size: 0.82rem; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.loop::before { content: "↺"; font-size: 1.1rem; color: var(--agent); }
+.lifecycle { min-width: 940px; }
+
+/* Placement */
+.placement { min-width: 900px; display: grid; grid-template-columns: 1fr 64px 1.5fr 64px 1.25fr; grid-template-rows: auto auto auto; gap: 0; }
+.zone { border: 1.5px dashed var(--line); border-radius: 12px; background: var(--zone); padding: 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.zone-title { font-family: var(--font-display); font-weight: 600; font-size: 0.86rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.zone-note { font-size: 0.8rem; color: var(--muted); }
+.storage { grid-column: 1 / -1; }
+.storage-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.gap-row { grid-column: 1 / -1; display: flex; justify-content: space-around; padding: 6px 0; }
+.connector { display: grid; place-items: center; }
+.connector .arrow { width: 100%; min-width: 0; }
+
+/* Roadmap */
+.roadmap { min-width: 980px; display: grid; gap: 10px; }
+.bands { display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 0; }
+.band { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--line); padding: 0 4px 4px; text-align: center; }
+.track { position: relative; display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); }
+.track::before { content: ""; position: absolute; left: 3.8%; right: 3.8%; top: 19px; border-top: 3px solid var(--line); }
+.station { position: relative; display: grid; justify-items: center; gap: 6px; text-align: center; padding: 0 3px; }
+.dot { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 500; border: 2.5px solid var(--edge); background: var(--panel); color: var(--muted); z-index: 1; }
+.station.done .dot { background: var(--ok); border-color: var(--ok); color: var(--panel); }
+.station.now .dot { background: var(--accent); border-color: var(--accent); color: var(--panel); box-shadow: 0 0 0 6px var(--accent-soft); }
+.station.exp .dot { border-style: dashed; border-color: var(--agent); color: var(--agent); background: var(--agent-soft); }
+.station.plan .dot { border-style: dashed; }
+.station .name { font-size: 0.78rem; font-weight: 500; line-height: 1.25; }
+.station .ver { font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); }
+.station.now .name::after { content: "in progress"; display: block; font-family: var(--font-mono); font-size: 0.64rem; font-weight: 400; color: var(--accent); margin-top: 2px; }
+.roadmap-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--muted); }
+.roadmap-legend span { display: inline-flex; gap: 6px; align-items: center; }
+.mini { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--edge); background: var(--panel); }
+.mini.done { background: var(--ok); border-color: var(--ok); }
+.mini.now { background: var(--accent); border-color: var(--accent); }
+.mini.exp { border-style: dashed; border-color: var(--agent); background: var(--agent-soft); }
+.mini.plan { border-style: dashed; }
+
+/* Lab */
+.lab { min-width: 960px; display: grid; gap: 14px; }
+.lab-top { display: grid; grid-template-columns: 220px 46px 1fr; align-items: center; }
+.bench { display: grid; gap: 8px; }
+.team { display: flex; align-items: stretch; }
+.team > .node { flex: 1 1 0; }
+.ensemble { margin-left: 266px; display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--muted); }
+.arms { display: grid; grid-template-columns: 70px 1fr; gap: 10px 12px; align-items: center; }
+.arm-id { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; color: var(--agent); }
+.arm-row { display: flex; align-items: stretch; }
+.arm-row > .node { flex: 1 1 0; }
+.sandbox { border: 2px dashed var(--job); border-radius: 12px; padding: 12px; display: grid; gap: 10px; position: relative; }
+.sandbox-title { font-family: var(--font-mono); font-size: 0.74rem; color: var(--job); }
+.lab-gate { display: flex; align-items: center; gap: 12px; }
+.lab-gate .node { flex: 0 1 auto; }
+.lab-out { display: grid; grid-template-columns: 1fr 46px 260px; align-items: center; }
+
+/* Phase 12 */
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.compare .zone { background: var(--panel); }
+.compare h3 { font-size: 1.05rem; }
+.stack { display: grid; gap: 8px; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.sub-title { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+@media (max-width: 760px) {
+  .compare, .split { grid-template-columns: 1fr; }
+}
+footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--line); padding-top: 14px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="page">
+  <header>
+    <span class="eyebrow">Geth · diagrams for the reference site (Eddie)</span>
+    <h1>Geth Blueprint</h1>
+    <p class="lede">How an analysis moves through Geth, where each part runs on Eddie, and where development goes next. Each diagram uses the same shapes and colours.</p>
+    <div class="legend" aria-label="Legend">
+      <span><i class="swatch agent"></i>Agent: the language model decides</span>
+      <span><i class="swatch gate"></i>Gate: a fixed check in code</span>
+      <span><i class="swatch person"></i>You: a person decides</span>
+      <span><i class="swatch job"></i>Job on a worker node</span>
+      <span><i class="swatch store"></i>Storage</span>
+      <span><i class="swatch ext"></i>External service</span>
+      <span><i class="swatch file"></i>Files</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="flow-h">
+    <div class="section-head">
+      <span class="eyebrow">Diagram 1</span>
+      <h2 id="flow-h">One analysis, from question to report</h2>
+      <p class="caption">Agents propose and fixed checks decide. Nothing runs before you approve, a retry can never change the samples, and every number in the report is traced back to the results.</p>
+    </div>
+    <div class="figure"><div class="figure-inner lifecycle">
+      <div class="lane">
+        <span class="lane-label">Plan</span>
+        <div class="flow-row">
+          <div class="node"><b>Data folder + your question</b><small>FASTQ files, a README, a sample table</small></div>
+          <div class="arrow"></div>
+          <div class="node agent"><b>Planner</b><small>reads the folder, picks the pipeline, writes the plan</small></div>
+          <div class="arrow"></div>
+          <div class="node gate"><b>Plan check</b><small>the pipeline's own schemas, files exist, pipeline rules</small></div>
+          <div class="arrow"></div>
+          <div class="node"><b>Plan files</b><small>samplesheet, parameters, rationale</small></div>
+          <div class="arrow"></div>
+          <div class="node person"><b>You approve</b><small>review, edit if needed; fingerprints recorded</small></div>
+        </div>
+      </div>
+      <div class="lane">
+        <span class="lane-label">Run</span>
+        <div class="flow-row">
+          <div class="node agent"><b>Operator</b><small>launches the approved plan</small></div>
+          <div class="arrow"></div>
+          <div class="node gate"><b>Plan-diff gate</b><small>samples and files frozen; other changes only where the error points</small></div>
+          <div class="arrow"></div>
+          <div class="node job"><b>nf-core pipeline</b><small>pinned release, jobs on the worker nodes, resumable</small></div>
+          <div class="arrow"></div>
+          <div class="node agent"><b>Reporter</b><small>writes the report from ready-made result tables</small></div>
+          <div class="arrow"></div>
+          <div class="node gate"><b>Report check</b><small>every number and link traced to the results</small></div>
+          <div class="arrow"></div>
+          <div class="node"><b>report.md</b><small>with a warning if anything could not be traced</small></div>
+        </div>
+      </div>
+      <p class="loop">If the pipeline fails, the operator changes only what the error names and resumes: at most 3 launches, then it stops and reports.</p>
+      <div class="lane">
+        <span class="lane-label">Follow-up</span>
+        <div class="flow-row">
+          <div class="node"><b>A finished run</b><small><code>geth plan --from &lt;run&gt;</code></small></div>
+          <div class="arrow"></div>
+          <div class="node agent"><b>Planner</b><small>reads the run's plan and results</small></div>
+          <div class="arrow"></div>
+          <div class="stack alt">
+            <div class="node job"><b>Differential expression</b><small>nf-core/differentialabundance, after bulk RNA-seq</small></div>
+            <div class="node agent"><b>Analyst</b><small>after single-cell RNA-seq: runs a design on the vetted Scanpy and CellTypist toolbox</small></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <section aria-labelledby="where-h">
+    <div class="section-head">
+      <span class="eyebrow">Diagram 2</span>
+      <h2 id="where-h">Where each part runs on Eddie</h2>
+      <p class="caption">The agents' thinking happens on the University's language-model servers: the front node only waits for answers. The heavy work runs as jobs on the worker nodes. Geth's own load on node1q01 was measured during a run.</p>
+    </div>
+    <div class="figure"><div class="figure-inner placement">
+      <div class="zone">
+        <span class="zone-title">Language model</span>
+        <div class="node ext"><b>ELM gateway</b><small>Qwen 3.5 397B, free University service</small></div>
+        <p class="zone-note">Every agent turn is a request to this service. The model never runs on Eddie.</p>
+      </div>
+      <div class="connector"><div class="arrow left"><span>prompts · answers</span></div></div>
+      <div class="zone">
+        <span class="zone-title">Front node · node1q01</span>
+        <div class="node person"><b>You type <code>geth plan</code>, <code>approve</code>, <code>run</code></b></div>
+        <div class="node"><b>Geth driver (Nextflow)</b>
+          <div class="chips"><span class="chip agent">planner</span><span class="chip agent">operator</span><span class="chip agent">analyst</span><span class="chip agent">reporter</span><span class="chip agent">lab: designer, engineer, reviewer</span></div>
+          <div class="chips"><span class="chip">file tools</span><span class="chip gate">plan check</span><span class="chip gate">plan-diff gate</span><span class="chip gate">report check</span></div>
+          <div class="meter">measured: 0.4 GB RAM · 3% of one CPU</div>
+        </div>
+        <div class="node"><b>nf-core driver (Nextflow)</b><small>only while a pipeline runs</small><div class="meter">measured: 0.6 GB RAM · under 10% of one CPU</div></div>
+      </div>
+      <div class="connector"><div class="arrow"><span>qsub</span></div></div>
+      <div class="zone">
+        <span class="zone-title">SGE worker nodes</span>
+        <div class="node job"><b>nf-core pipeline tasks</b><small>alignment, quantification, QC: up to hundreds of jobs per run</small></div>
+        <div class="node job"><b>Single-cell toolbox jobs</b><small>Scanpy and CellTypist in a pinned container</small></div>
+        <div class="node job"><b>GPU node</b><small>CellBender (ambient RNA removal)</small></div>
+        <div class="node job"><b>Lab: agent-written steps</b><small>in a sandbox: no network, no host files, no keys</small></div>
+        <p class="zone-note">Worker nodes cannot submit jobs on Eddie, so a driver that launches jobs has to stay on the front node.</p>
+      </div>
+      <div class="gap-row"><span class="down">jobs read inputs and write results</span></div>
+      <div class="zone storage">
+        <span class="zone-title">Storage</span>
+        <div class="storage-row">
+          <div class="node store"><b>Perseus_Veil (scratch)</b><small>runs, data, and the reference catalogue: GRCh38 and its STAR index, chicken GRCg7b with known variants and VEP cache, CellTypist models, database sheets</small></div>
+          <div class="node store"><b>roslin_shared_reference_data</b><small>read-only: Kraken2 and Bracken (registered in the catalogue), MetaPhlAn</small></div>
+          <div class="node store"><b>Image cache</b><small>apptainer images shared by the group, read and write</small></div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <section aria-labelledby="road-h">
+    <div class="section-head">
+      <span class="eyebrow">Diagram 3</span>
+      <h2 id="road-h">Development roadmap</h2>
+      <p class="caption">Each phase is one piece of work, numbered in the order it started. Phase 11 is an experiment, and phase 12 makes Geth fit for Eddie's sandboxing rule.</p>
+    </div>
+    <div class="figure"><div class="figure-inner roadmap">
+      <div class="bands" aria-hidden="true">
+        <div class="band" style="grid-column: 1 / span 5">Feasibility · v0.1</div>
+        <div class="band" style="grid-column: 6 / span 2">Geth v1 · v1.0–1.1</div>
+        <div class="band" style="grid-column: 8 / span 4">Extensions · v1.2–1.6</div>
+        <div class="band" style="grid-column: 12 / span 2">Next</div>
+      </div>
+      <ol class="track" style="list-style: none; margin: 0; padding: 0;">
+        <li class="station done"><span class="dot">0</span><span class="name">Setup</span></li>
+        <li class="station done"><span class="dot">1</span><span class="name">Model check (ELM)</span></li>
+        <li class="station done"><span class="dot">2</span><span class="name">Nextflow agents</span></li>
+        <li class="station done"><span class="dot">3</span><span class="name">Agentic nf-core runs</span></li>
+        <li class="station done"><span class="dot">4</span><span class="name">Decision: go</span></li>
+        <li class="station done"><span class="dot">5</span><span class="name">v1 gates</span><span class="ver">v1.0</span></li>
+        <li class="station done"><span class="dot">6</span><span class="name">Real-size data</span><span class="ver">v1.1</span></li>
+        <li class="station done"><span class="dot">7</span><span class="name">Downstream analysis</span><span class="ver">v1.2–1.3</span></li>
+        <li class="station done"><span class="dot">8</span><span class="name">More pipelines</span><span class="ver">v1.4 · v1.6</span></li>
+        <li class="station done"><span class="dot">9</span><span class="name">Public release</span><span class="ver">v1.5</span></li>
+        <li class="station done"><span class="dot">10</span><span class="name">Reusing indexes</span><span class="ver">v1.6</span></li>
+        <li class="station exp"><span class="dot">11</span><span class="name">Agents write analyses</span><span class="ver">experimental</span></li>
+        <li class="station plan"><span class="dot">12</span><span class="name">Sandboxed agents</span><span class="ver">planned</span></li>
+      </ol>
+      <div class="roadmap-legend">
+        <span><i class="mini done"></i>done</span>
+        <span><i class="mini now"></i>in progress</span>
+        <span><i class="mini exp"></i>experimental, not for real analyses</span>
+        <span><i class="mini plan"></i>planned</span>
+      </div>
+    </div></div>
+  </section>
+
+  <section aria-labelledby="lab-h">
+    <div class="section-head">
+      <span class="eyebrow">Diagram 4 · phase 11 <span class="status-tag exp">experimental</span></span>
+      <h2 id="lab-h">Can agents design and build a single-cell analysis?</h2>
+      <p class="caption">A small team of agents, each step checked, tested on public data with known answers. Three arms answer three questions: can the agents design the analysis, write its steps, and write the Nextflow pipeline itself? No agent-written code runs before you give the go.</p>
+    </div>
+    <div class="figure"><div class="figure-inner lab">
+      <div class="lab-top">
+        <div class="bench">
+          <div class="node store"><b>PBMC 1k v3</b><small>1 sample: continuity with earlier results</small></div>
+          <div class="node store"><b>Kang 2018</b><small>8 donors, control vs IFN-β, published cell types</small></div>
+        </div>
+        <div class="arrow"></div>
+        <div class="team">
+          <div class="node agent"><b>Designer</b><small>the analysis: steps, methods, statistics</small></div>
+          <div class="arrow"></div>
+          <div class="node agent"><b>Engineer</b><small>writes the code of each step</small></div>
+          <div class="arrow"></div>
+          <div class="node agent"><b>Reviewer</b><small>fresh eyes: reads the code and its subset tests, approves or asks for changes</small></div>
+          <div class="arrow"></div>
+          <div class="node agent ghost"><b>Analyst</b><small>reads the results, writes the report (not built yet)</small></div>
+        </div>
+      </div>
+      <div class="ensemble"><div class="node agent ghost"><b>Variant: 3 designers + a judge</b><small>tested against a single designer (11.5)</small></div><span>at most 2 agents at a time</span></div>
+      <div class="arms">
+        <span class="arm-id">A · 11.2</span>
+        <div class="arm-row">
+          <div class="node"><b>Design only</b><small>a structured design, nothing executed</small></div>
+          <div class="arrow"></div>
+          <div class="node gate"><b>Design score</b><small>required steps, pseudobulk with donors as replicates, sensible thresholds</small></div>
+          <div class="arrow"></div>
+          <div class="node"><b>Done: the skill matters</b><small>with the skill 18.2/20 (Kang), 11.8/12 (PBMC); without it 15.3/20, 10.7/12</small></div>
+        </div>
+      </div>
+      <div class="lab-gate"><div class="node person"><b>Your go</b><small>given for arm B (2026-10-17, done); arm C waits for your go</small></div><span class="zone-note">Arms B and C run code written by agents.</span></div>
+      <div class="sandbox">
+        <span class="sandbox-title">Sandbox (built, escape test passed): pinned image · no network · inputs read-only · writes only to its own folder · clean environment, no keys · allowed imports only · ≤ 8 CPUs, 64 GB, 4 h per step</span>
+        <div class="arms">
+          <span class="arm-id">B · 11.3</span>
+          <div class="arm-row">
+            <div class="node"><b>Step scripts + pipeline spec</b><small>one Python script per step, each tested on a 3,000-cell subset; reviewer approval (2 rounds at most)</small></div>
+            <div class="arrow"></div>
+            <div class="node gate"><b>Geth writes main.nf</b><small>from the spec, with a frozen copy of the tested code</small></div>
+            <div class="arrow"></div>
+            <div class="node job"><b>Full data on SGE</b><small>done: with the skill 8 of 9 builds deliverable, matching a hand-written reference; without it 2 of 6</small></div>
+          </div>
+          <span class="arm-id">C · 11.4</span>
+          <div class="arm-row">
+            <div class="node"><b>Raw main.nf</b><small>the agent writes the Nextflow itself</small></div>
+            <div class="arrow"></div>
+            <div class="node gate"><b>Lint + stub run</b><small>dropped if 0/3 pass after 10 rounds</small></div>
+            <div class="arrow"></div>
+            <div class="node job"><b>Subset, then full data</b><small>same limits as arm B</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="lab-out">
+        <div class="node gate"><b>Scores, decided in advance</b><small>design · runs end to end · biology (cell types vs published labels; interferon genes up in at least 5 of 7 cell types) · cost (rounds, job-hours)</small></div>
+        <div class="arrow"></div>
+        <div class="node person"><b>Verdict (11.6)</b><small>if it works: agents propose new toolbox steps, a person vets them</small></div>
+      </div>
+    </div></div>
+  </section>
+
+  <section aria-labelledby="sand-h">
+    <div class="section-head">
+      <span class="eyebrow">Diagram 5 · phase 12 <span class="status-tag plan">planned</span></span>
+      <h2 id="sand-h">Agents in sandboxes, off the front node</h2>
+      <p class="caption">Eddie allows agents only inside sandboxes. Phase 12 moves every agent step that launches no jobs to a small job on a worker node, and puts each agent in a container that only sees what its step needs. Checked: worker nodes reach the model service, and jobs carry no key. Open: how a job gets the key, or whether agents stay on node1q01 in a container.</p>
+    </div>
+    <div class="compare">
+      <div class="zone">
+        <h3>Today</h3>
+        <div class="split">
+          <div class="stack"><span class="sub-title">Front node</span>
+            <div class="node"><b>Geth driver</b><small>all agents and tools; full access to your account</small></div>
+            <div class="node"><b>nf-core driver</b><small>during runs</small></div>
+          </div>
+          <div class="stack"><span class="sub-title">Worker nodes</span>
+            <div class="node job"><b>Pipeline and toolbox jobs</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="zone">
+        <h3>Phase 12</h3>
+        <div class="split">
+          <div class="stack"><span class="sub-title">Front node</span>
+            <div class="node"><b><code>geth</code> command</b><small>submits, waits, at most one run at a time</small></div>
+            <div class="node job"><b>Run drivers in a sandbox</b><small>the drivers that must launch jobs stay here</small></div>
+          </div>
+          <div class="stack"><span class="sub-title">Worker nodes</span>
+            <div class="node job"><b>Planning and design agents</b><small>small jobs in sandboxes: they launch nothing</small></div>
+            <div class="node job"><b>Pipeline and toolbox jobs</b></div>
+          </div>
+        </div>
+        <div class="node gate"><b>Every sandbox</b><small>data and references read-only, writes only to its run folder, no home folder; agents keep the network (they need the model service: limiting it to that service needs admin rights); agent-written code gets none</small></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Geth Blueprint · Eddie reference site · 17 October 2026. Detailed progress and results are on the progress page.</footer>
+</div>

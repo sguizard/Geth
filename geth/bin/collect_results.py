@@ -167,6 +167,58 @@ def generic(run_dir, outdir, max_columns=8):
     return parts
 
 
+def quast_report(path):
+    with open(path) as fh:
+        return dict(line.rstrip("\n").split("\t", 1) for line in fh if "\t" in line)
+
+
+def mag(run_dir, outdir):
+    """nf-core/mag: assemblies (QUAST, read mapping) and bins per sample and binner."""
+    parts, rows = [], []
+    for path in sorted(glob.glob(os.path.join(outdir, "Assembly", "*", "QC", "*", "QUAST", "report.tsv"))):
+        q = quast_report(path)
+        assembler, sample = path.split(os.sep)[-5], path.split(os.sep)[-3]
+        logs = glob.glob(os.path.join(os.path.dirname(os.path.dirname(path)), "*.bowtie2.log"))
+        mapped = "n/a"
+        for line in open(logs[0]) if logs else []:
+            if "overall alignment rate" in line:
+                mapped = line.split("%")[0].strip()
+        rows.append([sample, assembler, count(num(q.get("# contigs"))), count(num(q.get("Total length"))),
+                     count(num(q.get("N50"))), count(num(q.get("Largest contig"))), pct(num(q.get("GC (%)")), 2), mapped])
+    if rows:
+        parts.append("### Assemblies (QUAST, contigs of 500 bp or more)\n"
+                     + table(["Sample", "Assembler", "Contigs", "Total length (bp)", "N50 (bp)", "Largest contig (bp)",
+                              "GC %", "Reads mapped back %"], rows))
+    summary = os.path.join(outdir, "GenomeBinning", "bin_summary.tsv")
+    if os.path.isfile(summary):
+        with open(summary) as fh:
+            bins = list(csv.DictReader(fh, delimiter="\t"))
+        groups = {}
+        for b in bins:
+            name = os.path.basename(b.get("bin", ""))
+            fields = name.split("-", 2)
+            if len(fields) == 3:
+                sample = fields[2].rsplit("_", 1)[0] if "_" in fields[2] else fields[2].split(".")[0]
+                groups.setdefault((sample, fields[0], fields[1]), []).append(b)
+        completeness = next((k for k in (bins[0] if bins else {}) if k.lower().startswith("completeness")), None)
+        brows = []
+        for (sample, assembler, binner), bs in sorted(groups.items()):
+            lengths = sorted(num(b.get("Total length_quast")) or 0 for b in bs)
+            n50s = sorted(num(b.get("N50_quast")) or 0 for b in bs)
+            row = [sample, assembler, binner, len(bs), count(sum(lengths)), count(lengths[-1]),
+                   count(n50s[len(n50s) // 2]), sum(1 for x in lengths if x >= 500000)]
+            if completeness:
+                vals = sorted(num(b.get(completeness)) or 0 for b in bs)
+                row.append(pct(vals[len(vals) // 2]))
+            brows.append(row)
+        header = ["Sample", "Assembler", "Binner", "Bins", "Total length (bp)", "Largest bin (bp)", "Median bin N50 (bp)",
+                  "Bins of 500 kb or more"] + (["Median completeness %"] if completeness else [])
+        parts.append(f"### Bins (`GenomeBinning/bin_summary.tsv`, {len(bins)} bins)\n" + table(header, brows)
+                     + ("" if completeness else "\n\nNo completeness or contamination estimates: CheckM2, CheckM and "
+                        "BUSCO did not run."))
+    return parts + generic(run_dir, outdir)
+
+
 def de_tables(outdir):
     """Per contrast: (contrast id, full results table, annotated table or None)."""
     found = []
@@ -288,6 +340,11 @@ def raw_values(run_dir):
         with open(annotated or path) as fh:
             for r in csv.DictReader(fh, delimiter="\t"):
                 values += [num(r.get(k)) for k in ("log2FoldChange", "padj", "logFC", "adj.P.Val", "baseMean")]
+    for path in glob.glob(os.path.join(outdir, "Assembly", "*", "QC", "*", "QUAST", "report.tsv")):
+        values += [num(v) for v in quast_report(path).values()]
+    if os.path.isfile(os.path.join(outdir, "GenomeBinning", "bin_summary.tsv")):
+        with open(os.path.join(outdir, "GenomeBinning", "bin_summary.tsv")) as fh:
+            values += [num(v) for r in csv.DictReader(fh, delimiter="\t") for v in r.values()]
     for summary in glob.glob(os.path.join(outdir, "**", "Summary.csv"), recursive=True):
         with open(summary) as fh:
             values += [num(line.rstrip("\n").split(",", 1)[1]) for line in fh if "," in line]
@@ -304,7 +361,7 @@ def collect(run_dir, pipeline):
     parts = [f"Results folder: `{outdir}`"]
     if pipeline == "differentialabundance":
         return "\n\n".join(parts + differentialabundance(run_dir, outdir))
-    parts += {"rnaseq": rnaseq, "scrnaseq": scrnaseq}.get(pipeline, generic)(run_dir, outdir)
+    parts += {"rnaseq": rnaseq, "scrnaseq": scrnaseq, "mag": mag}.get(pipeline, generic)(run_dir, outdir)
     reports = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_report.html"), recursive=True))
     parts.append("MultiQC report: " + (f"`{reports[0]}`" if reports else "not found"))
     return "\n\n".join(parts)

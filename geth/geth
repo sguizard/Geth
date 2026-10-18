@@ -10,11 +10,13 @@
 #   geth list                                  all runs and where they stand
 #   geth doctor                                check the installation and the site configuration
 #   geth version                               print Geth's version
+#   geth lab ...                               EXPERIMENTAL agent-designed analyses (not for real analyses)
 source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)/env.sh" || exit 1
 set -euo pipefail
 
 runs="$GETH_RUNS_DIR"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
+source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
 usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
@@ -32,7 +34,7 @@ nf() {  # nf <run_dir> <mode> [extra args]
     local site=()
     [ -n "${GETH_NF_CONFIG:-}" ] && site=(-c "$GETH_NF_CONFIG")  # executor, containers: the site's
     cd "$d"
-    echo $$ > "$d/.geth_$mode.pid"
+    acquire_slots "$d" "$mode" "$([ "$mode" = run ] && echo 2 || echo 1)"  # a run also starts the pipeline's driver
     nextflow run "$GETH_HOME/geth/main.nf" -c "$GETH_HOME/geth/nextflow.config" "${site[@]}" \
         --mode "$mode" --run_dir "$d" "$@" \
         -w "$d/geth_work" -with-agent-trace -with-trace "$d/geth_trace_$mode.txt" -ansi-log false \
@@ -43,7 +45,7 @@ nf() {  # nf <run_dir> <mode> [extra args]
 }
 
 active() {  # active <run_dir> <mode>: is a Geth driver working on this run?
-    [ -f "$1/.geth_$2.pid" ] && kill -0 "$(cat "$1/.geth_$2.pid")" 2>/dev/null
+    driver_alive "$1/.geth_$2.pid"
 }
 
 state() {  # one-line state of a run
@@ -179,6 +181,7 @@ case "$cmd" in
             [ -f "$d/question.txt" ] || continue
             printf '%-24s %-22s %s\n' "$(basename "$d")" "$(cat "$d/plan_pipeline.txt" 2>/dev/null || echo -)" "$(state "$d")"
         done
+        [ -d "$runs/lab" ] && echo "(experimental lab runs are listed by: geth lab list)"
         ;;
     doctor)
         [ $# -eq 0 ] || usage
@@ -186,6 +189,9 @@ case "$cmd" in
         ;;
     version)
         version
+        ;;
+    lab)
+        exec "$GETH_HOME/geth/lab/lab.sh" "$@"
         ;;
     *) usage ;;
 esac

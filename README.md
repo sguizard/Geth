@@ -31,7 +31,7 @@ cluster.
 git clone https://github.com/sguizard/Geth.git && cd Geth
 cp site/site.env.example site/site.env      # describe your site: folders, model endpoint, scheduler
 export GETH_LLM_API_KEY=...                 # the key of your model endpoint (never stored in a file)
-source env.sh && geth doctor                # checks the installation
+source env.sh && geth doctor                # checks the installation (fish: source env.fish)
 
 geth plan /data/my_experiment "Compare the treated and untreated samples." my_experiment
 geth show my_experiment                     # review the plan; edit the plan files if needed
@@ -54,16 +54,19 @@ geth plan --from my_experiment "Which genes change with the treatment? Pair samp
 | Single-cell RNA-seq (10x), with CellBender on a GPU | nf-core/scrnaseq 4.2.0 | validated with agents |
 | Differential expression of a bulk RNA-seq run | nf-core/differentialabundance 2.0.0 | validated with agents |
 | Single-cell QC, clustering and cell-type annotation | Geth's Scanpy and CellTypist toolbox | validated with agents |
-| Iso-Seq, amplicon, ChIP-seq, ATAC-seq, methylation, Nanopore, ancient DNA | isoseq, ampliseq, chipseq, atacseq, methylseq, nanoseq, eager | pipelines pass their tests; planner not yet validated |
-| Variant calling, metagenomics | sarek, taxprofiler, mag | waiting for reference databases |
+| Iso-Seq, amplicon, ChIP-seq, ATAC-seq, methylation, Nanopore, ancient DNA | isoseq, ampliseq, chipseq, atacseq, methylseq, nanoseq, eager | validated with agents on realistic test deliveries |
+| Germline variant calling, metagenomic profiling, metagenome assembly and binning | sarek, taxprofiler, mag | validated with agents on test deliveries (chicken germline; shared Kraken2/Bracken database) |
 
 On a real human bulk RNA-seq dataset, Geth matched a hand-made reference analysis gene for gene. On a
-10x PBMC sample it found every expected cell population. See [validation](docs/validation.md).
+10x PBMC sample it found every expected cell population. Indexes built by one run (such as STAR's, 30
+minutes and 30 GB for a human genome) are registered in the reference catalogue and reused by the next.
+See [validation](docs/validation.md).
 
 ## Why trust the agents
 
 - **Agents never run arbitrary code.** They call a handful of tools: list or read files in the data
-  area, check a plan, launch an approved plan, read the results.
+  area, check a plan, launch an approved plan, read the results. (The experimental lab below is the one
+  exception, and its code runs only in a sandbox.)
 - **Pinned pipelines, checked plans.** Plans are validated against the pinned release's own parameter
   and samplesheet schemas, plus pipeline-specific rules.
 - **Human approval.** Nothing runs before a person approves. The approval fingerprints the plan files,
@@ -73,6 +76,20 @@ On a real human bulk RNA-seq dataset, Geth matched a hand-made reference analysi
 - **Checked reports.** Numbers and links that cannot be traced to the results are flagged in the report.
 - **Model allowlist.** Geth refuses models your site has not allowed.
 
+## Experimental: the Geth lab
+
+`geth lab` tests how far agents can go beyond configuring pipelines. **It is not for real analyses**: it
+works only on benchmark data, and everything it writes is marked experimental.
+
+- **Arm A, design:** a designer agent writes a complete single-cell downstream analysis (QC to
+  differential expression) for a question, and runs nothing. With a best-practice skill, Qwen 3.5's
+  designs avoid the classic statistical trap and follow current practice; without it, they are weaker.
+- **Arm B, build:** an engineer agent writes the analysis as Python steps, tests each on a subset, and a
+  reviewer agent checks them; Geth then runs them on the full data. Agent-written code runs only in a
+  sandbox: no network, no host files but its input and its own folder, no keys.
+
+Results so far are in [validation](docs/validation.md#geth-lab-arm-a-agents-designing-single-cell-analyses-experimental-version-16).
+
 ## Documentation
 
 - [Introduction](docs/introduction.md): what Geth does and does not do
@@ -81,6 +98,7 @@ On a real human bulk RNA-seq dataset, Geth matched a hand-made reference analysi
 - [Pipelines](docs/pipelines.md): what is supported and what each pipeline needs
 - [Developer guide](docs/developer-guide.md): architecture, gates, adding a pipeline, tests, benchmarks
 - [Validation](docs/validation.md): what was tested and the results
+- [Changelog](CHANGELOG.md): what changed in each release
 
 ## Status
 
@@ -96,7 +114,8 @@ holds tagged releases. Before opening a pull request, run the tests:
 ```bash
 python3 geth/tests/test_geth_checks.py
 python3 geth/tests/test_collect_results.py
-nextflow lint geth/main.nf
+python3 geth/tests/test_lab_build.py
+nextflow lint geth/main.nf geth/lab/main.nf
 ```
 
 The [developer guide](docs/developer-guide.md) explains the code and how to add a pipeline.

@@ -53,7 +53,11 @@ if ! python3 "$checks" check-plan "$pipeline" "$attempt/samplesheet.csv" "$attem
     exit 0
 fi
 
-# Resources: small test data gets capped requests (fast scheduling); real data gets nf-core's own.
+# nf-core's own samplesheet checks count columns: write every column on every row.
+python3 "$checks" normalise-sheet "$attempt/samplesheet.csv" "$attempt/samplesheet.csv"
+
+# Resources: small test data on a small reference gets capped requests (fast scheduling); real data gets
+# nf-core's own. A large genome needs large jobs whatever the read count (e.g. STAR loads a human index in RAM).
 input_bytes=$(python3 -c 'import csv, os, sys
 print(sum(os.path.getsize(v) for r in csv.DictReader(open(sys.argv[1])) for v in r.values()
           if v and v.startswith("/") and os.path.isfile(v)))' "$attempt/samplesheet.csv")
@@ -72,7 +76,12 @@ if [ "$pipeline" = scrnaseq ] && [ "${GETH_GPU:-no}" = yes ] && \
 fi
 profile_args=()
 [ -n "$profiles" ] && profile_args=(-profile "$profiles")
-if [ "$input_bytes" -lt 2000000000 ]; then resources=test; else resources=production; fi
+reference_bytes=$(python3 "$checks" reference-size "$pipeline" "$attempt/params.json")
+if [ "$input_bytes" -lt 2000000000 ] && [ "$reference_bytes" -lt 500000000 ]; then
+    resources=test
+else
+    resources=production
+fi
 
 # Per-pipeline runtime: older pipelines pin their Nextflow (and Java), eager reads a TSV and takes max_* params.
 eval "$(python3 "$checks" runtime "$pipeline")"
@@ -87,6 +96,9 @@ if [ "$pipeline_input_format" = tsv ]; then
     input="$attempt/samplesheet.tsv"
 fi
 [ -n "$pipeline_extra_config" ] && extra+=(-c "$GETH_HOME/geth/conf/$pipeline_extra_config")
+# Memory that depends on the data (e.g. Kraken2 loads its database index in RAM).
+python3 "$checks" resources "$pipeline" "$attempt/params.json" > "$attempt/resources.config"
+[ -s "$attempt/resources.config" ] && extra+=(-c "$attempt/resources.config")
 if [ -n "$pipeline_legacy_limits" ] && [ "$resources" = test ]; then
     extra+=(--max_cpus 4 --max_memory 16.GB --max_time 4.h)
 fi
@@ -115,7 +127,7 @@ fi
 {
     echo "STATUS: FAILED (exit $rc)"
     echo "--- error report (from the Nextflow log) ---"
-    awk '/ERROR ~|Error executing process|Validation of pipeline parameters failed|The following invalid input values/{f=1} f' \
+    awk '/ERROR ~|Error executing process|Validation of pipeline parameters failed|The following invalid input values|\] ERROR:/{f=1} f' \
         "$attempt/nextflow.log" | head -n 60
     if ! grep -qE 'ERROR ~|Error executing process|Validation of' "$attempt/nextflow.log"; then
         tail -n 40 "$attempt/nextflow.log"

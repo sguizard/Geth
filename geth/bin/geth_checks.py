@@ -18,6 +18,8 @@ Optional parts are given with  --contrasts <file>  --profile <name>  --upstream 
       Store an accepted attempt as the new baseline, with the error that may justify the next change.
   geth_checks.py revision <pipeline>
       Print the pinned revision of a pipeline (exit 1 if Geth does not run it).
+  geth_checks.py normalise-sheet <in.csv> <out.csv>
+      Rewrite a samplesheet with every column on every row.
   geth_checks.py runtime <pipeline>
       Print shell assignments for the pipeline's runtime (pinned Nextflow, Java, input format, extra config).
 
@@ -26,6 +28,7 @@ Exit status 0 = OK, 1 = problems (described on stdout).
 import csv
 import difflib
 import getpass
+import gzip
 import hashlib
 import io
 import json
@@ -36,13 +39,17 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMAS = os.path.join(HERE, "..", "schemas")
-OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_version")  # set by Geth only
+OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_version",
+         "config_profile_name")  # set by Geth only
 
 # Pipelines Geth runs. "design" = samplesheet columns that define the experiment and may never change
-# after approval (None = every column). Downstream pipelines also need contrasts and an analysis profile.
+# after approval (None = every column); "design_params" = parameters that describe the data, frozen the same
+# way. Downstream pipelines also need contrasts and an analysis profile. "fixed_params" are added at launch.
 REGISTRY = {
-    "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
-    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    # "star": the STAR version the release uses; a reused star_index must have been built with it.
+    "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b"},
+    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b",
+                 "design_params": ("protocol",)},
     "sarek": {"revision": "3.10.0", "design": ("patient", "sample", "status", "lane", "fastq_1", "fastq_2", "bam", "cram"),
               "key": ("fastq_1", "bam", "cram", "spring_1", "vcf")},
     "isoseq": {"revision": "3.0.1", "design": ("sample", "seq_data", "start_from"), "key": "seq_data",
@@ -51,7 +58,9 @@ REGISTRY = {
                     "key": ("fastq_1", "fasta"), "required_params": ("databases",)},
     "mag": {"revision": "5.5.0", "design": ("sample", "run", "group", "short_reads_1", "short_reads_2", "long_reads"),
             "key": ("short_reads_1", "long_reads")},
-    "ampliseq": {"revision": "3.0.0", "design": ("sample", "run", "fastq_1", "fastq_2"), "key": "fastq_1"},
+    # ampliseq 3.0.0 declares config_profile_name as a non-optional String: nf-core's test profile sets it.
+    "ampliseq": {"revision": "3.0.0", "design": ("sample", "run", "fastq_1", "fastq_2"), "key": "fastq_1",
+                 "design_params": ("primer_fwd", "primer_rev"), "fixed_params": {"config_profile_name": "Geth"}},
     # Older templates define functions in nextflow.config, which Nextflow 26's strict config parser rejects.
     "chipseq": {"revision": "2.1.0", "key": "fastq_1", "nxf_env": {"NXF_SYNTAX_PARSER": "v1"},
                 "design": ("sample", "replicate", "antibody", "control", "control_replicate", "fastq_1", "fastq_2")},
@@ -60,9 +69,11 @@ REGISTRY = {
     # nanoseq uses the `echo` process directive, removed from recent Nextflow.
     "nanoseq": {"revision": "3.1.0", "design": ("group", "replicate", "barcode", "input_file"), "nextflow": "23.10.4",
                 "extra_config": "legacy_singularity.config",
-                "key": ("input_file", "barcode"), "required_params": ("protocol",)},
+                "key": ("input_file", "barcode"), "required_params": ("protocol",), "design_params": ("protocol",)},
     "methylseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1",
-                  "nxf_env": {"NXF_SYNTAX_PARSER": "v1"}},
+                  "nxf_env": {"NXF_SYNTAX_PARSER": "v1"},
+                  "design_params": ("rrbs", "pbat", "em_seq", "single_cell", "zymo", "accel", "cegx", "epignome",
+                                    "swift", "taps", "non_directional")},
     # eager 2.5.3 is DSL1: run with an older Nextflow (and Java 17, from GETH_JAVA17_HOME), TSV input,
     # max_* resource params.
     "eager": {"revision": "2.5.3", "key": ("R1", "BAM"), "nextflow": "22.10.8",
@@ -204,6 +215,22 @@ def parse_sheet(text):
     return header, rows
 
 
+def normalise_sheet(text):
+    """The samplesheet as CSV with every header column on every row (trailing empty fields kept)."""
+    header, rows = parse_sheet(text)
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(header)
+    for r in rows:
+        writer.writerow([r.get(h, "") for h in header])
+    return out.getvalue()
+
+
+def launch_params(pipeline, params):
+    """The parameters given to the pipeline: the plan's plus the ones Geth always sets."""
+    return dict(params, **REGISTRY.get(pipeline, {}).get("fixed_params", {}))
+
+
 def row_key(pipeline, row):
     """The file that identifies a samplesheet row (first non-empty of the pipeline's key columns)."""
     keys = REGISTRY[pipeline]["key"]
@@ -278,7 +305,34 @@ def check_params(pipeline, params_text):
         if spec.get("format") in ("file-path", "directory-path", "path") and isinstance(value, str) and value \
                 and not is_remote(value) and not os.path.exists(value):
             problems.append(f"param '{key}' points to a file that does not exist: {value}")
+    problems += check_star_index(pipeline, params)
     return problems, params
+
+
+def check_star_index(pipeline, params):
+    """A reused STAR index must come from the reference catalogue (geth_index.json, written by
+    references/register_star_index.sh) and match the release's STAR version and the plan's FASTA and GTF."""
+    index, star = params.get("star_index"), REGISTRY[pipeline].get("star")
+    if not index or not star:
+        return []
+    aligner = str(params.get("aligner", "star_salmon" if pipeline == "rnaseq" else "simpleaf"))
+    if not aligner.startswith("star"):
+        return [f"param 'star_index' is only used with a STAR aligner (aligner is '{aligner}')"]
+    info_path = os.path.join(str(index), "geth_index.json")
+    if not os.path.isfile(info_path):
+        return [f"param 'star_index' must be an index registered in the reference catalogue (no geth_index.json in "
+                f"{index}); use one listed by LIST_REFERENCES, or leave star_index unset to build one"]
+    with open(info_path) as fh:
+        info = json.load(fh)
+    problems = []
+    if info.get("version") != star:
+        problems.append(f"param 'star_index' was built with STAR {info.get('version')}, but nf-core/{pipeline} "
+                        f"{REGISTRY[pipeline]['revision']} uses STAR {star}: leave star_index unset to build a matching index")
+    for key in ("fasta", "gtf"):
+        if params.get(key) != info.get(key):
+            problems.append(f"param 'star_index' was built from {key} {info.get(key)}: set '{key}' to that file "
+                            f"(got {params.get(key)!r}), or leave star_index unset")
+    return problems
 
 
 def check_fastq_sheet(pipeline, sheet_text, params):
@@ -357,7 +411,37 @@ def check_sarek(rows, params):
         problems.append(f"patient '{patient}' has a tumour but no normal sample; {', '.join(sorted(paired_only))} need tumour/normal pairs")
     if "fasta" not in params and "genome" not in params:
         problems.append("set 'fasta' (a reference from the catalogue) or 'genome'")
+    fasta = params.get("fasta")
+    if isinstance(fasta, str) and fasta.endswith(".gz") and os.path.isfile(fasta) and not is_bgzip(fasta):
+        problems.append("sarek cannot index a gzip-compressed 'fasta': use the uncompressed FASTA of the catalogue entry")
+    sites = [params.get(k) for k in ("dbsnp", "known_indels", "known_snps") if params.get(k)]
+    if len(sites) != len(set(sites)):
+        problems.append("'dbsnp', 'known_indels' and 'known_snps' must be different files: sarek stages them together "
+                        "and the same file twice collides. Give a single known-variants VCF as 'dbsnp' only")
+    custom = not params.get("genome") or params.get("igenomes_ignore") is True
+    skipped = set(filter(None, str(params.get("skip_tools", "")).split(",")))
+    if step == "mapping" and custom and "baserecalibrator" not in skipped and not params.get("dbsnp") \
+            and not params.get("known_indels"):
+        problems.append("base recalibration needs known sites with a custom genome: set 'dbsnp' (and "
+                        "'known_indels') from the catalogue, or skip_tools=baserecalibrator")
+    if "vep" in tools and custom:
+        keys = ("vep_cache", "vep_species", "vep_genome", "vep_cache_version")
+        missing = [k for k in keys if not params.get(k)]
+        if missing:
+            problems.append(f"'vep' with a custom genome needs {', '.join(missing)} (from the catalogue entry's VEP cache)")
+        else:
+            folder = os.path.join(str(params["vep_cache"]), str(params["vep_species"]),
+                                  f"{params['vep_cache_version']}_{params['vep_genome']}")
+            if not os.path.isdir(folder):
+                problems.append(f"VEP cache folder not found: {folder} (check vep_species, vep_genome, vep_cache_version)")
     return problems
+
+
+def is_bgzip(path):
+    """True for a BGZF (block-gzip) file, which samtools and GATK can index; plain gzip they cannot."""
+    with open(path, "rb") as fh:
+        head = fh.read(18)
+    return len(head) == 18 and head[:2] == b"\x1f\x8b" and bool(head[3] & 4) and head[12:14] == b"BC"
 
 
 def check_isoseq(rows, params):
@@ -372,7 +456,44 @@ def check_isoseq(rows, params):
         problems.append("aligner 'ultra' needs a 'gtf' annotation")
     if any(r.get("start_from") in ("ccs", "lima", "refine") for r in rows) and not params.get("primers"):
         problems.append("'primers' (FASTA of the Iso-Seq primers) is required unless every row starts from mapping")
+    size = sum(os.path.getsize(r["seq_data"]) for r in rows if os.path.isfile(r.get("seq_data", "")))
+    if any(r.get("start_from") == "ccs" for r in rows) and size < 2e9 and int(params.get("chunk_ccs", 40)) > 5:
+        problems.append(f"small input ({size / 1e6:.0f} MB of subreads): set 'chunk_ccs' to 5 or fewer; with the "
+                        "default 40 chunks most chunks are empty and the TAMA merge step fails")
     return problems
+
+
+def db_rows(params):
+    """Rows of the taxprofiler databases sheet (empty when there is none)."""
+    db = params.get("databases")
+    if not (isinstance(db, str) and os.path.isfile(db)):
+        return []
+    with open(db) as fh:
+        return [{(k or "").strip(): (v or "").strip() for k, v in r.items()} for r in csv.DictReader(fh)]
+
+
+def kraken2_index_bytes(params):
+    """Size of the largest Kraken2 index of the databases sheet: Kraken2 loads it in RAM."""
+    sizes = [os.path.getsize(os.path.join(r["db_path"], "hash.k2d")) for r in db_rows(params)
+             if r.get("tool") in ("kraken2", "bracken") and os.path.isfile(os.path.join(r.get("db_path", ""), "hash.k2d"))]
+    return max(sizes, default=0)
+
+
+def reference_bytes(pipeline, params):
+    """How large the reference data of a plan is (decides the resource caps): genome, prebuilt index, databases."""
+    if params.get("genome") or params.get("star_index"):
+        return 10 ** 10  # an iGenomes genome or a prebuilt index: assume a large genome
+    fasta = params.get("fasta") or ""
+    size = os.path.getsize(fasta) * (3 if fasta.endswith(".gz") else 1) if fasta.startswith("/") and os.path.isfile(fasta) else 0
+    return max(size, kraken2_index_bytes(params))
+
+
+def extra_resources(pipeline, params):
+    """Nextflow config for jobs whose memory depends on the data, e.g. Kraken2 loads its whole index in RAM."""
+    index = kraken2_index_bytes(params) if pipeline == "taxprofiler" else 0
+    if not index:
+        return ""
+    return "process {\n    withName: '.*KRAKEN2_KRAKEN2.*' {\n        memory = %d.GB\n    }\n}\n" % (index / 1e9 * 1.15 + 8)
 
 
 def check_taxprofiler(rows, params):
@@ -394,6 +515,30 @@ def check_taxprofiler(rows, params):
                     problems.append(f"'{key}' is on but the databases sheet has no '{tool}' database")
         if "bracken" in tools and params.get("run_bracken") is True and params.get("run_kraken2") is not True:
             problems.append("'run_bracken' needs 'run_kraken2' too")
+    merge_pairs = params.get("perform_shortread_qc") is True and params.get("shortread_qc_mergepairs") is True
+    if params.get("perform_runmerging") is True and not merge_pairs:
+        layouts = {}  # single_end as taxprofiler defines it: one short-read file
+        for r in rows:
+            single = bool(r.get("fastq_1")) and not r.get("fastq_2") \
+                and r.get("instrument_platform") not in ("OXFORD_NANOPORE", "PACBIO_SMRT")
+            layouts.setdefault(r.get("sample"), set()).add(single)
+        for sample in sorted(s for s, l in layouts.items() if len(l) > 1):
+            problems.append(f"sample '{sample}' mixes single-end short-read runs with other runs: merging its runs needs read pairs "
+                            "merged first (perform_shortread_qc=true and shortread_qc_mergepairs=true), or no run merging")
+    names = [r.get("db_name", "") for r in db_rows(params) if r.get("tool") in ("kraken2", "bracken")]
+    for name in sorted({n for n in names if names.count(n) > 1}):
+        problems.append(f"databases sheet: db_name '{name}' is used by both kraken2 and bracken; taxprofiler needs a "
+                        "name unique across both tools, even for the same database (e.g. add '_bracken')")
+    for i, r in enumerate(db_rows(params), start=2):
+        path, tool = r.get("db_path", ""), r.get("tool", "")
+        if not os.path.exists(path):
+            problems.append(f"databases sheet line {i}: db_path does not exist: {path}")
+        elif tool in ("kraken2", "bracken") and os.path.isdir(path) and not os.path.isfile(os.path.join(path, "hash.k2d")):
+            problems.append(f"databases sheet line {i}: {path} is not a Kraken2 database (no hash.k2d)")
+        elif tool == "bracken" and os.path.isdir(path):
+            m = re.search(r"-r\s*(\d+)", r.get("db_params", ""))
+            if m and not os.path.isfile(os.path.join(path, f"database{m.group(1)}mers.kmer_distrib")):
+                problems.append(f"databases sheet line {i}: no Bracken distribution for read length {m.group(1)} in {path}")
     if not any(k.startswith("run_") and v is True and k not in ("run_profile_standardisation", "run_krona")
                for k, v in params.items()):
         problems.append("no profiler enabled: set at least one run_<tool>=true matching the databases sheet")
@@ -416,6 +561,11 @@ def check_mag(rows, params):
         problems.append("short reads are single-end: set 'single_end=true'")
     if params.get("coassemble_group") is True and params.get("binning_map_mode") != "group":
         problems.append("'coassemble_group' needs 'binning_map_mode=group'")
+    if params.get("skip_gtdbtk") is not True and not params.get("gtdb_db"):
+        problems.append("GTDB-Tk would download its database (over 100 GB) at run time: set 'gtdb_db' from the "
+                        "reference catalogue, or skip_gtdbtk=true")
+    if params.get("cat_db_generate") is True:
+        problems.append("'cat_db_generate' downloads NCBI nr (hundreds of GB): use 'cat_db' from the catalogue, or leave CAT off")
     return problems
 
 
@@ -457,8 +607,41 @@ def check_chipseq(rows, params):
     return problems
 
 
+def fasta_contigs(path, max_bytes=500_000_000):
+    """Contig names of a local FASTA, from its .fai or by reading the headers of a file small enough to scan
+    quickly (None when they cannot be known cheaply)."""
+    if not isinstance(path, str) or not os.path.isfile(path):
+        return None
+    for fai in (path + ".fai", re.sub(r"\.gz$", "", path) + ".fai"):
+        if os.path.isfile(fai):
+            with open(fai) as fh:
+                return [line.split("\t", 1)[0] for line in fh if line.strip()]
+    if os.path.getsize(path) > max_bytes:
+        return None
+    with (gzip.open(path, "rt") if path.endswith(".gz") else open(path)) as fh:
+        return [line[1:].split()[0] for line in fh if line.startswith(">") and line[1:].strip()]
+
+
+def check_mito_name(params):
+    """ATAC-seq: mitochondrial reads are removed only if mito_name names the reference's mitochondrial contig."""
+    if params.get("genome") or params.get("keep_mito") is True:
+        return []
+    contigs = fasta_contigs(params.get("fasta"))
+    if contigs is None:
+        return []
+    mito = params.get("mito_name")
+    if mito and mito not in contigs:
+        return [f"'mito_name' '{mito}' is not a contig of the reference FASTA; its contigs are: "
+                f"{', '.join(contigs[:40])}{' ...' if len(contigs) > 40 else ''}"]
+    likely = [c for c in contigs if c.lower() in ("mt", "chrm", "mito", "chrmt", "m", "mitochondrion")]
+    if not mito and likely:
+        return [f"set 'mito_name' to the reference's mitochondrial contig ('{likely[0]}') so that mitochondrial "
+                "reads are removed (or keep_mito=true to keep them)"]
+    return []
+
+
 def check_atacseq(rows, params):
-    problems = check_replicates(rows, "samplesheet")
+    problems = check_replicates(rows, "samplesheet") + check_mito_name(params)
     if params.get("with_control") is True:
         problems += check_controls(rows, "samplesheet", False)
     elif any(r.get("control") for r in rows):
@@ -478,7 +661,28 @@ def check_ampliseq(rows, params):
     paired = {bool(r.get("fastq_2")) for r in rows}
     if paired == {False} and params.get("sequencing_type", "illumina_pe") == "illumina_pe":
         problems.append("single-end reads: set 'sequencing_type' to illumina_se (or the right technology)")
+    meta = params.get("metadata")
+    if isinstance(meta, str) and os.path.isfile(meta):
+        with open(meta) as fh:
+            header = [h.strip() for h in fh.readline().rstrip("\n").split("\t")]
+            ids = [line.split("\t")[0].strip() for line in fh if line.strip()]
+        samples = {r.get("sample") for r in rows}
+        if header[0] != "ID":
+            problems.append(f"metadata: its first column must be named 'ID' and hold the sample names (got '{header[0]}')")
+        unknown = sorted(set(ids) - samples)
+        if unknown or not set(ids) & samples:
+            problems.append(f"metadata IDs must be sample names of the samplesheet (not found: {', '.join(unknown[:10])}). "
+                            "Geth cannot rewrite a delivery's metadata: name the samples as the metadata IDs if those "
+                            "are valid sample names, or leave 'metadata' unset and say so in the rationale")
+        for cat in filter(None, str(params.get("metadata_category") or "").split(",")):
+            if cat.strip() not in header:
+                problems.append(f"'metadata_category' '{cat.strip()}' is not a column of the metadata ({', '.join(header)})")
     return problems
+
+
+# nanoseq 3.1.0 demultiplexes with qcat, which names kits its own way (from the schema's help text).
+QCAT_KITS = ("Auto", "RBK001", "RBK004", "NBD103/NBD104", "NBD114", "NBD104/NBD114", "PBC001", "PBC096",
+             "RPB004/RLB001", "RPB004/LWB001", "RAB204", "VMK001")
 
 
 def check_nanoseq(rows, params):
@@ -495,8 +699,17 @@ def check_nanoseq(rows, params):
             problems.append(f"samplesheet line {i}: fasta file does not exist: {fasta}")
     if demux and not (params.get("input_path") and params.get("barcode_kit")):
         problems.append("demultiplexing needs 'input_path' (pooled reads) and 'barcode_kit'")
+    elif demux and params.get("barcode_kit") not in QCAT_KITS:
+        problems.append(f"'barcode_kit' must be one of qcat's kit names: {', '.join(QCAT_KITS)} "
+                        f"(e.g. NBD103/NBD104 for the EXP-NBD103 and EXP-NBD104 native barcoding kits); "
+                        f"got '{params.get('barcode_kit')}'")
     if params.get("protocol") not in ("DNA", "cDNA", "directRNA"):
         problems.append("'protocol' must be DNA, cDNA or directRNA")
+    if params.get("protocol") == "DNA":
+        for key, why in (("skip_quantification", "transcript quantification needs cDNA or directRNA"),
+                         ("skip_fusion_analysis", "fusion detection is for RNA")):
+            if params.get(key) is not True:
+                problems.append(f"with protocol DNA set '{key}=true' ({why})")
     return problems
 
 
@@ -805,6 +1018,12 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
             problems.append("design change: the contrasts differ from the approved plan")
         if (profile or "").strip() != plan["profile"]:
             problems.append(f"design change: analysis profile must stay '{plan['profile']}' (got '{profile}')")
+    elif (profile or "").strip() or (contrasts_text or "").strip():
+        problems.append(f"nf-core/{pipeline} takes no analysis profile or contrasts: pass empty strings")
+    for key in REGISTRY[pipeline].get("design_params", ()):
+        if params.get(key) != plan["params"].get(key):
+            problems.append(f"design change: param '{key}' describes the data and must stay "
+                            f"{plan['params'].get(key)!r} as approved (got {params.get(key)!r})")
 
     state = load_state(run_dir, plan)
     error = state.get("error") or {}
@@ -845,11 +1064,53 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
                 problems.append(f"param '{k}' changed ({old[k]!r} -> {params[k]!r}) but the previous error does not mention it")
     else:
         for k in added + removed + changed:
-            if not mentioned(k, text):
+            if not mentioned(k, text) and not skips_named_step(k, params.get(k), text) \
+                    and not names_its_file(old.get(k), text) and not skips_named_tools(k, old.get(k), params.get(k), text):
                 what = "added" if k in added else "removed" if k in removed else f"changed ({old[k]!r} -> {params[k]!r})"
                 problems.append(f"param '{k}' was {what} but the previous error does not mention it"
                                 + ("" if text else " (the approved plan must be launched unchanged first)"))
+        same_sheet = normalised_csv(sheet_text) == normalised_csv(state["sheet"])
+        if error.get("kind") == "nextflow" and same_sheet and not (added or removed or changed) \
+                and state.get("repeats", 0) >= 1:
+            problems.append("this exact attempt has already failed twice: change what the error points to, "
+                            "or stop and report the error")
     return problems
+
+
+def names_step(name, error_text):
+    """Does the error name this step or tool? A name of 4+ letters may be part of a process name (preseq in
+    PRESEQ_LCEXTRAP); a 3-letter one must stand alone (the ALE process, not 'ALEoutput.txt' or '.gtf')."""
+    text = error_text or ""
+    if len(name) >= 4:
+        return re.search(re.escape(name), text, re.I) is not None
+    return len(name) == 3 and re.search(rf"(?<![A-Za-z0-9./]){re.escape(name)}(?![A-Za-z0-9./])", text, re.I) is not None
+
+
+def skips_named_step(key, value, error_text):
+    """skip_<step>=true is the minimal fix when the error names that step (e.g. skip_preseq after a
+    PRESEQ_LCEXTRAP failure, skip_ale after an ALE crash)."""
+    if not key.startswith("skip_") or value not in (True, "true"):
+        return False
+    step = key[len("skip_"):]
+    first = step.split("_")[0]
+    return names_step(step, error_text) or (len(first) >= 4 and names_step(first, error_text))
+
+
+def skips_named_tools(key, old, new, error_text):
+    """A list of skipped tools (sarek's skip_tools) may gain the tools the error names."""
+    if key != "skip_tools":
+        return False
+    before = set(filter(None, str(old or "").split(",")))
+    added = set(filter(None, str(new or "").split(","))) - before
+    return bool(added) and before <= set(str(new).split(",")) and all(names_step(t, error_text) for t in added)
+
+
+def names_its_file(old_value, error_text):
+    """A file parameter may change when the error names its file (e.g. a file staged twice)."""
+    if not (isinstance(old_value, str) and "/" in old_value):
+        return False
+    name = os.path.basename(old_value)
+    return len(name) >= 6 and name in (error_text or "")
 
 
 def sc_gate(plan, params_text_or_dict, state):
@@ -897,7 +1158,7 @@ def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_t
             contrasts_text, profile = c["contrasts"], c["profile"]
     write = lambda f, s: open(os.path.join(run_dir, f), "w").write(s.strip() + "\n")
     write("plan_pipeline.txt", pipeline)
-    write("plan_samplesheet.csv", sheet_text)
+    write("plan_samplesheet.csv", normalise_sheet(sheet_text))
     write("plan_params.json", json.dumps(params, indent=2) if params or not problems else params_text)
     write("plan_rationale.txt", rationale.strip() + note)
     if REGISTRY.get(pipeline, {}).get("downstream"):
@@ -914,7 +1175,7 @@ def save_checked(run_dir, pipeline, sheet_text, params, contrasts_text="", profi
     checked = os.path.join(run_dir, ".checked")
     os.makedirs(checked, exist_ok=True)
     open(os.path.join(checked, "plan_pipeline.txt"), "w").write(pipeline + "\n")
-    open(os.path.join(checked, "plan_samplesheet.csv"), "w").write(sheet_text.strip() + "\n")
+    open(os.path.join(checked, "plan_samplesheet.csv"), "w").write(normalise_sheet(sheet_text))
     json.dump(params, open(os.path.join(checked, "plan_params.json"), "w"), indent=2)
     open(os.path.join(checked, PART_FILES["contrasts"]), "w").write((contrasts_text or "").strip() + "\n")
     open(os.path.join(checked, PART_FILES["profile"]), "w").write((profile or "").strip() + "\n")
@@ -923,7 +1184,10 @@ def save_checked(run_dir, pipeline, sheet_text, params, contrasts_text="", profi
 def record(run_dir, kind, sheet_text, params_text, error_text=""):
     plan = approved_plan(run_dir)
     state = load_state(run_dir, plan)
-    state["sheet"], state["params"] = sheet_text, parse_params(params_text)
+    new_params = parse_params(params_text)
+    same = normalised_csv(sheet_text) == normalised_csv(state["sheet"]) and new_params == state["params"]
+    state["repeats"] = state.get("repeats", 0) + 1 if kind == "nextflow" and same and state.get("error") else 0
+    state["sheet"], state["params"] = sheet_text, new_params
     if kind == "analysis":  # single-cell toolbox: count analyses, keep the diagnostics as the reference
         state["analyses"] = state.get("analyses", 0) + 1
         state["error"] = {"kind": "diagnostics", "text": error_text}
@@ -969,10 +1233,14 @@ def main(argv):
             print("\n".join(f"- {p}" for p in problems))
             return 1
         if len(argv) > 5:
-            json.dump(params, open(argv[5], "w"), indent=2)
+            json.dump(launch_params(pipeline, params), open(argv[5], "w"), indent=2)
         if save_dir:
             save_checked(save_dir, pipeline, sheet_text, params, extra["contrasts_text"], extra["profile"])
         print("PLAN CHECK: OK")
+        return 0
+    if cmd == "normalise-sheet":  # normalise-sheet <in.csv> <out.csv>
+        text = open(argv[2]).read()
+        open(argv[3], "w").write(normalise_sheet(text))
         return 0
     if cmd == "save-plan":
         extra, argv = parts(argv)
@@ -991,6 +1259,12 @@ def main(argv):
     if cmd == "record":
         error_text = open(argv[6]).read() if len(argv) > 6 else ""
         record(argv[2], argv[3], open(argv[4]).read(), open(argv[5]).read(), error_text)
+        return 0
+    if cmd == "reference-size":  # reference-size <pipeline> <params.json>: bytes, for the resource caps
+        print(reference_bytes(pipeline_name(argv[2]), parse_params(read_text(argv[3]))))
+        return 0
+    if cmd == "resources":  # resources <pipeline> <params.json>: extra Nextflow config (may be empty)
+        sys.stdout.write(extra_resources(pipeline_name(argv[2]), parse_params(read_text(argv[3]))))
         return 0
     if cmd == "runtime":  # shell assignments for run_nfcore.sh
         entry = REGISTRY.get(pipeline_name(argv[2]) if len(argv) > 2 else "", {})

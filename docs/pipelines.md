@@ -11,10 +11,11 @@ For every pipeline it has:
 
 - **Validated with agents.** Agents planned, ran and reported real-size public data, with the results
   scored against known answers ([validation](validation.md)).
-- **Test profile passes; planner not yet validated.** The pipeline's own test run passes on the
-  reference site with Geth's runtime settings, and the plan checks are unit-tested. Agents have not yet
-  planned realistic deliveries for it, so review its plans with extra care.
-- **Parked.** Supported by the code, but waiting for its large reference databases.
+- **Validated with agents on test deliveries.** The pipeline's own test run passes on the reference site
+  with Geth's runtime settings. The planner was benchmarked on a realistic test delivery, with 3/3 plans
+  fully correct after one round of fixes. A full run, from plan to checked report, succeeded on that
+  delivery ([validation](validation.md#full-runs-of-the-new-pipelines-version-16)). Not yet validated on
+  real-size data, so review its plans with care.
 
 ## Supported pipelines
 
@@ -24,20 +25,20 @@ For every pipeline it has:
 | [scrnaseq](https://nf-co.re/scrnaseq/4.2.0) | 4.2.0 | Droplet single-cell RNA-seq (10x Chromium): count matrices, CellBender | validated with agents |
 | [differentialabundance](https://nf-co.re/differentialabundance/2.0.0) | 2.0.0 | Differential expression on a finished rnaseq run | validated with agents |
 | sc_downstream (Geth's toolbox) | 1.0.0 | Single-cell QC filtering, doublets, clustering, markers, CellTypist annotation, on a finished scrnaseq run | validated with agents |
-| [isoseq](https://nf-co.re/isoseq/3.0.1) | 3.0.1 | PacBio Iso-Seq full-length transcripts | test profile passes |
-| [ampliseq](https://nf-co.re/ampliseq/3.0.0) | 3.0.0 | Amplicon / metabarcoding (16S, 18S, ITS, COI) | test profile passes |
-| [chipseq](https://nf-co.re/chipseq/2.1.0) | 2.1.0 | ChIP-seq peak calling | test profile passes |
-| [atacseq](https://nf-co.re/atacseq/2.1.2) | 2.1.2 | ATAC-seq chromatin accessibility | test profile passes |
-| [methylseq](https://nf-co.re/methylseq/4.2.0) | 4.2.0 | DNA methylation: WGBS, RRBS, EM-seq, TAPS | test profile passes |
-| [nanoseq](https://nf-co.re/nanoseq/3.1.0) | 3.1.0 | Oxford Nanopore DNA, cDNA and direct RNA | test profile passes |
-| [eager](https://nf-co.re/eager/2.5.3) | 2.5.3 | Ancient DNA | test profile passes |
-| [sarek](https://nf-co.re/sarek/3.10.0) | 3.10.0 | Germline and somatic variant calling (WGS, WES, panels) | parked: needs the variant databases |
-| [taxprofiler](https://nf-co.re/taxprofiler/2.0.1) | 2.0.1 | Taxonomic profiling of shotgun metagenomes | parked: needs the profiler databases |
-| [mag](https://nf-co.re/mag/5.5.0) | 5.5.0 | Metagenome assembly and binning | parked: needs GTDB and the other databases |
+| [isoseq](https://nf-co.re/isoseq/3.0.1) | 3.0.1 | PacBio Iso-Seq full-length transcripts | validated with agents on test deliveries |
+| [ampliseq](https://nf-co.re/ampliseq/3.0.0) | 3.0.0 | Amplicon / metabarcoding (16S, 18S, ITS, COI) | validated with agents on test deliveries |
+| [chipseq](https://nf-co.re/chipseq/2.1.0) | 2.1.0 | ChIP-seq peak calling | validated with agents on test deliveries |
+| [atacseq](https://nf-co.re/atacseq/2.1.2) | 2.1.2 | ATAC-seq chromatin accessibility | validated with agents on test deliveries |
+| [methylseq](https://nf-co.re/methylseq/4.2.0) | 4.2.0 | DNA methylation: WGBS, RRBS, EM-seq, TAPS | validated with agents on test deliveries |
+| [nanoseq](https://nf-co.re/nanoseq/3.1.0) | 3.1.0 | Oxford Nanopore DNA, cDNA and direct RNA | validated with agents on test deliveries |
+| [eager](https://nf-co.re/eager/2.5.3) | 2.5.3 | Ancient DNA | validated with agents on test deliveries |
+| [sarek](https://nf-co.re/sarek/3.10.0) | 3.10.0 | Germline and somatic variant calling (WGS, WES, panels) | validated with agents on test deliveries: germline, chicken. Somatic and human calling need a GATK bundle, not tested |
+| [taxprofiler](https://nf-co.re/taxprofiler/2.0.1) | 2.0.1 | Taxonomic profiling of shotgun metagenomes | validated with agents on test deliveries, with Kraken2 and Bracken. MetaPhlAn not tested |
+| [mag](https://nf-co.re/mag/5.5.0) | 5.5.0 | Metagenome assembly and binning | validated with agents on test deliveries, without GTDB-Tk and CheckM2 (no databases on the test site) |
 
-Results summaries in the report are tailored for rnaseq, scrnaseq, differentialabundance and the
-single-cell toolbox. For the other pipelines the report points to the pipeline's MultiQC report and
-results folders.
+Results summaries in the report are tailored for rnaseq, scrnaseq, differentialabundance, mag (assemblies
+and bins) and the single-cell toolbox. For the other pipelines the report gives MultiQC's general
+statistics and points to the MultiQC report and results folders.
 
 ## What each pipeline needs from you
 
@@ -46,8 +47,8 @@ Beyond that:
 
 | Pipeline | Reference | Worth stating in the README |
 |---|---|---|
-| rnaseq | genome FASTA + GTF (catalogue or folder) | conditions and replicates, lanes or re-sequenced libraries, strandedness if known |
-| scrnaseq | genome FASTA + GTF | 10x chemistry (v2, v3 ...), the expected number of cells |
+| rnaseq | genome FASTA + GTF (catalogue or folder); a registered STAR index is reused | conditions and replicates, lanes or re-sequenced libraries, strandedness if known |
+| scrnaseq | genome FASTA + GTF; a registered STAR index is reused (STAR aligner) | 10x chemistry (v2, v3 ...), the expected number of cells |
 | differentialabundance | the upstream rnaseq run | the comparisons you want, pairing (donor) or batches |
 | sc_downstream | a CellTypist model in the catalogue, for your tissue and species | tissue, expected cell types |
 | isoseq | genome FASTA (+ GTF for some aligners) and the primers | what the files are (subreads, CCS, full-length), the primer set |
@@ -57,6 +58,9 @@ Beyond that:
 | methylseq | genome FASTA | library kit or protocol (e.g. RRBS, EM-seq, PBAT) |
 | nanoseq | genome or transcriptome FASTA (+ GTF) | DNA, cDNA or direct RNA; barcodes, or already demultiplexed files |
 | eager | genome FASTA | library build (single or double stranded), UDG treatment, colour chemistry |
+| sarek | genome FASTA (uncompressed or bgzip), a known-variants VCF for base recalibration, a VEP cache for annotation: catalogue entries (`geth/references/stage_ensembl_variation.sh`) | germline or tumour/normal, sex, lanes, the variant callers you want |
+| taxprofiler | a databases sheet in the catalogue (Kraken2/Bracken, MetaPhlAn), registered with `geth/references/register_database.sh` | sequencing platform, runs per sample, single- or paired-end, host reads to remove |
+| mag | none required; a host genome to remove host reads; GTDB-Tk and CheckM2 databases for taxonomy and completeness (never downloaded per run) | runs per sample, groups for co-assembly, long reads |
 
 ## Pipelines with their own runtime
 

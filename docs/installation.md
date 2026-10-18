@@ -110,6 +110,17 @@ source /path/to/Geth/env.sh
 Add this line to your `~/.bashrc` to make the `geth` command available in every shell. `env.sh` loads
 `site/site.env`. To use another site file, set `GETH_SITE_ENV=/path/to/other.env` before sourcing it.
 
+With fish, source `env.fish` instead (add it to `~/.config/fish/config.fish`):
+
+```fish
+source /path/to/Geth/env.fish
+```
+
+`env.fish` runs `env.sh` in bash and copies the result into fish, so the site file stays a bash file and
+both shells get the same settings. It also loads tab completion for `geth`: commands, run names (with
+their pipeline), lab runs (with their arm), and options such as `--from`, `--yes`, `--detach` and
+`--no-skill`.
+
 ## 6. Fill the reference catalogue
 
 The reference catalogue is a folder of reference genomes, annotations and annotation models. The planner
@@ -127,6 +138,22 @@ geth/references/stage_celltypist.sh celltypist_immune_v2 "Homo sapiens (human)" 
     Immune_All_Low Immune_All_High
 ```
 
+For DNA variant calling with nf-core/sarek on any Ensembl species, add the species' known variants and VEP
+annotation cache to its genome entry. This also writes the uncompressed FASTA that sarek needs:
+
+```bash
+geth/references/stage_ensembl.sh gallus_gallus bGalGal1.mat.broiler.GRCg7b 116 "Gallus gallus (chicken)"
+geth/references/stage_ensembl_variation.sh gallus_gallus bGalGal1.mat.broiler.GRCg7b 116
+```
+
+For metagenomic profiling (nf-core/taxprofiler), register the databases you already have. Nothing is copied:
+the catalogue entry points to the folder and holds a ready-made databases sheet:
+
+```bash
+geth/references/register_database.sh kraken2_standard_20250402 kraken2 /shared/k2_standard_20250402 \
+    "Kraken2 standard 2025-04-02: RefSeq archaea, bacteria, viral, plasmid, human, UniVec_Core"
+```
+
 To add your own reference, create a folder in `$GETH_REFERENCES` with the files and a `README.txt` that
 says what they are, using absolute paths:
 
@@ -136,6 +163,20 @@ Assembly: GRCz11 (Ensembl release 116, primary assembly)
 Genome FASTA: /data/geth/references/danio_rerio_GRCz11_ens116/Danio_rerio.GRCz11.dna.primary_assembly.fa.gz
 Annotation GTF: /data/geth/references/danio_rerio_GRCz11_ens116/Danio_rerio.GRCz11.116.gtf.gz
 ```
+
+**Reuse genome indexes.** Building a STAR index for a mammalian genome takes about 30 minutes and 30 GB of
+disk for every RNA-seq or single-cell run. Once one run has built it, register it in the catalogue, and the
+planner reuses it in later runs. The index is in the run's `work/` folder, or in `results/` when the plan set
+`save_reference=true`:
+
+```bash
+geth/references/register_star_index.sh homo_sapiens_GRCh38_ens116 \
+    $GETH_RUNS_DIR/my_pbmc/results/star/genome_generate/star "nf-core/scrnaseq 4.2.0"
+```
+
+The script hard-links the index into the catalogue entry, so it takes no extra space on the same file system.
+It records the STAR version and the entry's FASTA and GTF. The plan check accepts a reused index only for
+pipelines with the same STAR version and plans with the same FASTA and GTF.
 
 ## 7. Check the installation
 

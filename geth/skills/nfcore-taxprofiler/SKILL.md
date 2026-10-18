@@ -12,6 +12,8 @@ shotgun reads (short or long). For assembling genomes from metagenomes use nf-co
 Columns: `sample,run_accession,instrument_platform,fastq_1,fastq_2,fasta`
 - `sample`: the biological sample. `run_accession`: unique per file (pair); for one run per sample repeat the sample name.
 - Several runs/lanes of one sample: same `sample`, different `run_accession`, and set `perform_runmerging=true`.
+  If a sample mixes paired-end and single-end runs, merging needs the read pairs merged first:
+  `perform_shortread_qc=true` and `shortread_qc_mergepairs=true`.
 - `instrument_platform`: ENA vocabulary: `ILLUMINA`, `OXFORD_NANOPORE`, `PACBIO_SMRT`, `BGISEQ`, `DNBSEQ`, ...
 - Short reads: `fastq_1` (+ `fastq_2` for paired-end, empty for single-end). Long reads: `fastq_1` only.
 - `fasta`: only for already assembled contigs/long reads given as FASTA; leave FASTQ columns empty on that row.

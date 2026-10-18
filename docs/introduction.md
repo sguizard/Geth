@@ -61,7 +61,9 @@ The [pipelines page](pipelines.md) lists the supported pipelines and how well ea
 Geth does not trust the model. It contains it.
 
 - **Agents never run arbitrary code.** They can only call a small set of tools: list or read files in the
-  data area, read the reference catalogue, check a plan, launch an approved plan, read the results.
+  data area, read the reference catalogue, check a plan, launch an approved plan, read the results. The one
+  exception is the experimental lab (`geth lab build`, benchmark data only), where code written by agents
+  runs in a sandbox with no network, no host files and no keys.
 - **Pipelines are pinned.** Each supported pipeline runs at one tested release, with parameters checked
   against that release's schema. A parameter that does not exist is refused, and the check suggests the
   closest real name.
@@ -80,8 +82,7 @@ What Geth is **not**:
 - It does not replace scientific judgement. The plan and the report are a starting point that a person
   reviews.
 - It is not validated for every data type. The [validation page](validation.md) shows exactly what was
-  tested. Pipelines marked "planner not yet validated" pass their own test runs, but agents have not yet
-  planned real deliveries for them.
+  tested. Some pipelines are validated on test-size deliveries only.
 - It is not a pipeline writer. It plans and runs existing nf-core pipelines.
 
 ## What you need

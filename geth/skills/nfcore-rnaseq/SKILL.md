@@ -23,6 +23,11 @@ Columns: `sample,fastq_1,fastq_2,strandedness`
 - Keep `skip_bbsplit: true` (default) unless contaminant genomes are provided.
 - Optional: `skip_dupradar`, `skip_qualimap` speed up small runs.
 
+## Reusing a built index
+If the reference catalogue entry you use lists a `STAR index:` for STAR 2.7.11b (the version of this release),
+set `star_index` to that folder and keep `fasta` and `gtf` as the entry's files: the index was built from them.
+It saves about 30 minutes and 30 GB per run. Leave `star_index` unset otherwise (the pipeline builds one).
+
 ## Typical failure causes
 - Samplesheet validation errors: wrong column names, spaces in sample names, relative paths, a `fastq_2` that is not a FASTQ.
 - `min_trimmed_reads` (default 10000): samples with fewer reads after trimming are dropped. For tiny test data, set `"min_trimmed_reads": 1000`.

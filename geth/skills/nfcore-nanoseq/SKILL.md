@@ -11,11 +11,14 @@ Basecalling is not done: start from FASTQ (or BAM).
 
 ## Samplesheet (CSV, header required)
 Columns: `group,replicate,barcode,input_file,fasta,gtf`
-- `group`: condition; `replicate`: 1, 2, ... within the group.
+- `group`: the condition or sample; replicates **share** the group, with `replicate` = 1, 2, ...
 - **Already demultiplexed** reads (one FASTQ per sample, the usual case): `input_file` = absolute path to the
   `.fastq.gz`, `barcode` empty, and set `skip_demultiplexing=true`.
 - **Not demultiplexed** (one pooled FASTQ folder): `barcode` = the barcode number per sample, `input_file`
-  empty, and set `input_path=<pooled FASTQ>` and `barcode_kit` (e.g. `SQK-PBK004`) from the run metadata.
+  empty, and set `input_path=<pooled FASTQ>` and `barcode_kit`. `barcode_kit` is **qcat's** kit name, not
+  ONT's catalogue name: one of `Auto`, `RBK001`, `RBK004`, `NBD103/NBD104`, `NBD114`, `NBD104/NBD114`,
+  `PBC001`, `PBC096`, `RPB004/RLB001`, `RPB004/LWB001`, `RAB204`, `VMK001` (e.g. kits EXP-NBD103 and
+  EXP-NBD104 -> `NBD103/NBD104`; SQK-RBK004 -> `RBK004`).
 - Already aligned BAM in `input_file`: also `skip_alignment=true`.
 - `fasta`: absolute path to the genome (or transcriptome) FASTA for this row; `gtf`: annotation (needed for
   quantification). Usually the same reference on every row, from the catalogue.
@@ -28,6 +31,9 @@ Columns: `group,replicate,barcode,input_file,fasta,gtf`
   `skip_fusion_analysis=true` unless fusions are asked for; modifications (directRNA only, needs fast5):
   otherwise `skip_modification_analysis=true`.
 - DNA: `call_variants=true` only if variant calling is requested.
+
+- `protocol=DNA`: also set `skip_quantification=true` and `skip_fusion_analysis=true` (both are RNA analyses;
+  the pipeline refuses DNA with quantification).
 
 ## Typical failure causes
 - Barcodes given with `skip_demultiplexing=true` (or input files without it).
