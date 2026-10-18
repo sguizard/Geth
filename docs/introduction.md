@@ -83,7 +83,9 @@ What Geth is **not**:
   reviews.
 - It is not validated for every data type. The [validation page](validation.md) shows exactly what was
   tested. Some pipelines are validated on test-size deliveries only.
-- It is not a pipeline writer. It plans and runs existing nf-core pipelines.
+- It is not a pipeline writer. It plans and runs existing nf-core pipelines. (An experimental lab,
+  `geth lab`, tests agents that design and write analyses themselves, on benchmark data only: see the
+  [developer guide](developer-guide.md#the-lab-experimental-phase-11).)
 
 ## What you need
 
@@ -96,7 +98,8 @@ What Geth is **not**:
 
 ## Status
 
-Geth is research software (version 1.5), developed and validated on a university SGE cluster. The
+Geth is research software (`geth version` prints the version; the [changelog](../CHANGELOG.md) lists
+what each release changed), developed and validated on a university SGE cluster. The
 Nextflow `agent` feature it builds on is a preview in Nextflow 26.10, and its interface may change.
 Geth pins the Nextflow version for that reason.
 

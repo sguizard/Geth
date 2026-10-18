@@ -53,6 +53,14 @@ stage_limit() {  # stage_limit <mode>: how long an agent stage may run (a hung a
     esac
 }
 
+explain_timeout() {  # explain_timeout <exit code> <mode> <log>: say plainly when a stage hit its time limit
+    if [ "$1" -eq 124 ]; then
+        local msg="Geth: the $2 stage was stopped after its time limit ($(stage_limit "$2")); raise it in site.env (GETH_AGENT_TIMEOUT, GETH_ENGINEER_TIMEOUT or GETH_RUN_TIMEOUT) if the run was making progress."
+        echo "$msg" >> "$3"
+        echo "$msg" >&2
+    fi
+}
+
 sandboxed() {  # sandboxed <run_dir> [--ro <folder>]... -- <command...>: in the agent sandbox when the site asks
     if [ "${GETH_AGENT_SANDBOX:-no}" = yes ]; then
         "$GETH_HOME/geth/bin/agent_sandbox.sh" "$@"

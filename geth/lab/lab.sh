@@ -36,6 +36,7 @@ lab_nf() {  # lab_nf <run_dir> <mode> <tag> [params...]: one lab stage, one driv
         --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" \
         -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1
     rc=$?
+    explain_timeout $rc "$mode" "$d/geth_$tag.log"
     rm -f "$d/.geth_$tag.pid"
     return $rc
 }

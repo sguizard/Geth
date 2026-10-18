@@ -388,7 +388,12 @@ Not tested: pulling a pipeline image that is not yet in the cache, from inside t
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or
   batches.
 - Repeatability at scale: one full run per real-size dataset so far, with planner repeats on top.
-- Other models, and other sites. The site configuration makes this possible; results are welcome.
+- A real analysis run from start to finish by someone other than its developers, with only this
+  documentation.
+- Other models, and other sites. The site configuration makes this possible; results are welcome. A
+  comparison with a paid frontier model on the lab benchmarks is planned.
 - Language-model availability and rate limits under sustained use.
+- In the agent sandbox: pulling a pipeline image that is not yet in the cache.
+- The lab on other data than the two single-cell benchmarks (Kang 2018, PBMC 1k).
 
 The full development record, phase by phase, is in [history/feasibility.md](history/feasibility.md).

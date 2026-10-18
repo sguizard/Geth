@@ -74,6 +74,34 @@ else ok "GPU" "no (CellBender runs on CPUs)"
 fi
 echo
 
+echo "Agent sandbox"
+if [ "${GETH_AGENT_SANDBOX:-no}" = yes ]; then
+    if ! command -v apptainer >/dev/null; then bad "agent sandbox" "GETH_AGENT_SANDBOX=yes but apptainer is not available"
+    else
+        [ -f "$GETH_AGENT_IMAGE" ] && ok "agent image" "$GETH_AGENT_IMAGE" \
+            || warn "agent image" "$GETH_AGENT_IMAGE not found: the lab image is used instead (pull the agent image, docs/installation.md)"
+        probe="$GETH_RUNS_DIR/.doctor_probe"
+        mkdir -p "$probe/data" && echo "$probe/data" > "$probe/data_dir.txt"   # a run sees only its own data
+        # A real sandbox, as an agent driver gets it: Java, Nextflow and the scheduler inside; the other runs hidden.
+        out=$("$GETH_HOME/geth/bin/agent_sandbox.sh" "$probe" -- bash -c '
+            command -v java >/dev/null && echo java || echo no-java
+            nextflow -version >/dev/null 2>&1 && echo nextflow || echo no-nextflow
+            if [ -n "${SGE_ROOT:-}" ]; then qstat >/dev/null 2>&1 && echo scheduler || echo no-scheduler; fi
+            v=${GETH_LLM_API_KEY_VAR:-GETH_LLM_API_KEY}; [ -n "${!v:-}" ] && echo key || echo no-key
+            [ "$(ls "$GETH_RUNS_DIR" 2>/dev/null | wc -l)" -le 1 ] && echo contained || echo not-contained' 2>/dev/null)
+        rm -rf "${probe:?}"
+        for w in java nextflow key contained; do
+            grep -qx "$w" <<< "$out" && ok "sandbox: $w" "inside the container" || bad "sandbox: $w" "missing inside the agent sandbox (geth/bin/agent_sandbox.sh)"
+        done
+        if [ -n "${SGE_ROOT:-}" ]; then
+            grep -qx scheduler <<< "$out" && ok "sandbox: jobs" "the scheduler answers from inside" \
+                || bad "sandbox: jobs" "the scheduler does not answer from inside the sandbox"
+        fi
+    fi
+else ok "agent sandbox" "off (GETH_AGENT_SANDBOX=yes runs the agents' drivers in a container)"
+fi
+echo
+
 echo "Language model"
 ok "endpoint" "$GETH_LLM_BASE_URL"
 case " ${GETH_LLM_ALLOWED_MODELS//,/ } " in

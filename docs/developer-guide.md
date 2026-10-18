@@ -23,7 +23,7 @@ site/
   site.env.example         documented template of the site configuration (copy to site/site.env)
   examples/                worked site configurations: local machine, an SGE cluster with GPUs
 geth/
-  geth                     the command line: plan, show, approve, run, status, list, doctor, version
+  geth                     the command line: plan, show, approve, run, status, list, doctor, version, lab
   main.nf                  the workflow: records, tools (processes), agents, bookkeeping, workflow block
   nextflow.config          Geth's own settings, read from the environment (model, endpoint, folders)
   bin/                     on the tasks' PATH (Nextflow adds a pipeline's bin/ automatically)
@@ -34,14 +34,24 @@ geth/
     collect_results.py     ready-to-copy result tables for the reporter
     check_report.py        traces every number and link of the report to the facts
     geth_doctor.sh         installation checks (geth doctor)
+    driver_slots.sh        driver slots (GETH_MAX_DRIVERS), stage time limits, the sandboxed() launcher
+    agent_sandbox.sh       runs an agent driver in a container (GETH_AGENT_SANDBOX, phase 12)
     env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
   completions/geth.fish    fish tab completion (loaded by env.fish)
   conf/                    configs added to nf-core runs: resource caps, legacy singularity engine
   schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release
   skills/                  planner skills: one SKILL.md per pipeline, plus sc-downstream
   references/              scripts that add entries to the reference catalogue
-  tests/                   unit tests of the gates (self-contained)
-bench/                     benchmarks: data staging, bench loops, baselines without agents, scorers
+  tests/                   unit tests of the gates and of the lab's bookkeeping (self-contained)
+  lab/                     the EXPERIMENTAL lab (phase 11): not used by geth plan / geth run
+    lab.sh                 geth lab: design, judge, show, list, build (arm B), build-c (arm C)
+    main.nf                designer, judge, engineer, reviewer agents and their tools
+    bin/                   lab_checks.py (design format), lab_inspect.py, lab_build.py (arm B/C bookkeeping),
+                           lab_step_check.py (static check), lab_sandbox.sh and lab_nf_sandbox.sh (the
+                           sandboxes for agent-written code), lab_h5ad.py, lab_subset_step.py
+    skills/                sc-design-lab (design), sc-build-lab (Python steps), nf-build-lab (Nextflow)
+bench/                     benchmarks: data staging, bench loops, baselines without agents, scorers;
+                           bench/lab/ for the lab (designs, builds, judges, sandbox escape tests)
 docs/                      this documentation; docs/history/ holds the development record
 spikes/                    the first feasibility experiments (frozen)
 ```
@@ -365,6 +375,9 @@ downstream analysis. It is **not for real analyses**. It is kept apart from Geth
   so the truth used for scoring (`$GETH_WORK_ROOT/lab_truth/`) stays out of reach
 - runs go to `$GETH_RUNS_DIR/lab/`, and every file it writes is marked EXPERIMENTAL
 
+`geth lab list` shows every lab run, its arm and its state; `geth lab show <name>` prints a design or a
+build.
+
 Arm A (`geth lab design`) asks a designer agent for a structured design and runs nothing:
 - **steps:** nine required steps, each written as `step | method | tool | key parameters | why`
 - **statistics:** one line per comparison: `comparison | unit of replication | test or model | design formula | multiple testing`
@@ -412,6 +425,10 @@ baseline: 86% agreement with the published cell types, and the interferon respon
 - PBMC: populations found and their canonical markers
 
 `bench/lab/bench_build.sh` runs the benchmark.
+
+`geth lab judge <name> <design run> <design run> ...` (phase 11.5) gives several designs of the same request,
+labelled A, B, C, to a judge agent. The judge checks them against the data and writes the best one, with the
+same format and check. `bench/lab/bench_judge.sh` scores it against its inputs.
 
 Arm C (`geth lab build-c <design run> <name>`) has the engineer write the whole pipeline: `main.nf` and
 Python scripts in `bin/`. Its tools:

@@ -212,6 +212,34 @@ geth run first_test
 
 The [user guide](user-guide.md) explains each step.
 
+## 9. Optional: contain the agents
+
+To run the agents' drivers in a container, which sees only each run, its data and the reference catalogue
+([configuration](configuration.md#agents-container-and-time-limits)), pull the small agent image once, on a
+machine with internet access (on a cluster, a transfer or staging queue):
+
+```bash
+apptainer pull $GETH_WORK_ROOT/geth/containers/geth_agent_54cf9ab304820814.sif \
+    oras://community.wave.seqera.io/library/python_findutils_coreutils_gawk_pruned:54cf9ab304820814
+```
+
+Then, in `site/site.env`:
+
+```bash
+export GETH_AGENT_SANDBOX=yes
+export GETH_AGENT_SANDBOX_RW=/path/to/apptainer_cache   # the image cache your Nextflow config uses, if any
+```
+
+`geth doctor` then starts a probe sandbox and checks Java, Nextflow, the scheduler and the key inside it,
+and that other runs are hidden.
+
+The experimental lab (`geth lab`) needs its analysis image too:
+
+```bash
+apptainer pull $GETH_WORK_ROOT/geth/containers/geth_lab_sc_8ead628d7c7c6607.sif \
+    oras://community.wave.seqera.io/library/python_scanpy_celltypist_pydeseq2_pruned:8ead628d7c7c6607
+```
+
 ## Updating Geth
 
 ```bash

@@ -42,6 +42,7 @@ nf() {  # nf <run_dir> <mode> [extra args]
         -w "$d/geth_work" -with-agent-trace -with-trace "$d/geth_trace_$mode.txt" -ansi-log false \
         > "$d/geth_$mode.log" 2>&1
     local rc=$?
+    explain_timeout $rc "$mode" "$d/geth_$mode.log"
     rm -f "$d/.geth_$mode.pid"
     return $rc
 }
