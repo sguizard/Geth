@@ -75,6 +75,9 @@ See [validation](docs/validation.md).
   named by the previous error.
 - **Checked reports.** Numbers and links that cannot be traced to the results are flagged in the report.
 - **Model allowlist.** Geth refuses models your site has not allowed.
+- **Contained agents (optional).** With `GETH_AGENT_SANDBOX=yes`, the agents' drivers run in a container that
+  sees only the run, its data and the reference catalogue; the API key reaches them through the environment,
+  never a file.
 
 ## Experimental: the Geth lab
 
@@ -87,6 +90,13 @@ works only on benchmark data, and everything it writes is marked experimental.
 - **Arm B, build:** an engineer agent writes the analysis as Python steps, tests each on a subset, and a
   reviewer agent checks them; Geth then runs them on the full data. Agent-written code runs only in a
   sandbox: no network, no host files but its input and its own folder, no keys.
+- **Arm C, pipeline:** the engineer writes the whole Nextflow pipeline too. Its driver runs in the sandbox
+  as well, since a Nextflow script runs code in its driver.
+
+With its skills and a reviewer agent, Qwen 3.5 built correct, working analyses in 14 of 15 builds across arms
+B and C. Without the coding skill, it managed 2 of 6. These are the final benchmark rounds: rounds spoiled by
+faults in Geth's own harness (an image missing packages, a contradictory results contract) were fixed and
+rerun.
 
 Results so far are in [validation](docs/validation.md#geth-lab-arm-a-agents-designing-single-cell-analyses-experimental-version-16).
 

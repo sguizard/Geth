@@ -35,6 +35,10 @@ export GETH_LLM_API_KEY_VAR=${GETH_LLM_API_KEY_VAR:-GETH_LLM_API_KEY}
 export GETH_LLM_PROVIDER=${GETH_LLM_PROVIDER:-openai}
 export GETH_GPU=${GETH_GPU:-no}
 export NXF_HOME=${NXF_HOME:-$GETH_WORK_ROOT/nextflow}
+# Images (Seqera Containers, pulled once into the work root): the lab's analysis image (scanpy, celltypist,
+# pydeseq2, harmonypy, scikit-image, scikit-misc), and the small image the agents' drivers run in (GETH_AGENT_SANDBOX).
+export GETH_LAB_IMAGE=${GETH_LAB_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_lab_sc_8ead628d7c7c6607.sif}
+export GETH_AGENT_IMAGE=${GETH_AGENT_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_agent_54cf9ab304820814.sif}
 export NXF_VER=${GETH_NXF_VER:-26.10.2}  # the Nextflow agent primitive needs >= 26.10
 
 case ":$PATH:" in

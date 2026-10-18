@@ -300,9 +300,10 @@ process WRITE_FILE {
     """
 }
 
-process LINT_PIPELINE {
-    executor 'local'
-    scratch false
+process LINT_PIPELINE {  // a scheduler job: it starts the sandbox, which an agent sandbox cannot do
+    cpus 1
+    memory 2.GB
+    time 15.m
 
     input:
     note: String

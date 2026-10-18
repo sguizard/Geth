@@ -72,7 +72,7 @@ def score(run, dataset, truth_dir, input_h5ad):
     results = os.path.join(run, "results")
     spec = [l.split("|")[0].strip() for l in read(os.path.join(run, "build_spec.txt")).splitlines() if l.strip()]
     log = [l.rstrip("\n").split("\t") for l in read(os.path.join(run, "build_log.tsv")).splitlines() if l.strip()]
-    reviews = sorted(glob.glob(os.path.join(run, "review_*.txt")))
+    reviews = sorted(glob.glob(os.path.join(run, "review_[0-9].txt")))  # not review_<n>_history.txt
     s = {"run": os.path.basename(run), "dataset": dataset, "arm": read(os.path.join(run, "lab_arm.txt")).split(",")[0].strip(),
          "state": read(os.path.join(run, "build_state.txt")).strip(),
          "steps": len(spec), "rounds": len(reviews),

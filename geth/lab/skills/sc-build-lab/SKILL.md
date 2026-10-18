@@ -1,6 +1,6 @@
 ---
 name: sc-build-lab
-description: How to implement a single-cell downstream analysis as sandboxed Python step scripts in Geth's lab image (scanpy 1.11, anndata 0.13, celltypist 1.7, pydeseq2 0.5, harmonypy 0.0.10, pandas 3, numpy 2), with working code for QC, normalisation, Harmony, clustering, CellTypist, markers and pseudobulk DESeq2.
+description: How to implement a single-cell downstream analysis as sandboxed Python step scripts in Geth's lab image (scanpy 1.11, anndata 0.13, celltypist 1.7, pydeseq2 0.5, harmonypy 0.0.10, scikit-image, scikit-misc, pandas 3, numpy 2), with working code for QC, normalisation, Harmony, clustering, CellTypist, markers and pseudobulk DESeq2.
 ---
 
 # Implementing a single-cell analysis as step scripts (EXPERIMENTAL lab skill)
@@ -29,12 +29,15 @@ description: How to implement a single-cell downstream analysis as sandboxed Pyt
   `groupby(sample_col, observed=True)`.
 - Genotype doublet calls (demuxlet): keep `obs["demuxlet_call"] == "singlet"`. Otherwise
   `sc.pp.scrublet(adata, batch_key=sample_col)` (built into scanpy) on raw counts, then drop
-  `obs["predicted_doublet"]`.
+  `obs["predicted_doublet"]`. Its automatic threshold uses scikit-image (installed). Never catch a step's
+  error and carry on: a doublet rate of exactly 0 means the detector did not run.
 
 ## Normalisation, features, PCA
 - `sc.pp.normalize_total(adata, target_sum=1e4)`, `sc.pp.log1p(adata)`.
-- `sc.pp.highly_variable_genes(adata, n_top_genes=2000, flavor="seurat", batch_key=...)` on log data.
-  `flavor="seurat_v3"` needs scikit-misc, which is NOT installed: do not use it.
+- `sc.pp.highly_variable_genes(adata, n_top_genes=2000, flavor="seurat", batch_key=...)` on log data, or
+  `flavor="seurat_v3", layer="counts"` on raw counts (scikit-misc is installed).
+- Never subset the AnnData to the variable genes: mark them (`var["highly_variable"]`) and use
+  `mask_var="highly_variable"` for PCA. Differential expression and annotation need every gene.
 - `sc.pp.pca(adata, n_comps=30, mask_var="highly_variable")` (keeps every gene in the object).
 
 ## Integration, neighbours, clusters

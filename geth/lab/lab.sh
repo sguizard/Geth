@@ -30,7 +30,7 @@ lab_nf() {  # lab_nf <run_dir> <mode> <tag> [params...]: one lab stage, one driv
     local d=$1 mode=$2 tag=$3 rc
     shift 3
     acquire_slots "$d" "$tag" 1
-    nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
+    sandboxed "$d" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
         --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" \
         -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1
     rc=$?
@@ -43,13 +43,14 @@ show_build() {
     echo "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     echo "State    : $(cat "$d/build_state.txt" 2>/dev/null || echo -)"
+    echo "Agents   : $([ -d "$d/.agent_home" ] && echo "driver in the agent sandbox" || echo "driver not sandboxed") (agent-written code always runs in the lab sandbox)"
     if [ -f "$d/build_spec_c.txt" ]; then
         echo; echo "== pipeline (written by the agent): $(cd "$d/project" 2>/dev/null && ls main.nf bin/*.py 2>/dev/null | tr '\n' ' ')"
         echo "   full run: $(head -n 1 "$d/build_spec_c.txt") (cpus | memory GB | minutes)"
     else
         echo; echo "== spec (step | cpus | memory GB | minutes)"; sed 's/^/  /' "$d/build_spec.txt" 2>/dev/null || echo "  none yet"
     fi
-    for f in "$d"/review_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
+    for f in "$d"/review_[0-9].txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
     for f in "$d"/engineer_notes_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
     if [ -d "$d/results" ]; then
         echo; echo "== results ($d/results)"
@@ -80,7 +81,7 @@ case "$cmd" in
         mkdir -p "$d"
         cd "$d"
         acquire_slots "$d" design 1
-        nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
+        sandboxed "$d" -- timeout "$(stage_limit design)" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
             --mode design --question "$question" --data_dir "$data_dir" --run_dir "$d" --lab_skill "$skill" \
             -w "$d/geth_work" -with-trace "$d/geth_trace_design.txt" -ansi-log false > "$d/geth_design.log" 2>&1 \
             || { rm -f "$d/.geth_design.pid"; echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
@@ -140,7 +141,7 @@ case "$cmd" in
             [ "$verdict" = approve ] && break
         done
         build_state "$d" "full run (review: $verdict)"
-        python3 "$GETH_HOME/geth/lab/bin/lab_build.py" render "$d" "${GETH_LAB_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_lab_sc_f4e5ea0d66d15d6c.sif}" \
+        python3 "$GETH_HOME/geth/lab/bin/lab_build.py" render "$d" "$GETH_LAB_IMAGE" \
             "${GETH_LAB_MODELS:-$GETH_REFERENCES/celltypist_immune_v2}" "${data[0]}" \
             || { build_state "$d" "failed: could not render the pipeline"; exit 1; }
         acquire_slots "$d" pipeline 1

@@ -11,6 +11,6 @@ tmp=$(mktemp -d)
 apptainer exec --containall --home "$tmp:/work" --net --network none -B "$run:$run:ro" -B "$truth:$truth:ro" \
     -B "$(dirname "$input"):$(dirname "$input"):ro" -B "$here/bench/lab/eval_build.py:/geth/eval_build.py:ro" \
     --env NUMBA_CACHE_DIR=/work/.n,MPLCONFIGDIR=/work/.m \
-    "${GETH_LAB_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_lab_sc_f4e5ea0d66d15d6c.sif}" \
+    "$GETH_LAB_IMAGE" \
     python3 -I /geth/eval_build.py "$run" "$dataset" "$truth" "$input" 2>&1 | grep -v '^INFO: \|WARNING'
 rm -rf "$tmp"
