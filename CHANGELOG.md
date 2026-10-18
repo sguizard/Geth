@@ -2,7 +2,7 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
-## 1.7.0 (unreleased)
+## 1.7.0 (2026-10-18)
 
 - **Agents in a container (phase 12):** with `GETH_AGENT_SANDBOX=yes`, every agent driver runs in apptainer on
   the submit host (`geth/bin/agent_sandbox.sh`).
