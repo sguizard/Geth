@@ -318,7 +318,7 @@ a { color: var(--accent); }
           <li class="done">11.1 Design scorer, fixed in advance: Kang 2018 (20 checks), PBMC 1k (12 checks); the answers kept out of the agents' reach. Execution, biology and cost scorers come with arm B</li>
           <li class="done">11.2 Arm A, design only. With the best-practice skill: 18.2/20 on Kang, 11.8/12 on PBMC (6 designs each): pseudobulk per cell type paired by donor, demuxlet singlets, Harmony across conditions, the expected interferon genes. Without it: 15.3/20 and 10.7/12; 2 of 3 Kang designs test with MAST and a donor random effect, none notices the missing mitochondrial reads. Both arms annotate with CellTypist alone, without checking markers. Harness bugs found and fixed on the way: the no-skill flag was ignored (Nextflow passes "false" as text), a file tool crashed on a misspelt path</li>
           <li class="done">11.3 Arm B (go given 2026-10-17): an engineer agent writes and tests step scripts on a subset in a sandbox (no network, no host files, no keys), a reviewer agent checks them, Geth writes the Nextflow and runs it on the full data. With the coding skill 8 of 9 builds deliverable, matching a hand-written reference (Kang: 82–86% of cells labelled as published, the interferon response in monocytes and nearly every cell type; PBMC: 5–7 populations with their markers); without it 2 of 6. The reviewer flagged every defect the scores revealed. Harness faults found on the way and fixed: verdicts leaking from the structured answer, an ambiguous results contract, retries at the same memory</li>
-          <li>11.4 Arm C: agents write the Nextflow themselves (stretch)</li>
+          <li class="done">11.4 Arm C (go given 2026-10-18): the engineer writes the whole Nextflow pipeline (main.nf + Python scripts); because a Nextflow script runs code in its driver, driver and tasks run together in the sandbox (Groovy escape test passed on node1q01 and a worker node). 6 of 6 builds deliverable once the image had what the designs need (scikit-image for Scrublet, scikit-misc for seurat_v3): Kang 83–86% of cells labelled as published, the interferon response in every cell type tested; PBMC 5–6 populations with their markers. Every first main.nf passed lint</li>
           <li>11.5 Single agent vs team vs 3 designs + judge</li>
           <li>11.6 Verdict</li>
         </ul>
@@ -327,14 +327,16 @@ a { color: var(--accent); }
     <li class="phase">
       <div class="node"><span class="dot">12</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Sandboxed agents, light front node</h3><span class="pill next">planned</span></div>
-        <p>Eddie allows agents only in sandboxes. Agent steps that launch no jobs (planning, design) run as small SGE jobs; every agent runs in a container that sees only what its step needs (data read-only, writes only to its run folder); at most one Geth run at a time on node1q01. Measured today: Geth's driver uses 0.4 GB and 3% of one CPU on the front node, the nf-core driver 0.6 GB.</p>
+        <div class="phase-head"><h3>Sandboxed agents, light front node</h3><span class="pill run">in progress</span></div>
+        <p>Eddie allows agents only in sandboxes. Your choice (2026-10-18): the agents stay on node1q01, but their drivers run in a container that sees only what the run needs, and the key never goes into a file. Measured: Geth's driver uses 0.4 GB and 3% of one CPU on the front node, the nf-core driver 0.6 GB; driver slots cap how many run at once.</p>
         <ul class="check">
           <li class="done">Feasibility on Eddie (apptainer 1.4.4, no special rights): <code>--containall --no-home</code> hides everything that is not bound (/exports invisible, root file system read-only); <code>--net --network none</code> removes all network. Limiting the network to the model service only is not possible without admin rights</li>
           <li class="done">Agent-written code (phase 11, arm B): runs in a sandbox with no network, inputs read-only, one writable folder, a clean environment (no keys). Escape test passed on node1q01 and on a worker node</li>
           <li class="done">Worker nodes reach the model service (checked without the key); Geth's SGE jobs carry no key</li>
-          <li>Planning and design agents: one small SGE job each, in a container that sees only the run folder, the data (read-only) and the catalogue (read-only). Open decision for you: how a job gets the key (a key file only you can read), or keep the agents on node1q01 in a container</li>
-          <li>Pipeline drivers: stay on the front node (they submit jobs), at most one Geth run at a time</li>
+          <li class="done">Agents' drivers in a container (<code>GETH_AGENT_SANDBOX=yes</code>): read-write only the run folder, Nextflow's home and the image cache; read-only Geth, the run's own data, the catalogue. Hidden: other runs, other deliveries, the lab's scoring truth, home, group storage. The key reaches the agents through the environment only. <code>qsub</code> works from inside (the scheduler's ports passed explicitly)</li>
+          <li class="done">Sandboxed end to end: a lab design (11/12) and a yeast RNA-seq plan, approval and run (plan 13/13, 1 attempt, 215 pipeline jobs submitted from inside, 42/42 report numbers traced)</li>
+          <li class="doing">Pipelines with their own Nextflow and the singularity engine (nanoseq, eager), sandboxed</li>
+          <li>Not tested: pulling a pipeline image that is not yet cached, from inside the sandbox</li>
         </ul>
       </div>
     </li>
@@ -586,6 +588,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-17">2026-10-17</time><span>Phase 8 done: all 10 added pipelines run end to end with agents. fish support added (<code>env.fish</code>, tab completion).</span></li>
     <li><time datetime="2026-10-18">2026-10-18</time><span>Arm B done: with the coding skill, agents build correct analyses in 8 of 9 cases; the reviewer is what makes them trustworthy. Arm C waits for a go.</span></li>
     <li><time datetime="2026-10-18">2026-10-18</time><span>Release v1.6.0: 10 more pipelines validated with agents on test deliveries, index reuse, fish support, driver slots, the experimental lab (arms A and B).</span></li>
+    <li><time datetime="2026-10-18">2026-10-18</time><span>Go for arm C. Phase 12: the agents stay on node1q01 with their drivers in a container; no key file.</span></li>
   </ul>
 </section>
 

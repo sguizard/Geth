@@ -354,6 +354,32 @@ for these reruns.
 reliably as it writes arm B's step scripts. The reviewer stays the safeguard. The image must hold what
 best-practice designs ask for: a missing package turned into silent failures, not errors.
 
+## Agents in a container (phase 12, version 1.7)
+
+With `GETH_AGENT_SANDBOX=yes`, every agent driver runs inside apptainer on the machine Geth runs on: the
+planner, operator, reporter and the lab's agents (`geth/bin/agent_sandbox.sh`). The driver keeps the network,
+because its agents call the model service, and it can still submit scheduler jobs.
+
+| Check | Result |
+|---|---|
+| `qsub` from inside the container | works (the SGE client is mounted read-only; the ports come from the host's `/etc/services`, which the container does not see) |
+| The model service from inside, key only in the environment (`APPTAINERENV_`) | HTTP 200; the key is in no command line and no file |
+| What a driver sees | its run folder, Nextflow's home and the image cache (read-write); Geth, its run's data folder, the catalogue, Java, Nextflow (read-only). Hidden: the lab's scoring truth, other runs, other deliveries, the home folder, group storage |
+| Lab design (PBMC), driver sandboxed | design check OK, 11/12; its inspection job was submitted from inside |
+| Yeast RNA-seq plan, approve, run, all sandboxed | plan 13/13; run succeeded in 1 attempt, the nested nf-core driver submitting its 215 jobs from inside; 42/42 report numbers traced |
+| nanoseq (Nextflow 23.10.4, singularity engine) and eager (Nextflow 22.10.8, Java 17), sandboxed | PENDING |
+
+Getting there took four faults, all fixed:
+- the site's settings file switched the sandbox off over the environment, so two early "sandboxed" tests
+  were not (the run folder now records it, and `geth status` says so)
+- `NXF_OPTS` was mangled by apptainer's env-file format (it reads single quotes, not `\` escapes)
+- the site's task prelude (`module load`) failed inside: it is a no-op there
+- a symbolic link (`/exports/applications`): mounted at its resolved path, the scheduler's client was missing
+  from `PATH`
+
+A failed tool once left the designer agent hanging for an hour; agent stages now run under time limits.
+Not tested: pulling a pipeline image that is not yet in the cache, from inside the sandbox.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or

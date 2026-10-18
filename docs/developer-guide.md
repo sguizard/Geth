@@ -411,8 +411,44 @@ baseline: 86% agreement with the published cell types, and the interferon respon
 - Kang: agreement with the published labels, and interferon-stimulated genes up in each cell type
 - PBMC: populations found and their canonical markers
 
-`bench/lab/bench_build.sh` runs the benchmark. Arm C (agents write the Nextflow themselves) waits for arm B's
-results.
+`bench/lab/bench_build.sh` runs the benchmark.
+
+Arm C (`geth lab build-c <design run> <name>`) has the engineer write the whole pipeline: `main.nf` and
+Python scripts in `bin/`. Its tools:
+- `WRITE_FILE` saves `main.nf` or `bin/<name>.py`, with the static check for Python
+- `LINT_PIPELINE` runs `nextflow lint`
+- `TEST_PIPELINE` runs the whole pipeline on the subset
+- `READ_PROJECT` shows the project and the last test
+- `SAVE_PIPELINE` accepts the pipeline only after a passing test on the current files, with the results
+  contract: `final.h5ad` and the tables in `params.outdir`
+
+A Nextflow script is code that runs in its driver, so an agent-written pipeline never runs as a normal
+driver. `geth/lab/bin/lab_nf_sandbox.sh` runs driver and tasks together in the sandbox, as one SGE job:
+- the project, input and models read-only; Java and Nextflow bound in read-only
+- offline, with no network
+- the local executor, with Geth's config applied last: no containers, no conda
+
+`bench/lab/sandbox_test.sh --nextflow` runs a Groovy escape test in the driver itself. The full run uses the
+frozen project (`pipeline_c/`), in one sandboxed job that retries with more memory.
+
+## Agents in a container (phase 12)
+
+With `GETH_AGENT_SANDBOX=yes`, `sandboxed` in `geth/bin/driver_slots.sh` starts every agent driver through
+`geth/bin/agent_sandbox.sh`; this covers `geth plan` and `geth run`, and every `geth lab` stage. The wrapper:
+- mounts, read-write, only the run folder, `NXF_HOME` and `GETH_AGENT_SANDBOX_RW`
+- mounts, read-only, Geth, this run's data folder (the driver's `--data_dir`, or `data_dir.txt`), the
+  catalogue, the lab images, Java, the Nextflow launcher and the SGE client. Each folder is mounted at the
+  path the settings use, even behind a symbolic link
+- passes the scheduler's ports, which the container cannot read from the host's `/etc/services`
+- writes every other setting to a private env file (single-quoted values), and passes the API key through
+  `APPTAINERENV_<key variable>` only
+- turns the site's task prelude (`. /etc/profile.d/modules.sh; module load ...`) into a no-op inside; jobs run
+  on the worker nodes as usual
+
+Local tools then run inside the container. A tool that needs apptainer itself, such as `LINT_PIPELINE`, must
+be a scheduler job. Every agent stage runs under `timeout` (`stage_limit`): a hung agent must not hold its
+driver slot. The run folder's `.agent_home` records that the driver was sandboxed; `geth status` and
+`geth lab show` report it.
 
 ## Lessons from the Nextflow agent preview (26.10.2, nf-agent 0.2.0)
 
