@@ -327,10 +327,12 @@ are often read-only in jobs.
 ## Tests
 
 ```bash
-python3 geth/tests/test_geth_checks.py -v      # the gates: 23 tests, under a second, no site needed
+python3 geth/tests/test_geth_checks.py -v      # the gates: 40 tests, under a second, no site needed
 python3 geth/tests/test_collect_results.py -v  # result summaries and the report check
-nextflow lint geth/main.nf geth/nextflow.config
-bash -n geth/geth geth/bin/*.sh bench/*.sh
+python3 geth/tests/test_lab_build.py -v        # the lab's bookkeeping (arms B and C) and the shell quoting
+nextflow lint geth/main.nf geth/lab/main.nf
+for f in geth/geth geth/lab/lab.sh geth/bin/*.sh geth/lab/bin/*.sh bench/*.sh bench/lab/*.sh; do bash -n "$f"; done
+geth doctor                                    # with a site: also probes the agent sandbox
 ```
 
 The unit tests replay real failures: the smaller model's design changes, an edited plan after approval,
@@ -498,9 +500,11 @@ driver slot. The run folder's `.agent_home` records that the driver was sandboxe
 - One organism and one experiment per plan.
 - Only STAR indexes can be registered for reuse so far (`geth/references/register_star_index.sh`); other
   aligners' indexes (Salmon, Bowtie2, BWA, Bismark...) are still built by each run.
-- sarek, taxprofiler and mag wait for their databases to be added to the catalogue.
+- sarek is tested on livestock germline calling only (no GATK bundle for human, no somatic calling yet);
+  mag without GTDB-Tk and CheckM2 databases; taxprofiler with Kraken2 and Bracken, not MetaPhlAn.
 - The single-cell analyst is lenient: in the benchmark it answered every flag but never chose to
   revise a design.
 - The agent API is a preview, so expect changes with new Nextflow releases.
-- Writing new pipelines ("agentic pipeline development") is out of scope until planning and running
-  are reliable across more pipelines.
+- Agent-written analyses and pipelines exist only in the experimental lab (phase 11), on benchmark data.
+  `geth plan` and `geth run` use the pinned, vetted pipelines and toolbox only.
+- In the agent sandbox, pulling a pipeline image that is not yet cached is untested.
