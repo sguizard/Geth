@@ -13,6 +13,26 @@ validate every plan against the pinned pipeline's own schemas, freeze the approv
 which changes a retry may make. A finished report is checked number by number against the results. The
 agents decide; the gates verify; a person approves.
 
+## Where to start reading
+
+Follow one analysis through the code, in the order things happen:
+
+1. `geth/geth`: the commands. `geth plan` and `geth run` both end in `nf()`, which starts
+   `geth/main.nf` with a mode. Each driver goes through `sandboxed` (`geth/bin/driver_slots.sh`), inside
+   the agent sandbox when the site asks for it.
+2. `geth/main.nf`, from the bottom: the `workflow` block picks the mode. Read the `planner` agent above it:
+   its instruction, its tools and its record. Each tool is a short `process` (`LIST_FILES`, `CHECK_PLAN` ...).
+3. `geth/bin/geth_checks.py`: what the tools call. `REGISTRY` describes every pipeline; `check_plan` is the
+   plan check; `approve` fingerprints the plan; `gate` is the plan-diff gate the operator meets on every
+   launch.
+4. `geth/bin/run_nfcore.sh`: the operator's only way to start a pipeline, with the gate before and the error
+   digest after.
+5. `geth/bin/collect_results.py` and `check_report.py`: what the reporter sees, and how its report is
+   checked.
+6. A skill, e.g. `geth/skills/nfcore-rnaseq/SKILL.md`: what the planner is told about a pipeline.
+
+Then the tests (`geth/tests/test_geth_checks.py`) show each gate rule on a real failure that motivated it.
+
 ## Repository layout
 
 ```
@@ -23,7 +43,7 @@ site/
   site.env.example         documented template of the site configuration (copy to site/site.env)
   examples/                worked site configurations: local machine, an SGE cluster with GPUs
 geth/
-  geth                     the command line: plan, show, approve, run, status, list, doctor, version
+  geth                     the command line: plan, show, approve, run, status, list, doctor, version, lab
   main.nf                  the workflow: records, tools (processes), agents, bookkeeping, workflow block
   nextflow.config          Geth's own settings, read from the environment (model, endpoint, folders)
   bin/                     on the tasks' PATH (Nextflow adds a pipeline's bin/ automatically)
@@ -34,14 +54,24 @@ geth/
     collect_results.py     ready-to-copy result tables for the reporter
     check_report.py        traces every number and link of the report to the facts
     geth_doctor.sh         installation checks (geth doctor)
+    driver_slots.sh        driver slots (GETH_MAX_DRIVERS), stage time limits, the sandboxed() launcher
+    agent_sandbox.sh       runs an agent driver in a container (GETH_AGENT_SANDBOX, phase 12)
     env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
   completions/geth.fish    fish tab completion (loaded by env.fish)
   conf/                    configs added to nf-core runs: resource caps, legacy singularity engine
   schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release
   skills/                  planner skills: one SKILL.md per pipeline, plus sc-downstream
   references/              scripts that add entries to the reference catalogue
-  tests/                   unit tests of the gates (self-contained)
-bench/                     benchmarks: data staging, bench loops, baselines without agents, scorers
+  tests/                   unit tests of the gates and of the lab's bookkeeping (self-contained)
+  lab/                     the EXPERIMENTAL lab (phase 11): not used by geth plan / geth run
+    lab.sh                 geth lab: design, judge, show, list, build (arm B), build-c (arm C)
+    main.nf                designer, judge, engineer, reviewer agents and their tools
+    bin/                   lab_checks.py (design format), lab_inspect.py, lab_build.py (arm B/C bookkeeping),
+                           lab_step_check.py (static check), lab_sandbox.sh and lab_nf_sandbox.sh (the
+                           sandboxes for agent-written code), lab_h5ad.py, lab_subset_step.py
+    skills/                sc-design-lab (design), sc-build-lab (Python steps), nf-build-lab (Nextflow)
+bench/                     benchmarks: data staging, bench loops, baselines without agents, scorers;
+                           bench/lab/ for the lab (designs, builds, judges, sandbox escape tests)
 docs/                      this documentation; docs/history/ holds the development record
 spikes/                    the first feasibility experiments (frozen)
 ```
@@ -317,10 +347,12 @@ are often read-only in jobs.
 ## Tests
 
 ```bash
-python3 geth/tests/test_geth_checks.py -v      # the gates: 23 tests, under a second, no site needed
+python3 geth/tests/test_geth_checks.py -v      # the gates: 40 tests, under a second, no site needed
 python3 geth/tests/test_collect_results.py -v  # result summaries and the report check
-nextflow lint geth/main.nf geth/nextflow.config
-bash -n geth/geth geth/bin/*.sh bench/*.sh
+python3 geth/tests/test_lab_build.py -v        # the lab's bookkeeping (arms B and C) and the shell quoting
+nextflow lint geth/main.nf geth/lab/main.nf
+for f in geth/geth geth/lab/lab.sh geth/bin/*.sh geth/lab/bin/*.sh bench/*.sh bench/lab/*.sh; do bash -n "$f"; done
+geth doctor                                    # with a site: also probes the agent sandbox
 ```
 
 The unit tests replay real failures: the smaller model's design changes, an edited plan after approval,
@@ -364,6 +396,9 @@ downstream analysis. It is **not for real analyses**. It is kept apart from Geth
 - its file tools only reach the benchmark folders (`GETH_LAB_DATA`, by default `$GETH_DATA_ROOT/testdata`),
   so the truth used for scoring (`$GETH_WORK_ROOT/lab_truth/`) stays out of reach
 - runs go to `$GETH_RUNS_DIR/lab/`, and every file it writes is marked EXPERIMENTAL
+
+`geth lab list` shows every lab run, its arm and its state; `geth lab show <name>` prints a design or a
+build.
 
 Arm A (`geth lab design`) asks a designer agent for a structured design and runs nothing:
 - **steps:** nine required steps, each written as `step | method | tool | key parameters | why`
@@ -412,6 +447,10 @@ baseline: 86% agreement with the published cell types, and the interferon respon
 - PBMC: populations found and their canonical markers
 
 `bench/lab/bench_build.sh` runs the benchmark.
+
+`geth lab judge <name> <design run> <design run> ...` (phase 11.5) gives several designs of the same request,
+labelled A, B, C, to a judge agent. The judge checks them against the data and writes the best one, with the
+same format and check. `bench/lab/bench_judge.sh` scores it against its inputs.
 
 Arm C (`geth lab build-c <design run> <name>`) has the engineer write the whole pipeline: `main.nf` and
 Python scripts in `bin/`. Its tools:
@@ -481,9 +520,11 @@ driver slot. The run folder's `.agent_home` records that the driver was sandboxe
 - One organism and one experiment per plan.
 - Only STAR indexes can be registered for reuse so far (`geth/references/register_star_index.sh`); other
   aligners' indexes (Salmon, Bowtie2, BWA, Bismark...) are still built by each run.
-- sarek, taxprofiler and mag wait for their databases to be added to the catalogue.
+- sarek is tested on livestock germline calling only (no GATK bundle for human, no somatic calling yet);
+  mag without GTDB-Tk and CheckM2 databases; taxprofiler with Kraken2 and Bracken, not MetaPhlAn.
 - The single-cell analyst is lenient: in the benchmark it answered every flag but never chose to
   revise a design.
 - The agent API is a preview, so expect changes with new Nextflow releases.
-- Writing new pipelines ("agentic pipeline development") is out of scope until planning and running
-  are reliable across more pipelines.
+- Agent-written analyses and pipelines exist only in the experimental lab (phase 11), on benchmark data.
+  `geth plan` and `geth run` use the pinned, vetted pipelines and toolbox only.
+- In the agent sandbox, pulling a pipeline image that is not yet cached is untested.

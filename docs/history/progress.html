@@ -148,14 +148,14 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill ok">v1.7.0 released</span>
+    <span class="pill ok">v1.8.0 released</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (13 pinned pipelines, from RNA-seq to metagenomics) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model. An experimental lab tests agents that design and write analyses themselves.</p>
   <div class="meta">
     <span>Updated 2026-10-18</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>13 nf-core pipelines + a single-cell toolbox</span>
-    <span>repo sguizard/Geth · release v1.7.0</span>
+    <span>repo sguizard/Geth · release v1.8.0</span>
   </div>
 </header>
 
@@ -308,10 +308,10 @@ a { color: var(--accent); }
         </ul>
       </div>
     </li>
-    <li class="phase now">
+    <li class="phase done">
       <div class="node"><span class="dot">11</span></div>
       <div class="phase-body">
-        <div class="phase-head"><h3>Agents write analyses</h3><span class="pill warn">experimental</span></div>
+        <div class="phase-head"><h3>Agents write analyses</h3><span class="pill ok">done (experimental)</span></div>
         <p>Not for real analyses. Can a small team of Qwen agents (designer, engineer, reviewer, analyst) design a coherent single-cell downstream analysis and build it as a Nextflow pipeline? Tested on PBMC 1k v3 and Kang 2018 (8 donors, control vs IFN-β, published cell types) with scores fixed in advance.</p>
         <ul class="check">
           <li class="done">11.0 Lab mode: <code>geth lab design | show | list</code>, benchmark data only, EXPERIMENTAL banner. The sandbox for agent-written code comes with arm B</li>
@@ -319,8 +319,8 @@ a { color: var(--accent); }
           <li class="done">11.2 Arm A, design only. With the best-practice skill: 18.2/20 on Kang, 11.8/12 on PBMC (6 designs each): pseudobulk per cell type paired by donor, demuxlet singlets, Harmony across conditions, the expected interferon genes. Without it: 15.3/20 and 10.7/12; 2 of 3 Kang designs test with MAST and a donor random effect, none notices the missing mitochondrial reads. Both arms annotate with CellTypist alone, without checking markers. Harness bugs found and fixed on the way: the no-skill flag was ignored (Nextflow passes "false" as text), a file tool crashed on a misspelt path</li>
           <li class="done">11.3 Arm B (go given 2026-10-17): an engineer agent writes and tests step scripts on a subset in a sandbox (no network, no host files, no keys), a reviewer agent checks them, Geth writes the Nextflow and runs it on the full data. With the coding skill 8 of 9 builds deliverable, matching a hand-written reference (Kang: 82–86% of cells labelled as published, the interferon response in monocytes and nearly every cell type; PBMC: 5–7 populations with their markers); without it 2 of 6. The reviewer flagged every defect the scores revealed. Harness faults found on the way and fixed: verdicts leaking from the structured answer, an ambiguous results contract, retries at the same memory</li>
           <li class="done">11.4 Arm C (go given 2026-10-18): the engineer writes the whole Nextflow pipeline (main.nf + Python scripts); because a Nextflow script runs code in its driver, driver and tasks run together in the sandbox (Groovy escape test passed on node1q01 and a worker node). 6 of 6 builds deliverable once the image had what the designs need (scikit-image for Scrublet, scikit-misc for seurat_v3): Kang 83–86% of cells labelled as published, the interferon response in every cell type tested; PBMC 5–6 populations with their markers. Every first main.nf passed lint</li>
-          <li>11.5 Single agent vs team vs 3 designs + judge</li>
-          <li>11.6 Verdict</li>
+          <li class="done">11.5 One agent, a team or a crowd? A lone engineer would have shipped 6 of 12 builds correct (3 with a defect that changes the results, 3 off-design); with the reviewer 11 of 12 were deliverable and the broken one was refused. Three designs plus a judge match the best design but never beat it (17 vs 18, 19 vs 19, 12 vs 12 twice); a judge lifts weak no-skill designs (Kang 16 → 18) only by bringing its own skill, as a single skilled designer does</li>
+          <li class="done">11.6 Verdict: with skills, Qwen 3.5 designs coherent analyses and builds them correctly as step scripts or as a Nextflow pipeline (14 of 15 builds deliverable), as long as a reviewer agent checks them; without skills it slips into weaker methods. Teams, not swarms: designer, engineer, reviewer. The lab stays experimental; production keeps the vetted pipelines and toolbox</li>
         </ul>
       </div>
     </li>
@@ -590,6 +590,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-18">2026-10-18</time><span>Release v1.6.0: 10 more pipelines validated with agents on test deliveries, index reuse, fish support, driver slots, the experimental lab (arms A and B).</span></li>
     <li><time datetime="2026-10-18">2026-10-18</time><span>Go for arm C. Phase 12: the agents stay on node1q01 with their drivers in a container; no key file.</span></li>
     <li><time datetime="2026-10-18">2026-10-18</time><span>Release v1.7.0: agents' drivers in a container (on by default on Eddie), arm C, the lab image with scikit-image and scikit-misc.</span></li>
+    <li><time datetime="2026-10-18">2026-10-18</time><span>Phase 11 closed: teams, not swarms (designer, engineer, reviewer); the lab stays experimental. Paid frontier models only with you, never in an unattended run.</span></li>
   </ul>
 </section>
 
