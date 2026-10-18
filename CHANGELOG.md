@@ -2,7 +2,7 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
-## 1.6.0 (unreleased)
+## 1.6.0 (2026-10-18)
 
 - **Planner benchmark on realistic deliveries** for isoseq, ampliseq, chipseq, atacseq, methylseq, nanoseq
   and eager (`bench/stage_deliveries.sh`, `bench/bench_plan.sh`, `bench/bench_run.sh`): 3/3 plans fully
