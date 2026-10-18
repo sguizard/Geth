@@ -316,6 +316,44 @@ defect the scores revealed, from a missing donor term to a mitochondrial lookup 
 and it approved no build whose results scored wrong. Without the skill the code is weaker and the engineer often cannot fix what the
 reviewer finds (2 of 6). Arm C (agents writing the Nextflow themselves) waits for a go.
 
+## Geth lab, arm C: agents write the Nextflow pipeline too (experimental, version 1.7)
+
+`geth lab build-c` has the engineer write the whole pipeline: `main.nf` and Python scripts in `bin/`.
+It tests the pipeline on the subset, the reviewer reads it, and Geth runs the frozen project on the full data.
+A Nextflow script is code that runs in its driver, so an agent-written pipeline never runs as a normal driver:
+- **Driver and tasks run inside the sandbox** (`geth/lab/bin/lab_nf_sandbox.sh`), as one SGE job.
+- **Nothing gets out:** no network, no host files, no keys, no scheduler. Java and Nextflow are bound in
+  read-only; the local executor and Geth's config apply last (no containers, no conda).
+- **Escape test:** a Groovy escape test run by the driver itself passed on node1q01 and on a worker node. It
+  tried Java networking, host folders, environment keys, writes outside its folder, `qsub` and links
+  (`bench/lab/sandbox_test.sh --nextflow`).
+
+The engineer has both skills (`sc-build-lab`, `nf-build-lab`). A hand-written reference project through the
+same path labels 90.9% of the Kang cells as published and finds the interferon response in 7/7 cell types.
+That is the same code as arm B's reference, which scored 86.3%; clustering and integration vary between runs.
+
+| Dataset | Design | Review | Scripts | Failed subset tests | Result | Time |
+|---|---|---|---|---|---|---|
+| Kang | 1 | approve (round 1) | 5 | 0 | 86.0% of cells right; response in 5/5 cell types | 27 min |
+| Kang | 2 | approve (round 1) | 6 | 0 | 86.1%; 5/5 | 8 min |
+| Kang | 3 | approve (round 1) | 9 | 2 | 83.0%; 7/7 | 34 min |
+| PBMC | 1 | approve (round 1) | 8 | 4 | 5 populations, markers 3/4, 96.1% of cells kept | 23 min |
+| PBMC | 2 | approve (round 2) | 9 | 4 | 6 populations, markers 4/5, 77.9% kept | 18 min |
+| PBMC | 3 | approve (round 2) | 10 | 9 | 5 populations, markers 4/4, 77.9% kept | 27 min |
+
+All six were deliverable. The engineer's first `main.nf` passed lint every time. Every Kang pipeline used
+pseudobulk sums of raw counts with `~ donor + condition`.
+
+The PBMC rows are a second run: the first three PBMC builds were not approved, because of the image. scanpy's
+Scrublet with its automatic threshold needs scikit-image, so the doublet steps failed silently or were dropped.
+`seurat_v3` variable genes, which a design asked for, need scikit-misc. The reviewer flagged both, and a real
+QC bug too: `|` where the filter needed `&`. The image now has both packages, and the coding skill says so,
+for these reruns.
+
+**Conclusion:** with its skills, Qwen 3.5 writes a working, correct Nextflow pipeline from a checked design, as
+reliably as it writes arm B's step scripts. The reviewer stays the safeguard. The image must hold what
+best-practice designs ask for: a missing package turned into silent failures, not errors.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or
