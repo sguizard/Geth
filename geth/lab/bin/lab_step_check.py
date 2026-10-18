@@ -21,7 +21,7 @@ FORBIDDEN_ATTRS = {"system", "popen", "spawnl", "spawnv", "execv", "execl", "for
                    "chown", "symlink", "remove", "unlink", "rmdir", "removedirs", "putenv"}
 
 
-def check(path):
+def check(path, need_argv=True):
     source = open(path).read()
     try:
         tree = ast.parse(source, filename=path)
@@ -42,7 +42,7 @@ def check(path):
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/") \
                 and len(node.value) > 1 and not node.value.startswith("/tmp"):
             problems.append(f"line {node.lineno}: absolute path '{node.value[:60]}': read argv[1] and ./models, write in the working folder")
-    if "sys.argv" not in source:
+    if need_argv and "sys.argv" not in source:
         problems.append("the step must read its input from sys.argv[1] and write its output AnnData to sys.argv[2]")
     return problems
 
