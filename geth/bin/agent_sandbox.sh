@@ -30,17 +30,19 @@ real() { readlink -f "$1"; }
 java_home=$(real "${JAVA_HOME:-$(dirname "$(dirname "$(real "$(command -v java)")")")}")
 launcher=$(real "$(command -v nextflow)")
 mkdir -p "$run_dir/.agent_home"
-binds=(-B "$(real "$run_dir")" -B "$(real "$NXF_HOME")"
-       -B "$GETH_HOME:$GETH_HOME:ro" -B "$java_home:$java_home:ro" -B "$launcher:$launcher:ro")
+# Each folder is mounted at the path Geth and the settings use (a symbolic link such as /exports/applications
+# resolved for the source only): mounted at its resolved path, it would not be found under the path in PATH.
+binds=(-B "$(real "$run_dir"):$run_dir" -B "$(real "$NXF_HOME"):$NXF_HOME"
+       -B "$(real "$GETH_HOME"):$GETH_HOME:ro" -B "$java_home:$java_home:ro" -B "$launcher:$launcher:ro")
 IFS=: read -r -a rw_extra <<< "${GETH_AGENT_SANDBOX_RW:-}"
-for d in "${rw_extra[@]}"; do [ -n "$d" ] && [ -d "$d" ] && binds+=(-B "$(real "$d"):$(real "$d")"); done
+for d in "${rw_extra[@]}"; do [ -n "$d" ] && [ -d "$d" ] && binds+=(-B "$(real "$d"):$d"); done
 data_dir=
 prev=
 for a in "$@"; do [ "$prev" = --data_dir ] && data_dir=$a; prev=$a; done
 [ -z "$data_dir" ] && [ -f "$run_dir/data_dir.txt" ] && data_dir=$(cat "$run_dir/data_dir.txt")
 for d in "$data_dir" "$GETH_REFERENCES" "$GETH_WORK_ROOT/geth/containers" "${SGE_ROOT:-}" \
          "${GETH_JAVA17_HOME:-}" "${extra[@]}"; do
-    [ -n "$d" ] && [ -e "$d" ] && binds+=(-B "$(real "$d"):$(real "$d"):ro")
+    [ -n "$d" ] && [ -e "$d" ] && binds+=(-B "$(real "$d"):$d:ro")
 done
 # The scheduler's ports come from the host's /etc/services, which the container does not see.
 qmaster=$(getent services sge_qmaster 2>/dev/null | awk '{split($2, p, "/"); print p[1]}')

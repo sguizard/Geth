@@ -37,7 +37,7 @@ nf() {  # nf <run_dir> <mode> [extra args]
     acquire_slots "$d" "$mode" "$([ "$mode" = run ] && echo 2 || echo 1)"  # a run also starts the pipeline's driver
     local ro=() prev=
     for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done  # a follow-up reads its upstream run
-    sandboxed "$d" "${ro[@]}" -- nextflow run "$GETH_HOME/geth/main.nf" -c "$GETH_HOME/geth/nextflow.config" "${site[@]}" \
+    sandboxed "$d" "${ro[@]}" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/main.nf" -c "$GETH_HOME/geth/nextflow.config" "${site[@]}" \
         --mode "$mode" --run_dir "$d" "$@" \
         -w "$d/geth_work" -with-agent-trace -with-trace "$d/geth_trace_$mode.txt" -ansi-log false \
         > "$d/geth_$mode.log" 2>&1
