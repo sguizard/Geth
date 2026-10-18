@@ -354,6 +354,64 @@ for these reruns.
 reliably as it writes arm B's step scripts. The reviewer stays the safeguard. The image must hold what
 best-practice designs ask for: a missing package turned into silent failures, not errors.
 
+## Geth lab, 11.5: one agent, a team, or a crowd? (experimental)
+
+**A single engineer against an engineer with a reviewer.** In every build, the reviewer's first verdict was
+given on exactly the code a lone engineer would have shipped. Across the 15 builds of the final rounds, whose
+verdicts came through the review tool:
+
+| | Lone engineer (its first code ships) | Engineer and reviewer |
+|---|---|---|
+| With the skills, 12 builds | 6 correct as written; 3 with a defect that changes the results (the DE summed the wrong cells; mitochondrial filtering silently off twice, the genes looked up by Ensembl ID); 3 that deviate from the design (30 principal components for 50; seurat for seurat_v3; markers on normalised values) | 11 deliverable; the broken DE was refused, not shipped |
+| Without the coding skill, 3 builds | 1 correct; 2 with empty or meaningless DE | 2 deliverable; 1 refused |
+
+No approved build scored wrong. The reviewer roughly doubles the share of correct analyses, and stops the
+rest.
+
+**Three designs and a judge.** `geth lab judge` gives three designs of the same request, labelled A, B, C, to
+a judge agent with the design skill. The judge checks them against the data and writes the best one.
+
+| Designs judged | Their scores (mean, best) | Judged design |
+|---|---|---|
+| Kang, with the skill, set 1 | 17.7, 18 | 17/20 |
+| Kang, with the skill, set 2 | 18.7, 19 | 19/20 |
+| Kang, without the skill | 15.3, 16 | 18/20 |
+| PBMC, with the skill, set 1 | 12.0, 12 | 12/12 |
+| PBMC, with the skill, set 2 | 11.7, 12 | 12/12 |
+| PBMC, without the skill | 10.7, 11 | 11/12 |
+
+On good designs the judge matches the best one but does not beat it. On weak ones it helps (Kang 16 → 18),
+by bringing its own skill: a single designer with the skill does as well (18.2 on average). Three designers
+and a judge cost four times the model calls for no gain. Each judge took 2 minutes, with its driver in the
+agent sandbox.
+
+## Geth lab, 11.6: the verdict
+
+Can Qwen 3.5 agents design and build a coherent single-cell downstream analysis?
+
+- **Design: yes, with a best-practice skill.** Designs then follow current practice: pseudobulk per cell
+  type with donors as replicates, genotype doublet calls, integration across conditions; on average 18.2/20
+  (Kang) and 11.8/12 (PBMC). Without the skill they stay plausible but weaker (15.3/20, 10.7/12).
+- **Code: yes, with a coding skill and a reviewer.** 14 of 15 builds of the final rounds were deliverable
+  across arms B and C, matching a hand-written reference (82–86% of the Kang cells labelled as published,
+  the interferon response in nearly every cell type; PBMC with its populations and markers). Without the
+  coding skill: 2 of 6.
+- **A Nextflow pipeline: yes.** In arm C the engineer wrote the whole pipeline; all six builds were
+  deliverable, and every first `main.nf` passed lint.
+- **Teams, not swarms.** The one extra agent worth its cost is the reviewer. More designers with a judge
+  add nothing over one designer with the skill. For Eddie, keep each analysis to a designer, an engineer
+  and a reviewer, one at a time.
+- **What goes wrong.** Without skills: slips on library APIs, then a quiet fallback to a weaker method.
+  Everywhere: an image missing a package turns into a silent failure, and a subtle indexing bug shows only
+  in its results. The reviewer catches most of it by checking that the results look plausible.
+- **Safety.** Every agent-written script and pipeline ran in a sandbox with no network, no host files and
+  no keys; escape tests passed on the front node and on worker nodes; no incident in any run.
+
+**What this means for Geth.** The lab stays experimental: `geth plan` and `geth run` keep the pinned
+pipelines and the vetted toolbox. The levers are the skills, a reviewer on every agent-written step, and an
+image with what best-practice designs need. A next step could be agents proposing new toolbox steps,
+written and tested in the lab, that a person vets before they join Geth.
+
 ## Agents in a container (phase 12, version 1.7)
 
 With `GETH_AGENT_SANDBOX=yes`, every agent driver runs inside apptainer on the machine Geth runs on: the

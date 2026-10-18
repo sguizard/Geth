@@ -2,6 +2,21 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 1.8.0 (2026-10-18)
+
+- **Phase 11 closed** ([validation](docs/validation.md)). With skills, Qwen 3.5 designs coherent single-cell
+  analyses and builds them correctly, as Python steps or as a Nextflow pipeline: 14 of 15 builds
+  deliverable, as long as a reviewer agent checks them. The lab stays experimental.
+  - **One agent or a team:** a lone engineer would have shipped 6 of 12 builds correct; with a reviewer,
+    11 of 12 were deliverable and the last was refused.
+  - **A crowd:** three designs and a judge match the best design but never beat it (`geth lab judge`,
+    `bench/lab/bench_judge.sh`).
+- **`geth doctor` checks the agent sandbox:** it starts a probe sandbox and checks Java, Nextflow, the
+  scheduler and the key inside it, and that other runs are hidden.
+- A stage stopped by its time limit says so, with the setting to raise.
+- **Documentation brought up to date with the code**, with a "where to start reading" path in the developer
+  guide.
+
 ## 1.7.0 (2026-10-18)
 
 - **Agents in a container (phase 12):** with `GETH_AGENT_SANDBOX=yes`, every agent driver runs in apptainer on
