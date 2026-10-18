@@ -41,6 +41,33 @@ def table(results, name):
     return pd.read_csv(paths[-1], sep="\t") if paths else None
 
 
+def symbols(df, var):
+    """Genes written as Ensembl IDs: translate them through the dataset's own gene table, and say so. The IDs
+    are the var names (with symbols in a column, PBMC) or a column (with symbols as var names, Kang)."""
+    genes = df["gene"].astype(str)
+    if not genes.str.startswith("ENS").mean() > 0.5:
+        return df, False
+    column = next((c for c in ("gene_symbol", "gene_symbols", "feature_name", "gene_name") if c in var), None)
+    if column and genes.isin(var.index).mean() > 0.5:
+        to_symbol = dict(zip(var.index.astype(str), var[column].astype(str)))
+    elif "gene_ids" in var:
+        to_symbol = dict(zip(var["gene_ids"].astype(str), var.index.astype(str)))
+    else:
+        return df, True
+    return df.assign(gene=genes.map(lambda g: to_symbol.get(g, g))), True
+
+
+def by_cell_type(df, obs):
+    """Markers written per cluster instead of per cell type break the contract: map each cluster to the
+    majority cell type of its cells (lenient score), and say so."""
+    values = set(df["cell_type"].astype(str))
+    for col in obs.columns:
+        if col != "cell_type" and values <= set(obs[col].astype(str)):
+            majority = obs.groupby(obs[col].astype(str), observed=True)["cell_type"].agg(lambda x: x.astype(str).mode()[0])
+            return df.assign(cell_type=df["cell_type"].astype(str).map(majority)), col
+    return df, None
+
+
 def score(run, dataset, truth_dir, input_h5ad):
     results = os.path.join(run, "results")
     spec = [l.split("|")[0].strip() for l in read(os.path.join(run, "build_spec.txt")).splitlines() if l.strip()]
@@ -57,13 +84,15 @@ def score(run, dataset, truth_dir, input_h5ad):
          "spec_refusals": sum(1 for l in log if len(l) > 2 and l[1] == "spec" and l[2] == "refused")}
     final = os.path.join(results, f"{len(spec):02d}_{spec[-1]}", "output.h5ad") if spec else ""
     s["pipeline_ran"] = bool(spec) and os.path.isfile(final)
+    s["deliverable"] = s["pipeline_ran"] and s["review"] == "approve"  # a build counts only once the reviewer approved
     if not s["pipeline_ran"]:
         return s
     obs = ad.read_h5ad(final, backed="r").obs
     s["has_cell_type"] = "cell_type" in obs
     if not s["has_cell_type"]:
         return s
-    n_input = ad.read_h5ad(input_h5ad, backed="r").n_obs
+    source = ad.read_h5ad(input_h5ad, backed="r")
+    n_input, var = source.n_obs, source.var
     labels = obs["cell_type"].astype(str).map(broad)
     s["cells_kept_pct"] = round(100 * len(obs) / n_input, 1)
     s["labels"] = int(obs["cell_type"].nunique())
@@ -74,6 +103,7 @@ def score(run, dataset, truth_dir, input_h5ad):
         de = table(results, "de_results.tsv")
         s["de_table"] = de is not None and {"cell_type", "gene", "log2fc", "padj"} <= set(de.columns)
         if s["de_table"]:
+            de, s["de_genes_as_ids"] = symbols(de, var)
             de = de[de["gene"].isin(ISGS)]
             up = de[(de["log2fc"] > 1) & (de["padj"] < 0.05)].groupby("cell_type")["gene"].nunique()
             tested = sorted(de["cell_type"].unique())
@@ -90,12 +120,19 @@ def score(run, dataset, truth_dir, input_h5ad):
         mk = table(results, "markers.tsv")
         s["markers_table"] = mk is not None and {"cell_type", "gene", "log2fc", "padj"} <= set(mk.columns)
         if s["markers_table"]:
+            mk, s["marker_genes_as_ids"] = symbols(mk, var)
+            hits_strict = None
+            if not set(mk["cell_type"].astype(str)) & set(obs["cell_type"].astype(str)):
+                hits_strict = 0
+                mk, s["markers_by_cluster_column"] = by_cell_type(mk, obs)
             mk = mk[(mk["padj"] < 0.05) & (mk["log2fc"] > 0)].copy()
             mk["broad"] = mk["cell_type"].astype(str).map(broad)
             top = mk.sort_values("log2fc", ascending=False).groupby("cell_type").head(50)
             hits = {c: any(g in set(top[top["broad"] == c]["gene"]) for g in genes) for c, genes in PBMC_MARKERS.items()
                     if c in s["populations_found"]}
             s["canonical_markers_found"] = f"{sum(hits.values())}/{len(hits)}"
+            if hits_strict is not None:  # the contract asked for cell types: strictly, nothing matches
+                s["canonical_markers_found_strict"] = f"0/{len(hits)}"
     return s
 
 

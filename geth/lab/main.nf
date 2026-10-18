@@ -240,6 +240,25 @@ process READ_BUILD {
     """
 }
 
+process SUBMIT_REVIEW {
+    executor 'local'
+    scratch false
+
+    input:
+    verdict: String
+    issues: String
+
+    output:
+    report: String = stdout()
+
+    script:
+    def quoted = issues.replace("'", "'\\''")
+    def answer = verdict.replace("'", "'\\''")
+    """
+    printf '%s' '${quoted}' | lab_build.py save-review "${params.run_dir}" "${params.build_round}" '${answer}'
+    """
+}
+
 process SAVE_SPEC {
     executor 'local'
     scratch false
@@ -345,10 +364,14 @@ agent engineer {
     next step to sys.argv[2]; keep the raw counts (layers["counts"]) through every step; write tables (.tsv, tab
     separated) and figures (.png) in the working folder.
     Results contract: the last step's AnnData has obs["cell_type"] (the annotation). The step that compares
-    conditions writes de_results.tsv, and the step that finds markers of clusters or cell types writes
-    markers.tsv; both have at least the columns cell_type, gene, log2fc, padj (one row per gene and cell type).
+    conditions writes de_results.tsv, and the step that finds markers writes markers.tsv; both have at least
+    the columns cell_type, gene, log2fc, padj, one row per gene and group, with gene symbols (the var names,
+    e.g. ISG15) in gene and a cell-type label in cell_type. Markers per cluster also get a cluster column, and
+    cell_type then holds the cluster's annotation.
     Implement the design's steps in its order; one script may hold several small steps; leave out steps whose
-    method is none. Work one step at a time: WRITE_STEP saves a script and checks it; TEST_STEP runs it on a
+    method is none. If the design names a tool the image lacks (an R package such as scDblFinder or edgeR), use
+    the closest available method (e.g. scanpy's scrublet, pydeseq2) and print the substitution. If the var
+    names are IDs (Ensembl), the gene symbols are in a var column such as gene_symbol. Work one step at a time: WRITE_STEP saves a script and checks it; TEST_STEP runs it on a
     3000-cell subset, the first step from "input", every other step from the previous step's name, and shows
     its log and outputs. Fix and test again until the step works and its outputs look right (cells kept,
     columns, plausible values), then go on to the next step. READ_BUILD shows the design, the subset, your
@@ -396,10 +419,14 @@ agent engineer_plain {
     next step to sys.argv[2]; keep the raw counts (layers["counts"]) through every step; write tables (.tsv, tab
     separated) and figures (.png) in the working folder.
     Results contract: the last step's AnnData has obs["cell_type"] (the annotation). The step that compares
-    conditions writes de_results.tsv, and the step that finds markers of clusters or cell types writes
-    markers.tsv; both have at least the columns cell_type, gene, log2fc, padj (one row per gene and cell type).
+    conditions writes de_results.tsv, and the step that finds markers writes markers.tsv; both have at least
+    the columns cell_type, gene, log2fc, padj, one row per gene and group, with gene symbols (the var names,
+    e.g. ISG15) in gene and a cell-type label in cell_type. Markers per cluster also get a cluster column, and
+    cell_type then holds the cluster's annotation.
     Implement the design's steps in its order; one script may hold several small steps; leave out steps whose
-    method is none. Work one step at a time: WRITE_STEP saves a script and checks it; TEST_STEP runs it on a
+    method is none. If the design names a tool the image lacks (an R package such as scDblFinder or edgeR), use
+    the closest available method (e.g. scanpy's scrublet, pydeseq2) and print the substitution. If the var
+    names are IDs (Ensembl), the gene symbols are in a var column such as gene_symbol. Work one step at a time: WRITE_STEP saves a script and checks it; TEST_STEP runs it on a
     3000-cell subset, the first step from "input", every other step from the previous step's name, and shows
     its log and outputs. Fix and test again until the step works and its outputs look right (cells kept,
     columns, plausible values), then go on to the next step. READ_BUILD shows the design, the subset, your
@@ -445,10 +472,14 @@ agent reviewer {
     the design formula); that raw counts are used where the design needs them (pseudobulk sums, DESeq2) and
     normalised values elsewhere; that no step silently drops cells, genes or samples, mixes up conditions or
     reverses a contrast; that the outputs follow the contract (obs cell_type; de_results.tsv or markers.tsv with
-    cell_type, gene, log2fc, padj); and that the subset results look plausible. Answer with verdict "approve" or
-    "revise", and issues: one line per required change, naming the step and what to change (no issues when you
-    approve). Ask only for changes that affect correctness, not for style.'''
-    tools 'nf:module_run:READ_BUILD'
+    cell_type, gene, log2fc, padj, gene symbols, cell-type labels, per-cluster markers with a cluster column);
+    and that the subset results look plausible. Give your verdict with SUBMIT_REVIEW: verdict "approve" or
+    "revise", and issues as one line per required change, naming the step and what to change (no issues when
+    you approve). Ask only for changes that affect correctness, not for style. The image has Python only:
+    accept a printed substitution for an R tool the design names (scrublet for scDblFinder, pydeseq2 for
+    DESeq2 or edgeR) when it does the same job. Then answer with the same
+    verdict and issues.'''
+    tools 'nf:module_run:READ_BUILD', 'nf:module_run:SUBMIT_REVIEW'
     maxIterations 40
 
     input:
@@ -529,7 +560,7 @@ process SAVE_REVIEW {
     def verdict = review.verdict.toLowerCase().contains('approve') && !review.verdict.toLowerCase().contains('revise') ? 'approve' : 'revise'
     def quoted = review.issues.join('\n').replace("'", "'\\''")
     """
-    printf '%s' '${quoted}' | lab_build.py save-review "${params.run_dir}" "${params.build_round}" "${verdict}"
+    printf '%s' '${quoted}' | lab_build.py save-review "${params.run_dir}" "${params.build_round}" "${verdict}" --fallback
     """
 }
 

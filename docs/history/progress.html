@@ -317,7 +317,7 @@ a { color: var(--accent); }
           <li class="done">11.0 Lab mode: <code>geth lab design | show | list</code>, benchmark data only, EXPERIMENTAL banner. The sandbox for agent-written code comes with arm B</li>
           <li class="done">11.1 Design scorer, fixed in advance: Kang 2018 (20 checks), PBMC 1k (12 checks); the answers kept out of the agents' reach. Execution, biology and cost scorers come with arm B</li>
           <li class="done">11.2 Arm A, design only. With the best-practice skill: 18.2/20 on Kang, 11.8/12 on PBMC (6 designs each): pseudobulk per cell type paired by donor, demuxlet singlets, Harmony across conditions, the expected interferon genes. Without it: 15.3/20 and 10.7/12; 2 of 3 Kang designs test with MAST and a donor random effect, none notices the missing mitochondrial reads. Both arms annotate with CellTypist alone, without checking markers. Harness bugs found and fixed on the way: the no-skill flag was ignored (Nextflow passes "false" as text), a file tool crashed on a misspelt path</li>
-          <li class="doing">11.3 Arm B (go given 2026-10-17): an engineer agent writes and tests step scripts on a subset, a reviewer agent checks them, Geth writes the Nextflow and runs it on the full data. Built and tested: a sandbox with no network, no host files and no keys (escape test passed on the front node and a worker node), a pinned image, checks that only tested code runs. Hand-written reference steps through the same path: 86% agreement with the published Kang cell types, interferon response in 8/8 cell types. First agent builds running</li>
+          <li class="done">11.3 Arm B (go given 2026-10-17): an engineer agent writes and tests step scripts on a subset in a sandbox (no network, no host files, no keys), a reviewer agent checks them, Geth writes the Nextflow and runs it on the full data. With the coding skill 8 of 9 builds deliverable, matching a hand-written reference (Kang: 82–86% of cells labelled as published, the interferon response in monocytes and nearly every cell type; PBMC: 5–7 populations with their markers); without it 2 of 6. The reviewer flagged every defect the scores revealed. Harness faults found on the way and fixed: verdicts leaking from the structured answer, an ambiguous results contract, retries at the same memory</li>
           <li>11.4 Arm C: agents write the Nextflow themselves (stretch)</li>
           <li>11.5 Single agent vs team vs 3 designs + judge</li>
           <li>11.6 Verdict</li>
@@ -488,17 +488,18 @@ a { color: var(--accent); }
     </table>
   </div>
 
-  <h3>Geth lab, arm B: agents write the analysis code (experimental, benchmark running)</h3>
+  <h3>Geth lab, arm B: agents write the analysis code (experimental)</h3>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Build of a Kang design</th><th>Steps</th><th>Subset tests failed</th><th>Review</th><th>Cell types vs published labels</th><th>Cell types with the interferon response</th></tr></thead>
+      <thead><tr><th>Engineer</th><th>Deliverable builds (reviewer approved)</th><th>Failed subset tests per build</th><th>Kang: cell types right</th><th>Kang: cell types with the interferon response</th><th>PBMC: populations, canonical markers</th></tr></thead>
       <tbody>
-        <tr><td>Reference steps written by hand</td><td class="n">3</td><td class="n">0</td><td>—</td><td class="n">86.3%</td><td class="n">8/8</td></tr>
-        <tr><td>First agent build (engineer with the coding skill)</td><td class="n">8</td><td class="n">0</td><td><span class="pill ok">approved</span></td><td class="n">86.0%</td><td class="n">6/7</td></tr>
+        <tr><td>Hand-written reference</td><td class="n">—</td><td class="n">0</td><td class="n">86.3%</td><td class="n">8/8</td><td>—</td></tr>
+        <tr><td>With the coding skill</td><td class="n">8 of 9 (Kang 5/6, PBMC 3/3)</td><td class="n">1 (Kang)</td><td class="n">81.7–86.1%</td><td class="n">6/7 to 8/8</td><td>5–7 populations, 3/4 to 6/6 markers</td></tr>
+        <tr><td>Without it</td><td class="n">2 of 6 (Kang)</td><td class="n">12 (Kang)</td><td class="n">81.7–82.0%</td><td class="n">7/8, 13/16</td><td>not run</td></tr>
       </tbody>
     </table>
   </div>
-  <p>Every agent-written step ran in the sandbox: no network, no host files, no keys. The benchmark compares the engineer with and without its coding skill on the same designs.</p>
+  <p>Deliverable builds match the hand-written reference. Without the skill, the engineer slips on library APIs and falls back to weaker methods (a DESeq2 model without the donor, a hand-written t-test, a test on 2,000 genes only). The reviewer flagged every defect the scores revealed and approved no build whose results scored wrong; one build with the skill was rightly refused (its pseudobulk summed the wrong cells). Every agent-written step ran in the sandbox: no network, no host files, no keys.</p>
 
   <h3>Platform checks</h3>
   <div class="table-wrap">
@@ -583,6 +584,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-17">2026-10-17</time><span>Phase 11 lab approved as experimental, not for real analyses; arms B and C only after the arm A results. Rule recorded: on Eddie agents must eventually run in sandboxes, and node1q01 must stay light (phase 12).</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Go given for arm B (agent-written code, in a sandbox). Arm C waits for arm B's results.</span></li>
     <li><time datetime="2026-10-17">2026-10-17</time><span>Phase 8 done: all 10 added pipelines run end to end with agents. fish support added (<code>env.fish</code>, tab completion).</span></li>
+    <li><time datetime="2026-10-18">2026-10-18</time><span>Arm B done: with the coding skill, agents build correct analyses in 8 of 9 cases; the reviewer is what makes them trustworthy. Arm C waits for a go.</span></li>
   </ul>
 </section>
 

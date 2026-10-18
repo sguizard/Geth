@@ -15,6 +15,7 @@ Agent text only reaches this script on stdin or as names checked against NAME, s
 commands that run it. Every command prints its answer and exits 0, like every Geth tool.
 """
 import hashlib
+import csv
 import json
 import os
 import re
@@ -161,10 +162,23 @@ def check_spec(run_dir, text):
         found = [t for t in tables if os.path.isfile(t)]
         if not found:
             problems.append("no step wrote de_results.tsv or markers.tsv")
+        genes_file = os.path.join(run_dir, "subset", "genes.txt")
+        known = set(open(genes_file).read().split()) if os.path.isfile(genes_file) else None
         for t in found:
-            header = set(open(t).readline().rstrip("\n").split("\t"))
+            with open(t) as fh:
+                table_rows = list(csv.DictReader(fh, delimiter="\t"))
+            header = set(table_rows[0].keys()) if table_rows else set(open(t).readline().rstrip("\n").split("\t"))
+            name = os.path.relpath(t, run_dir)
             if not RESULT_COLUMNS <= header:
-                problems.append(f"{os.path.relpath(t, run_dir)} lacks the columns {', '.join(sorted(RESULT_COLUMNS - header))} (tab-separated)")
+                problems.append(f"{name} lacks the columns {', '.join(sorted(RESULT_COLUMNS - header))} (tab-separated)")
+                continue
+            genes = [r["gene"] for r in table_rows[:2000]]
+            if known is not None and genes and sum(g in known for g in genes) < 0.5 * len(genes):
+                problems.append(f"{name}: 'gene' must hold gene symbols, the var names (e.g. {sorted(known)[0]}); found e.g. {genes[0]}")
+            labels = {r["cell_type"] for r in table_rows}
+            if labels and all(re.fullmatch(r"\d+", l or "") for l in labels):
+                problems.append(f"{name}: 'cell_type' holds numbers (cluster IDs?): put the cell-type label in cell_type "
+                                "and the cluster in a 'cluster' column")
     if problems:
         log(run_dir, "spec", "refused", len(problems))
         return print(f"SPEC CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems))
@@ -214,15 +228,23 @@ def read(run_dir, what):
           f"(text files: {', '.join(TEXT_TYPES)})")
 
 
-def save_review(run_dir, round_, verdict, issues):
+def save_review(run_dir, round_, verdict, issues, fallback=False):
+    """The reviewer submits its verdict with SUBMIT_REVIEW; the final structured answer is only a fallback,
+    because turning a long answer into a record can leak the model's own commentary into the issues."""
+    path = os.path.join(run_dir, f"review_{round_}.txt")
+    if fallback and os.path.isfile(path):
+        log(run_dir, "review-record", round_, "ignored (submitted by tool)")
+        return print("Review already submitted with SUBMIT_REVIEW:\n" + open(path).read())
     verdict = verdict.strip().lower()
+    if not fallback and verdict not in ("approve", "revise"):
+        return print("REFUSED: the verdict is 'approve' or 'revise'")
     verdict = verdict if verdict in ("approve", "revise") else "revise"
-    lines = [l.strip() for l in issues.splitlines() if l.strip()]
+    lines = [l.strip().lstrip("-* ").strip() for l in issues.splitlines() if l.strip()]
     if verdict == "revise" and not lines:
         lines = ["(the reviewer asked for changes without naming them)"]
-    with open(os.path.join(run_dir, f"review_{round_}.txt"), "w") as fh:
+    with open(path, "w") as fh:
         fh.write(f"VERDICT: {verdict}\n" + "".join(f"- {l}\n" for l in lines))
-    log(run_dir, "review", round_, verdict, len(lines))
+    log(run_dir, "review", round_, verdict, len(lines), "record" if fallback else "tool")
     print(f"VERDICT: {verdict} ({len(lines)} issue(s))")
 
 
@@ -243,11 +265,17 @@ def render(run_dir, image, models, data_file):
     procs, calls = [], []
     for i, r in enumerate(rows, start=1):
         proc = f"S{i:02d}_{r['step']}"
+        # a step killed for memory or time (exit 137, 140, 143) is retried twice with twice, then four times
+        # the resources (at most 128 GB and 8 h), as nf-core pipelines do
+        mem = [min(r["memory"] * k, 128) for k in (1, 2, 4)]
+        mins = [min(r["minutes"] * k, 480) for k in (1, 2, 4)]
         procs.append(f"""process {proc} {{
     tag '{r['step']}'
     cpus {r['cpus']}
-    memory '{r['memory']} GB'
-    time '{r['minutes'] + 15}m'
+    memory {{ ['{mem[0]} GB', '{mem[1]} GB', '{mem[2]} GB'][task.attempt - 1] }}
+    time {{ ['{mins[0] + 15}m', '{mins[1] + 15}m', '{mins[2] + 15}m'][task.attempt - 1] }}
+    errorStrategy {{ task.exitStatus in [137, 140, 143] && task.attempt < 3 ? 'retry' : 'terminate' }}
+    maxRetries 2
     publishDir "${{params.outdir}}/{i:02d}_{r['step']}", mode: 'copy', saveAs: {{ f -> f.startsWith('out/') ? f.substring(4) : null }}
 
     input:
@@ -259,7 +287,7 @@ def render(run_dir, image, models, data_file):
 
     script:
     \"\"\"
-    {sandbox} --strict {image} {os.path.join(pipe, 'steps', r['step'] + '.py')} ${{h5ad}} {models} {r['cpus']} {r['minutes']} out
+    {sandbox} --strict {image} {os.path.join(pipe, 'steps', r['step'] + '.py')} ${{h5ad}} {models} {r['cpus']} ${{[{mins[0]}, {mins[1]}, {mins[2]}][task.attempt - 1]}} out
     \"\"\"
 }}
 """)
@@ -286,7 +314,7 @@ if __name__ == "__main__":
     elif cmd == "read":
         read(*args)
     elif cmd == "save-review":
-        save_review(args[0], args[1], args[2], stdin_text())
+        save_review(args[0], args[1], args[2], stdin_text(), fallback="--fallback" in args[3:])
     elif cmd == "render":
         render(*args)
     else:
