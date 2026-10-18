@@ -34,6 +34,20 @@ mkdir -p "$run_dir/.agent_home"
 # resolved for the source only): mounted at its resolved path, it would not be found under the path in PATH.
 binds=(-B "$(real "$run_dir"):$run_dir" -B "$(real "$NXF_HOME"):$NXF_HOME"
        -B "$(real "$GETH_HOME"):$GETH_HOME:ro" -B "$java_home:$java_home:ro" -B "$launcher:$launcher:ro")
+# A system JDK (e.g. RHEL's OpenJDK) keeps its configuration, certificates and time zones behind absolute links
+# into /etc and /usr/share, and reads the system crypto policy: mount what its links point to, read-only.
+java_links() {
+    local dir=$1 depth=$2 t
+    [ "$depth" -gt 0 ] && [ -d "$dir" ] || return 0
+    find "$dir" -maxdepth 4 -type l -lname '/*' -printf '%l\n' 2>/dev/null | sort -u | while read -r t; do
+        [ -e "$t" ] && echo "$t" && { [ -d "$t" ] && java_links "$(real "$t")" $((depth - 1)); true; }
+    done
+}
+for t in $( { java_links "$java_home" 2; [ -n "${GETH_JAVA17_HOME:-}" ] && java_links "$(real "$GETH_JAVA17_HOME")" 2; } | sort -u); do
+    binds+=(-B "$(real "$t"):$t:ro")
+done
+[ -d /etc/crypto-policies ] && binds+=(-B /etc/crypto-policies:/etc/crypto-policies:ro)
+
 IFS=: read -r -a rw_extra <<< "${GETH_AGENT_SANDBOX_RW:-}"
 for d in "${rw_extra[@]}"; do [ -n "$d" ] && [ -d "$d" ] && binds+=(-B "$(real "$d"):$d"); done
 data_dir=
