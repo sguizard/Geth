@@ -247,6 +247,58 @@ The first round exposed four faults in the lab harness, all fixed:
 pseudoreplication. Without it, the designs remain plausible but statistically weaker. Arms B and C (agents
 writing and running the analysis code, in a sandbox) wait for a go.
 
+## Geth lab, arm B: agents write the analysis code (experimental, version 1.6)
+
+`geth lab build` takes a checked arm A design (with the skill) and has two agents implement it:
+- **the engineer** writes one Python script per step and tests each on a 3,000-cell subset in the sandbox
+- **the reviewer** reads the scripts and their test outputs, and approves or asks for changes (two rounds at most)
+
+Geth then runs the steps on the full data. A build is **deliverable** only if the reviewer's last verdict
+is "approve". The engineer has a coding skill (`sc-build-lab`, arm B1) or none (B0); both build the same
+three Kang designs. Every agent-written step ran in the sandbox: no network, no host files, no keys.
+
+**Kang 2018** (published cell types; the interferon response per cell type). A reference build of
+hand-written steps, through the same path, gives the bar: 86.3% agreement with the published cell types,
+and the response in 8/8 cell types tested.
+
+| Arm | Round | Design | Review | Failed subset tests | Cell types right | Cell types with the response | What went wrong |
+|---|---|---|---|---|---|---|---|
+| B1 | 1 | 1 | approve | 0 | 86.0% | 6/7 | |
+| B1 | 1 | 2 | approve | 1 | 86.1% | 8/8 | |
+| B1 | 1 | 3 | approve | 1 | 81.7% | 6/6 | |
+| B1 | 2 | 1 | **revise** | 1 | 86.0% | 0/7 | pseudobulk summed the wrong cells (positions from a subset, matrix of the whole) |
+| B1 | 2 | 2 | approve | 0 | 85.9% | 8/8 | |
+| B1 | 2 | 3 | approve | 3 | 82.0% | 6/6 | |
+| B0 | 1 | 1 | **revise** | 23 | 76.7% | 26/40 | DESeq2 model without the donor (`~ condition`); genes written as Ensembl IDs |
+| B0 | 1 | 2 | **revise** | 15 | 85.1% | 12/19 | DE limited to the 2,000 variable genes |
+| B0 | 1 | 3 | **revise** | 5 | 82.1% | 1/8 | an unpaired t-test written by hand instead of pyDESeq2 ("a simplified version") |
+| B0 | 2 | 1 | approve | 10 | 81.7% | 13/16 | |
+| B0 | 2 | 2 | **revise** | 15 | 83.0% | 12/16 | DE limited to the 2,000 variable genes |
+| B0 | 2 | 3 | approve | 4 | 82.0% | 7/8 | gave a step 8 GB for 10.4 GB; ran once Geth retried with more memory |
+
+- **With the skill, 5 of 6 builds were deliverable; without it, 2 of 6.** Deliverable builds match the
+  reference: 81.7–86.1% of cells labelled as published, and the response in monocytes and in nearly every
+  cell type tested.
+- **Without the skill, the engineer slips on library APIs, then quietly falls back** to a weaker method:
+  an old pyDESeq2 argument that drops the donor, a hand-written t-test, a gene subset that removes most genes
+  from the test. It failed 12 subset tests per build on average, against 1 with the skill.
+- **The reviewer approved no defective build, and flagged every one**, naming the step and the fix.
+  The engineer then fixed the problem in some builds, but not in these five within two rounds.
+- A build took 16 to 97 minutes from design to full results, SGE queue time included.
+
+The first round exposed faults in the harness, all fixed before round 2:
+- the reviewer's verdict was read from its final structured answer, which leaked commentary ("The model
+  failed to output valid JSON") into the issues and turned approvals into "revise"; it now submits its
+  verdict with a tool
+- the results contract did not say gene symbols, nor how to report markers per cluster
+- the scorer did not translate Ensembl IDs
+
+After round 2, the rendered pipelines retry a step killed for memory or time with twice, then four times,
+the resources; and the agents substitute a Python method for an R tool a design names (the image has no R).
+
+**PBMC 1k** (the expected populations and their markers): round 2 was invalidated by a fault in the
+contract (gene symbols for a matrix whose names are Ensembl IDs); the builds are being rerun.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or
