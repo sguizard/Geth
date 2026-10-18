@@ -73,12 +73,18 @@ another provider's key by accident.
 | `GETH_LAB_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_lab_sc_8ead628d7c7c6607.sif` | The pinned image agent-written code runs in (arms B and C): scanpy 1.11.5, celltypist 1.7.1, pydeseq2 0.5.4, harmonypy 0.0.10, scikit-image, scikit-misc, from Seqera Containers (`oras://community.wave.seqera.io/library/python_scanpy_celltypist_pydeseq2_pruned:8ead628d7c7c6607`). |
 | `GETH_LAB_MODELS` | `$GETH_REFERENCES/celltypist_immune_v2` | CellTypist models copied into each step's sandbox. |
 
-### Agents in a container (phase 12)
+### Agents: container and time limits
+
+A sandboxed driver sees its run's own data folder, not the whole data area. Keep `GETH_DATA_ROOT` a folder
+that holds only deliveries (not the whole `GETH_WORK_ROOT`), and plan each analysis on its own delivery folder.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `GETH_AGENT_SANDBOX` | `no` | `yes` runs every agent driver (`geth plan`, `geth run`, `geth lab`) inside apptainer on the machine Geth runs on. The driver keeps the network (its agents call the model service) and can submit scheduler jobs. It sees, read-write, only its run folder, Nextflow's home and `GETH_AGENT_SANDBOX_RW`; read-only, Geth, this run's data folder, the reference catalogue, Java, Nextflow and the scheduler's client. The API key reaches the agents through the environment, never a command line or a file. |
 | `GETH_AGENT_SANDBOX_RW` | none | `:`-separated folders the drivers may write, e.g. the image cache your Nextflow config uses. |
+| `GETH_AGENT_TIMEOUT` | `2h` | Time limit for a planning, design or review stage (`timeout` syntax: `30m`, `2h`). |
+| `GETH_ENGINEER_TIMEOUT` | `4h` | Time limit for a lab engineer stage. |
+| `GETH_RUN_TIMEOUT` | `72h` | Time limit for `geth run` (the whole pipeline run, retries included). |
 | `GETH_AGENT_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_agent_54cf9ab304820814.sif` | The image the drivers run in: Python 3.12 and the usual command-line tools (`oras://community.wave.seqera.io/library/python_findutils_coreutils_gawk_pruned:54cf9ab304820814`). |
 
 Anything else your institutional profile reads from the environment goes in `site.env` too, for example

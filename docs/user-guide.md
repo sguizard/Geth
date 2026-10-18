@@ -76,6 +76,9 @@ geth plan /path/to/my_data \
   `-`. Each analysis gets its own folder: `$GETH_RUNS_DIR/my_analysis`.
 - Planning takes a few minutes. Nothing runs on your data yet: the planner only lists files and reads
   text.
+- If Geth prints `Waiting for a free slot: 2 Nextflow driver(s) running ...`, other analyses are using the
+  machine's share (your site sets how many may run at once, `GETH_MAX_DRIVERS`). Geth starts by itself as soon
+  as one finishes; you can leave it waiting.
 
 When it is done, Geth prints the plan, which is also what step 3 shows.
 
@@ -142,6 +145,9 @@ geth status my_analysis      # outcome, attempts, report check
 geth list                    # all your analyses and where they stand
 ```
 
+`geth status` also says whether the agents ran in their sandbox (`agents' driver: in the agent sandbox`), on
+sites that use one.
+
 **What happens during the run:**
 
 - The **operator agent** launches the pipeline with the approved plan. The pipeline submits its jobs to
@@ -154,6 +160,9 @@ geth list                    # all your analyses and where they stand
 
 If the run was interrupted, for example because the machine rebooted, run `geth run my_analysis` again.
 It resumes where it stopped.
+
+Each stage has a time limit, so a stuck agent cannot hold the machine forever: 2 hours for planning, 72 hours
+for a run, by default. If a stage hits its limit, Geth says so; your site can raise the limits.
 
 Typical times on a cluster, from approval to report:
 
@@ -234,6 +243,7 @@ The annotation model must match your tissue and species. Available models are li
 ## Managing your analyses
 
 - `geth list` shows every analysis and its state: planned, approved, running, succeeded or failed.
+- `geth version` prints the version of Geth you are using: worth quoting when you report a problem.
 - **To change an analysis that already ran,** plan again under a new name. That keeps the history of
   what was run clear.
 - **Disk space.** The `work/` folder inside a run holds the pipeline's intermediate files. It is large:
@@ -252,10 +262,14 @@ The annotation model must match your tissue and species. Available models are li
 | `... changed after approval` | You (or someone) edited a plan file: review it, then `geth approve` again. |
 | The run failed | `geth status` lists the attempts. `report.md` explains the failure. The error of each attempt is in `attempt_N/error.txt`, and the pipeline's log in `attempt_N/nextflow.log`. |
 | The report says some numbers could not be traced | Check those numbers against the results before using them. |
+| `Waiting for a free slot ...` | Other analyses are running; Geth starts by itself when one finishes. |
+| `... stopped after its time limit ...` | The stage ran longer than your site allows. If it was making progress, ask for a higher limit, then run the same command again: a run resumes. |
 
 ## Good to know
 
 - Geth **never modifies or deletes your data**. It reads your files and writes only in its own runs folder.
 - The agents can read files only inside the data area. They can start only the supported pipelines, at
   their tested versions, and only after your approval.
+- On sites that contain them (Eddie does), the agents run in a container that sees only your analysis, its
+  data and the reference catalogue, and can write only in the analysis folder.
 - Geth uses only the language model(s) your site allows.
