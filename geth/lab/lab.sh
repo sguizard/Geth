@@ -140,7 +140,7 @@ case "$cmd" in
             [ "$verdict" = approve ] && break
         done
         build_state "$d" "full run (review: $verdict)"
-        python3 "$GETH_HOME/geth/lab/bin/lab_build.py" render "$d" "${GETH_LAB_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_lab_sc_f4e5ea0d66d15d6c.sif}" \
+        python3 "$GETH_HOME/geth/lab/bin/lab_build.py" render "$d" "$GETH_LAB_IMAGE" \
             "${GETH_LAB_MODELS:-$GETH_REFERENCES/celltypist_immune_v2}" "${data[0]}" \
             || { build_state "$d" "failed: could not render the pipeline"; exit 1; }
         acquire_slots "$d" pipeline 1

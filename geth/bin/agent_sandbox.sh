@@ -16,12 +16,12 @@ extra=()
 while [ "${1:-}" = --ro ]; do extra+=("$2"); shift 2; done
 [ "${1:-}" = -- ] && shift
 command -v apptainer >/dev/null || { echo "agent_sandbox: apptainer is not available" >&2; exit 1; }
-# The agent image: Python 3.12 and the usual command-line tools, nothing else
+# The agent image (GETH_AGENT_IMAGE, set by env.sh): Python 3.12 and the usual command-line tools, nothing else
 # (oras://community.wave.seqera.io/library/python_findutils_coreutils_gawk_pruned:54cf9ab304820814).
-image=${GETH_AGENT_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_agent_54cf9ab304820814.sif}
+image=$GETH_AGENT_IMAGE
 borrow_find=no
-if [ ! -f "$image" ] && [ -z "${GETH_AGENT_IMAGE:-}" ]; then  # not pulled yet: the lab image, with the host's find
-    image=${GETH_LAB_IMAGE:-$GETH_WORK_ROOT/geth/containers/geth_lab_sc_f4e5ea0d66d15d6c.sif}
+if [ ! -f "$image" ]; then  # not pulled yet: the lab image, with the host's find
+    image=$GETH_LAB_IMAGE
     borrow_find=yes
 fi
 [ -f "$image" ] || { echo "agent_sandbox: no image at $image (GETH_AGENT_IMAGE)" >&2; exit 1; }
