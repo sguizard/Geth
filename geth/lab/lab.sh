@@ -50,7 +50,7 @@ show_build() {
     else
         echo; echo "== spec (step | cpus | memory GB | minutes)"; sed 's/^/  /' "$d/build_spec.txt" 2>/dev/null || echo "  none yet"
     fi
-    for f in "$d"/review_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
+    for f in "$d"/review_[0-9].txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
     for f in "$d"/engineer_notes_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
     if [ -d "$d/results" ]; then
         echo; echo "== results ($d/results)"
