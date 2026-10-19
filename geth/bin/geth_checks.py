@@ -39,8 +39,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMAS = os.path.join(HERE, "..", "schemas")
-OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_version",
-         "config_profile_name")  # set by Geth only
+OWNED = ("input", "outdir", "contrasts", "cellranger_multi_barcodes", "custom_config_base",
+         "custom_config_version", "config_profile_name")  # set by Geth only
 
 # Pipelines Geth runs. "design" = samplesheet columns that define the experiment and may never change
 # after approval (None = every column); "design_params" = parameters that describe the data, frozen the same
@@ -48,8 +48,12 @@ OWNED = ("input", "outdir", "contrasts", "custom_config_base", "custom_config_ve
 REGISTRY = {
     # "star": the STAR version the release uses; a reused star_index must have been built with it.
     "rnaseq": {"revision": "3.27.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b"},
-    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2"), "key": "fastq_1", "star": "2.7.11b",
-                 "design_params": ("protocol",)},
+    # Multiplexed 10x libraries (OCM, CellPlex/CMO, Flex) need Cell Ranger multi and a second sheet that lists
+    # each library's samples by barcode: part of the design, frozen like the samplesheet.
+    "scrnaseq": {"revision": "4.2.0", "design": ("sample", "fastq_1", "fastq_2", "feature_type"), "key": "fastq_1",
+                 "star": "2.7.11b", "design_params": ("protocol", "aligner"),
+                 "second_sheet": {"file": "plan_barcodes.csv", "param": "cellranger_multi_barcodes",
+                                  "what": "the multiplexed samples sheet"}},
     "sarek": {"revision": "3.10.0", "design": ("patient", "sample", "status", "lane", "fastq_1", "fastq_2", "bam", "cram"),
               "key": ("fastq_1", "bam", "cram", "spring_1", "vcf")},
     "isoseq": {"revision": "3.0.1", "design": ("sample", "seq_data", "start_from"), "key": "seq_data",
@@ -82,6 +86,7 @@ REGISTRY = {
               "design": ("Sample_Name", "Library_ID", "Lane", "SeqType", "Strandedness", "UDG_Treatment", "R1", "R2", "BAM")},
     "differentialabundance": {
         "revision": "2.0.0", "design": None, "key": "sample", "downstream": True,
+        "second_sheet": {"file": "plan_contrasts.csv", "param": "contrasts", "what": "the contrasts"},
         "profiles": ("rnaseq", "rnaseq_deseq2_gprofiler2", "rnaseq_deseq2_gsea", "rnaseq_limma"),
     },
     # Geth's own single-cell toolbox (bin/sc_downstream.py): the agents design, the toolbox executes.
@@ -125,7 +130,13 @@ SC_DIAGNOSTIC_TERMS = ("cells kept", "removed", "doublet", "cluster", "smallest"
 # Reference catalogue (genomes, CellTypist models), from the site configuration (env.sh sets it).
 REFERENCES = os.environ.get("GETH_REFERENCES", "").rstrip("/")
 BASE_FILES = ("plan_pipeline.txt", "plan_samplesheet.csv", "plan_params.json")
-PART_FILES = {"contrasts": "plan_contrasts.csv", "profile": "plan_profile.txt", "upstream": "plan_upstream.txt"}
+PART_FILES = {"contrasts": "plan_contrasts.csv", "barcodes": "plan_barcodes.csv", "profile": "plan_profile.txt",
+              "upstream": "plan_upstream.txt"}
+
+
+def sheet2_file(pipeline):
+    """The plan file of a pipeline's second sheet (contrasts, multiplexed samples); internally "contrasts"."""
+    return REGISTRY.get(pipeline, {}).get("second_sheet", {}).get("file", PART_FILES["contrasts"])
 
 
 # ---------------------------------------------------------------- parsing
@@ -928,9 +939,190 @@ def check_plan(pipeline, sheet_text, params_text, contrasts_text=None, profile=N
         problems += check_de(sheet_text, params, contrasts_text, (profile or "").strip(), upstream)
     else:
         problems += check_fastq_sheet(pipeline, sheet_text, params)
-        if (contrasts_text or "").strip():
+        if pipeline == "scrnaseq":
+            problems += check_multiplexing(sheet_text, params, contrasts_text)
+        elif (contrasts_text or "").strip():
             problems.append(f"nf-core/{pipeline} takes no contrasts")
     return problems, params
+
+
+# ---------------------------------------------------------------- multiplexed 10x, and warnings
+
+DATA_ROOT = os.environ.get("GETH_DATA_ROOT", "").rstrip("/")
+# 10x multiplexing: GEM-X On-Chip Multiplexing (OB1-OB4), CellPlex (CMO301...), Flex probe barcodes (BC001...).
+MULTIPLEX_STRONG = re.compile(r"10xOCM|\bOCM\b|on[- ]chip multiplex|cellplex|\bCMO\d{3}\b|cell multiplexing oligo|"
+                              r"fixed rna profiling|probe barcode", re.I)
+MULTIPLEX_TEXT = re.compile(MULTIPLEX_STRONG.pattern + r"|\bOB[1-4]\b|\bBC0\d\d\b|\bflex\b|multiplexed 10x|"
+                            r"multiplexed (?:library|libraries)", re.I)
+CHEMISTRY = re.compile(r"\bv[1-4](?:\.\d)?\b|gem-?x|next ?gem|single cell [35]'|\b[35]' ?v\d|chemistry", re.I)
+GEMX = re.compile(r"gem-?x|\bv4\b|10xOCM|\bOCM\b|on[- ]chip multiplex", re.I)
+BARCODE_COLUMNS = ("sample", "multiplexed_sample_id", "probe_barcode_ids", "cmo_ids", "ocm_ids", "description")
+FEATURE_TYPES = ("gex", "vdj", "ab", "crispr", "cmo")
+
+
+def delivery_texts(rows):
+    """The delivery's own text files (README, sample tables, the facility's report), from the folder that holds
+    the reads up to two levels above it, never above the data area: [(name, text, is_html)]."""
+    paths = [r.get(k) for r in rows for k in ("fastq_1", "fastq_2") if (r.get(k) or "").startswith("/")]
+    if not paths:
+        return []
+    folder = os.path.commonpath([os.path.dirname(p) for p in paths])
+    found, seen = [], set()
+    for _ in range(3):
+        if DATA_ROOT and not (folder + "/").startswith(DATA_ROOT + "/"):
+            break
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            path = os.path.join(folder, name)
+            if path in seen or not os.path.isfile(path) or os.path.getsize(path) > 5_000_000:
+                continue
+            if name.lower().endswith((".txt", ".md", ".csv", ".tsv", ".html", ".htm")) or name.upper().startswith("README"):
+                seen.add(path)
+                text = open(path, errors="replace").read()
+                html = name.lower().endswith((".html", ".htm"))
+                if html:  # reports keep their tables in script data: drop styles and tags only (strong markers)
+                    text = re.sub(r"<style\b.*?</style>", " ", text, flags=re.S | re.I)
+                    text = re.sub(r"<[^>]+>", " ", text)
+                found.append((os.path.relpath(path, DATA_ROOT) if DATA_ROOT else name, text, html))
+        if DATA_ROOT and folder == DATA_ROOT:
+            break
+        folder = os.path.dirname(folder)
+    return found
+
+
+def multiplexing_evidence(texts):
+    hits = []
+    for name, text, html in texts:
+        found = sorted({m.group(0) for m in (MULTIPLEX_STRONG if html else MULTIPLEX_TEXT).finditer(text)})
+        if found:
+            hits.append(f"{name}: {', '.join(found[:4])}")
+    return hits
+
+
+def check_multiplexing(sheet_text, params, barcodes_text):
+    """nf-core/scrnaseq: a library that holds several samples (OCM, CellPlex, Flex) is split into its samples only
+    by Cell Ranger multi, with a barcodes sheet (the plan's second sheet); a plain 10x plan would mix them."""
+    problems = []
+    _, rows = parse_sheet(sheet_text)
+    aligner = params.get("aligner", "simpleaf")
+    evidence = multiplexing_evidence(delivery_texts(rows))
+    barcodes_text = (barcodes_text or "").strip()
+    if aligner != "cellrangermulti":
+        if evidence:
+            problems.append("the delivery describes multiplexed 10x libraries (" + "; ".join(evidence) + "): each "
+                            "library holds several samples, which only Cell Ranger multi separates. Set "
+                            "aligner=cellrangermulti, give each library's FASTQs one sample name with feature_type gex, "
+                            "and list each library's samples in the second sheet (contrasts_lines: sample, "
+                            "multiplexed_sample_id, probe_barcode_ids, cmo_ids, ocm_ids, description)")
+        if barcodes_text:
+            problems.append("a multiplexed-samples sheet is only used with aligner=cellrangermulti")
+        return problems
+    samples = {r.get("sample") for r in rows}
+    for i, r in enumerate(rows, start=2):
+        if r.get("feature_type") not in FEATURE_TYPES:
+            problems.append(f"samplesheet line {i}: Cell Ranger multi needs feature_type, one of {list(FEATURE_TYPES)}")
+    if not any(r.get("feature_type") == "vdj" for r in rows) and params.get("skip_cellrangermulti_vdjref") not in (True, "true"):
+        problems.append("no VDJ data: set skip_cellrangermulti_vdjref=true (the pipeline would build a VDJ reference "
+                        "it does not need, which fails for most species)")
+    if params.get("protocol", "auto") != "auto":
+        problems.append("Cell Ranger detects the 10x chemistry itself: set protocol=auto")
+    if evidence and not barcodes_text:
+        problems.append("the delivery describes multiplexed libraries (" + "; ".join(evidence) + "): list each "
+                        "library's samples in the second sheet (contrasts_lines)")
+    if not barcodes_text:
+        return problems
+    header, brows = parse_sheet(barcodes_text)
+    if header != list(BARCODE_COLUMNS):
+        problems.append(f"multiplexed samples sheet: the header must be {','.join(BARCODE_COLUMNS)} (got {','.join(header)})")
+        return problems
+    seen, kinds = {}, {}
+    for i, b in enumerate(brows, start=2):
+        where = f"multiplexed samples line {i}"
+        if b["sample"] not in samples:
+            problems.append(f"{where}: sample '{b['sample']}' is not a sample of the samplesheet ({', '.join(sorted(samples))})")
+        sid = b["multiplexed_sample_id"]
+        if not sid or re.search(r"\s", sid):
+            problems.append(f"{where}: multiplexed_sample_id must be given, without spaces")
+        elif sid in seen:
+            problems.append(f"{where}: multiplexed_sample_id '{sid}' is already used on line {seen[sid]}")
+        seen[sid] = i
+        if not b["description"]:
+            problems.append(f"{where}: description is required")
+        given = [k for k in ("probe_barcode_ids", "cmo_ids", "ocm_ids") if b[k]]
+        if len(given) != 1:
+            problems.append(f"{where}: give exactly one of probe_barcode_ids, cmo_ids, ocm_ids (got {len(given)})")
+            continue
+        kinds.setdefault(b["sample"], set()).add(given[0])
+        if given[0] == "ocm_ids" and not re.fullmatch(r"OB[1-4](\|OB[1-4])*", b["ocm_ids"]):
+            problems.append(f"{where}: ocm_ids must be OB1, OB2, OB3 or OB4 (got '{b['ocm_ids']}')")
+        if given[0] == "cmo_ids" and not re.fullmatch(r"[A-Za-z0-9_|-]+", b["cmo_ids"]):
+            problems.append(f"{where}: cmo_ids may only hold letters, digits, '_', '-' and '|' (got '{b['cmo_ids']}')")
+    for sample, k in kinds.items():
+        if len(k) > 1:
+            problems.append(f"multiplexed samples: '{sample}' mixes {sorted(k)}; one kind of barcode per library")
+        if "cmo_ids" in k and not any(r.get("sample") == sample and r.get("feature_type") == "cmo" for r in rows):
+            problems.append(f"multiplexed samples: '{sample}' uses CMOs, so its CMO capture FASTQs need a samplesheet row "
+                            "with feature_type cmo")
+        if "probe_barcode_ids" in k and not params.get("gex_frna_probe_set"):
+            problems.append("Flex (probe barcodes) needs the probe set: gex_frna_probe_set")
+    for sample in samples - set(kinds):
+        if evidence:
+            problems.append(f"multiplexed samples: library '{sample}' has no rows: list its samples and barcodes")
+    return problems
+
+
+def sample_entries(texts):
+    """Lines of the delivery's text files that look like a table of samples ("<id>,<value>"): their first column."""
+    entries = []
+    for _, text, html in texts:
+        if html:
+            continue
+        blocks, block = [], []  # runs of consecutive table-like lines
+        for line in text.splitlines() + [""]:
+            m = re.match(r"^\s*([A-Za-z0-9][\w.+-]*)\s*[,\t;]\s*\S", line)
+            if m:
+                block.append((line, m.group(1)))
+            elif block:
+                blocks.append(block)
+                block = []
+        for block in (b for b in blocks if len(b) > 1):  # a table has rows; a lone line is prose
+            # a header line: no digit, above rows that have some ("rat,ocm_barcode" over "rat_1,OB1")
+            if len(block) > 1 and not re.search(r"\d", block[0][0]) and any(re.search(r"\d", l) for l, _ in block[1:]):
+                block = block[1:]
+            entries += [e for _, e in block if e.lower() not in ("sample", "samples", "id", "name", "sample_id", "file", "barcode")]
+    return list(dict.fromkeys(entries))
+
+
+def plan_warnings(pipeline, sheet_text, params, sheet2_text=""):
+    """Things a person should check before approving; they do not block the plan."""
+    if REGISTRY.get(pipeline, {}).get("downstream") or REGISTRY.get(pipeline, {}).get("toolbox"):
+        return []
+    warnings = []
+    header, rows = parse_sheet(sheet_text)
+    texts = delivery_texts(rows)
+    planned = {r.get("sample") for r in rows if r.get("sample")}
+    if pipeline == "scrnaseq" and (sheet2_text or "").strip():
+        _, brows = parse_sheet(sheet2_text)
+        planned = {b.get("multiplexed_sample_id") for b in brows} or planned
+    # Each entry should appear somewhere in the plan (a sample name, a file name, a barcodes row); replicates
+    # and lanes grouped under one sample name are fine, since their files carry the entry's name.
+    plan_text = sheet_text + (sheet2_text or "") + json.dumps(params)
+    entries = sample_entries(texts)
+    missing = [e for e in entries if e not in plan_text]
+    if missing:
+        warnings.append(f"the delivery's text lists {len(entries)} entries that look like samples, and "
+                        f"{len(missing)} of them appear nowhere in the plan ({', '.join(missing[:6])}"
+                        f"{', ...' if len(missing) > 6 else ''}); the plan has {len(planned)} sample(s) "
+                        f"({', '.join(sorted(planned)[:6])}{', ...' if len(planned) > 6 else ''}): check that "
+                        "every sample is accounted for")
+    if pipeline == "scrnaseq" and params.get("aligner", "simpleaf") not in ("cellranger", "cellrangermulti"):
+        protocol = str(params.get("protocol", ""))
+        said = " ".join(t for _, t, _ in texts)
+        if protocol.upper().startswith("10XV") and not CHEMISTRY.search(said):
+            warnings.append(f"the plan sets protocol={protocol}, but the delivery never states the 10x chemistry: check "
+                            "it (GEM-X kits are 10XV4), or use Cell Ranger, which detects it (protocol=auto)")
+        elif protocol.upper() == "10XV3" and GEMX.search(said):
+            warnings.append("the delivery mentions GEM-X chemistry, but the plan sets protocol=10XV3: GEM-X 3' is 10XV4")
+    return warnings
 
 
 # ---------------------------------------------------------------- plan files, approval and the plan-diff gate
@@ -970,8 +1162,9 @@ def approved_plan(run_dir):
     except ValueError as e:
         raise ValueError(f"the approved plan_params.json is not valid ({e}); a person must fix the plan and "
                          f"approve it again. Stop and report this.") from None
-    return {"pipeline": pipeline_name(read("plan_pipeline.txt")), "sheet": read("plan_samplesheet.csv"),
-            "params": params, "contrasts": read(PART_FILES["contrasts"]), "profile": read(PART_FILES["profile"]).strip()}
+    pipeline = pipeline_name(read("plan_pipeline.txt"))
+    return {"pipeline": pipeline, "sheet": read("plan_samplesheet.csv"),
+            "params": params, "contrasts": read(sheet2_file(pipeline)), "profile": read(PART_FILES["profile"]).strip()}
 
 
 def load_state(run_dir, plan):
@@ -1013,13 +1206,18 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
                 for col in (cols or sorted(set(a) | set(b))):
                     if b.get(col, "") != a.get(col, ""):
                         problems.append(f"design change: {col} of {name} changed from '{b.get(col, '')}' to '{a.get(col, '')}'")
-    if REGISTRY[pipeline].get("downstream"):
+    sheet2 = REGISTRY[pipeline].get("second_sheet")
+    if sheet2:  # contrasts, multiplexed samples: part of the design
         if normalised_csv(contrasts_text) != normalised_csv(plan["contrasts"]):
-            problems.append("design change: the contrasts differ from the approved plan")
+            problems.append(f"design change: {sheet2['what']} differ{'' if sheet2['what'].endswith('s') else 's'} "
+                            "from the approved plan")
+    elif (contrasts_text or "").strip():
+        problems.append(f"nf-core/{pipeline} takes no contrasts: pass an empty string")
+    if REGISTRY[pipeline].get("downstream"):
         if (profile or "").strip() != plan["profile"]:
             problems.append(f"design change: analysis profile must stay '{plan['profile']}' (got '{profile}')")
-    elif (profile or "").strip() or (contrasts_text or "").strip():
-        problems.append(f"nf-core/{pipeline} takes no analysis profile or contrasts: pass empty strings")
+    elif (profile or "").strip():
+        problems.append(f"nf-core/{pipeline} takes no analysis profile: pass an empty string")
     for key in REGISTRY[pipeline].get("design_params", ()):
         if params.get(key) != plan["params"].get(key):
             problems.append(f"design change: param '{key}' describes the data and must stay "
@@ -1147,8 +1345,9 @@ def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_t
     checked = os.path.join(run_dir, ".checked")
     if problems and os.path.isdir(checked):
         read = lambda f: read_text(os.path.join(checked, f))
-        c = {"pipeline": pipeline_name(read("plan_pipeline.txt")), "sheet": read("plan_samplesheet.csv"),
-             "params": read("plan_params.json"), "contrasts": read(PART_FILES["contrasts"]),
+        c_pipeline = pipeline_name(read("plan_pipeline.txt"))
+        c = {"pipeline": c_pipeline, "sheet": read("plan_samplesheet.csv"),
+             "params": read("plan_params.json"), "contrasts": read(sheet2_file(c_pipeline)),
              "profile": read(PART_FILES["profile"]).strip()}
         c_problems, c_parsed = check_plan(c["pipeline"], c["sheet"], c["params"], c["contrasts"], c["profile"], upstream)
         if not c_problems:
@@ -1162,11 +1361,15 @@ def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_t
     write("plan_params.json", json.dumps(params, indent=2) if params or not problems else params_text)
     write("plan_rationale.txt", rationale.strip() + note)
     if REGISTRY.get(pipeline, {}).get("downstream"):
-        write(PART_FILES["contrasts"], contrasts_text or "")
+        write(sheet2_file(pipeline), contrasts_text or "")
         write(PART_FILES["profile"], profile or "")
         if upstream:
             write(PART_FILES["upstream"], upstream)
+    elif (contrasts_text or "").strip() and "second_sheet" in REGISTRY.get(pipeline, {}):
+        write(sheet2_file(pipeline), contrasts_text)
     result = "PLAN CHECK: OK" if not problems else f"PLAN CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems)
+    if not problems and isinstance(params, dict):
+        result += "".join(f"\nWARNING: {w}" for w in plan_warnings(pipeline, sheet_text, params, contrasts_text))
     write("plan_check.txt", result + ("\n(checked version used)" if note else ""))
     return result + ("\n(checked version used)" if note else "")
 
@@ -1177,7 +1380,7 @@ def save_checked(run_dir, pipeline, sheet_text, params, contrasts_text="", profi
     open(os.path.join(checked, "plan_pipeline.txt"), "w").write(pipeline + "\n")
     open(os.path.join(checked, "plan_samplesheet.csv"), "w").write(normalise_sheet(sheet_text))
     json.dump(params, open(os.path.join(checked, "plan_params.json"), "w"), indent=2)
-    open(os.path.join(checked, PART_FILES["contrasts"]), "w").write((contrasts_text or "").strip() + "\n")
+    open(os.path.join(checked, sheet2_file(pipeline)), "w").write((contrasts_text or "").strip() + "\n")
     open(os.path.join(checked, PART_FILES["profile"]), "w").write((profile or "").strip() + "\n")
 
 
@@ -1237,6 +1440,13 @@ def main(argv):
         if save_dir:
             save_checked(save_dir, pipeline, sheet_text, params, extra["contrasts_text"], extra["profile"])
         print("PLAN CHECK: OK")
+        for w in plan_warnings(pipeline, sheet_text, params, extra["contrasts_text"]):
+            print(f"WARNING: {w}")
+        return 0
+    if cmd == "sheet2":  # sheet2 <pipeline>: "<nf-core parameter> <file name>" of the plan's second sheet, if any
+        spec = REGISTRY.get(pipeline_name(argv[2]), {}).get("second_sheet")
+        if spec:
+            print(spec["param"], spec["file"].replace("plan_", ""))
         return 0
     if cmd == "normalise-sheet":  # normalise-sheet <in.csv> <out.csv>
         text = open(argv[2]).read()

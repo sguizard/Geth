@@ -33,7 +33,15 @@ mkdir -p "$attempt"
 cp "$sheet" "$attempt/samplesheet.csv"
 cp "$params" "$attempt/params.submitted.json"
 parts=()
-if [ -n "$contrasts" ] && [ -s "$contrasts" ]; then cp "$contrasts" "$attempt/contrasts.csv"; parts+=(--contrasts "$attempt/contrasts.csv"); fi
+# The plan's second sheet (contrasts for differentialabundance, multiplexed samples for scrnaseq), under the
+# name and nf-core parameter the registry gives it.
+read -r sheet2_param sheet2_file < <(python3 "$checks" sheet2 "$pipeline"; echo)
+sheet2=""
+if [ -n "$contrasts" ] && grep -q '[^[:space:]]' "$contrasts" 2>/dev/null; then
+    sheet2="$attempt/${sheet2_file:-contrasts.csv}"  # a pipeline without one: the gate refuses it
+    cp "$contrasts" "$sheet2"
+    parts+=(--contrasts "$sheet2")
+fi
 [ -n "$analysis_profile" ] && parts+=(--profile "$analysis_profile")
 [ -f "$run_dir/plan_upstream.txt" ] && parts+=(--upstream "$(cat "$run_dir/plan_upstream.txt")")
 echo "ATTEMPT: $n"
@@ -64,10 +72,8 @@ print(sum(os.path.getsize(v) for r in csv.DictReader(open(sys.argv[1])) for v in
 # Profiles: the site's (institutional or container profile), then the plan's analysis profile.
 profiles=${GETH_NFCORE_PROFILE:-}
 extra=()
-if [ -n "$analysis_profile" ]; then
-    profiles=${profiles:+$profiles,}$analysis_profile
-    extra+=(--contrasts "$attempt/contrasts.csv")
-fi
+[ -n "$analysis_profile" ] && profiles=${profiles:+$profiles,}$analysis_profile
+[ -n "$sheet2" ] && [ -n "${sheet2_param:-}" ] && extra+=("--$sheet2_param" "$sheet2")
 # CellBender runs on a GPU when the site has one (GETH_GPU=yes), unless the plan skips it.
 if [ "$pipeline" = scrnaseq ] && [ "${GETH_GPU:-no}" = yes ] && \
         ! python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("skip_cellbender") in (True, "true") else 1)' "$attempt/params.json"; then
