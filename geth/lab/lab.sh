@@ -13,6 +13,7 @@
 #                                                                  at most), then Geth runs them on the full data
 #   geth lab build-c <design run> <name>                           arm C: the engineer writes the whole Nextflow
 #                                                                  pipeline; its driver runs only in the sandbox
+#   geth lab stop <name>                                           stop a lab run and its scheduler jobs
 #
 # The lab works only on benchmark data (GETH_LAB_DATA, default $GETH_DATA_ROOT/testdata) and writes to
 # $GETH_RUNS_DIR/lab/<name>.
@@ -22,7 +23,7 @@ export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
 lab=$GETH_RUNS_DIR/lab
 source "$GETH_HOME/geth/bin/driver_slots.sh"
 
-usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 banner() { echo "*** Geth lab: EXPERIMENTAL, not for real analyses ***" >&2; }
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
@@ -105,8 +106,9 @@ case "$cmd" in
             if [ -n "$pid" ] && driver_alive "$pid"; then state=$(basename "$pid" .pid | sed 's/^\.geth_//; s/_/ round /')
             elif [ -f "$d/build_state.txt" ]; then
                 state=$(cat "$d/build_state.txt")
-                case $state in done*|failed*) ;; *) state="$state (waiting for a slot)" ;; esac
+                case $state in done*|failed*|stopped*) ;; *) state="$state (waiting for a slot)" ;; esac
             elif [ -f "$d/lab_design_check.txt" ]; then state=$(head -n 1 "$d/lab_design_check.txt")
+            elif grep -qs 'stopped by geth stop' "$d/geth_design.log"; then state="stopped"
             elif [ -f "$d/geth_design.log" ]; then state="failed (see geth_design.log)"
             else state="waiting for a slot"
             fi
@@ -222,6 +224,15 @@ case "$cmd" in
         if [ $rc -eq 0 ]; then build_state "$d" "done (review: $verdict)"; else build_state "$d" "failed: full run (review: $verdict; see geth_pipeline.log)"; fi
         show_build "$d"
         exit $rc
+        ;;
+    stop)
+        [ $# -eq 1 ] || usage
+        d=$(run_dir_of "$1")
+        [ -d "$d" ] || { echo "No lab run named '$1'." >&2; exit 1; }
+        "$GETH_HOME/geth/bin/stop_driver.sh" "$d"
+        if [ -f "$d/build_state.txt" ]; then
+            case $(cat "$d/build_state.txt") in done*|failed*|stopped*) ;; *) build_state "$d" "stopped ($(cat "$d/build_state.txt"))" ;; esac
+        fi
         ;;
     *) usage ;;
 esac

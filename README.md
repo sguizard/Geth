@@ -38,6 +38,7 @@ geth show my_experiment                     # review the plan; edit the plan fil
 geth approve my_experiment
 geth run my_experiment --detach
 geth status my_experiment                   # the report: runs/my_experiment/report.md
+geth stop my_experiment                     # if needed: stops it and its cluster jobs; geth run resumes
 ```
 
 Then follow up on a finished run, for example with differential expression:
@@ -51,7 +52,7 @@ geth plan --from my_experiment "Which genes change with the treatment? Pair samp
 | Analysis | Pipeline | Status |
 |---|---|---|
 | Bulk RNA-seq | nf-core/rnaseq 3.27.0 | validated with agents |
-| Single-cell RNA-seq (10x), with CellBender on a GPU | nf-core/scrnaseq 4.2.0 | validated with agents |
+| Single-cell RNA-seq (10x), with CellBender on a GPU; multiplexed libraries (OCM, CellPlex, Flex) with Cell Ranger multi | nf-core/scrnaseq 4.2.0 | validated with agents (multiplexed: OCM test delivery) |
 | Differential expression of a bulk RNA-seq run | nf-core/differentialabundance 2.0.0 | validated with agents |
 | Single-cell QC, clustering and cell-type annotation | Geth's Scanpy and CellTypist toolbox | validated with agents |
 | Iso-Seq, amplicon, ChIP-seq, ATAC-seq, methylation, Nanopore, ancient DNA | isoseq, ampliseq, chipseq, atacseq, methylseq, nanoseq, eager | validated with agents on realistic test deliveries |

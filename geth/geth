@@ -8,6 +8,7 @@
 #   geth run <name> [--detach]                 operator + reporter agents run the approved plan
 #   geth status <name>                         outcome, report check and attempts
 #   geth list                                  all runs and where they stand
+#   geth stop <name>                           stop a planning or a run, and its scheduler jobs (geth run resumes it)
 #   geth doctor                                check the installation and the site configuration
 #   geth version                               print Geth's version
 #   geth lab ...                               EXPERIMENTAL agent-designed analyses (not for real analyses)
@@ -18,7 +19,8 @@ runs="$GETH_RUNS_DIR"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+self=$(readlink -f "${BASH_SOURCE[0]}")  # nf() changes folder: call this script back by its full path
+usage() { sed -n '2,14p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
     local commit; commit=$(git -C "$GETH_HOME" rev-parse --short HEAD 2>/dev/null || true)
     echo "Geth $(cat "$GETH_HOME/VERSION" 2>/dev/null || echo unknown)${commit:+ (commit $commit)}"
@@ -53,20 +55,22 @@ active() {  # active <run_dir> <mode>: is a Geth driver working on this run?
 
 state() {  # one-line state of a run
     local d=$1
-    if [ -f "$d/outcome.txt" ]; then
+    if active "$d" run; then echo "running"  # also a rerun of a run that has an outcome
+    elif [ -f "$d/outcome.txt" ]; then
         grep -q 'succeeded: true' "$d/outcome.txt" && echo "succeeded" || echo "failed"
-    elif active "$d" run; then echo "running"
     elif [ -f "$d/APPROVED" ] && [ -f "$d/geth_run.log" ]; then echo "stopped before the end (geth run resumes it)"
     elif [ -f "$d/APPROVED" ]; then echo "approved, not run yet"
     elif active "$d" plan; then echo "planning"
     elif [ -f "$d/plan_pipeline.txt" ]; then echo "planned, waiting for approval"
+    elif grep -qs 'stopped by geth stop' "$d/geth_plan.log"; then echo "planning stopped"
     else echo "planning failed"
     fi
 }
 
 plan_parts() {  # extra plan parts for geth_checks.py (downstream analyses)
     local d=$1
-    [ -f "$d/plan_contrasts.csv" ] && printf -- '--contrasts\n%s\n' "$d/plan_contrasts.csv"
+    local f  # the second sheet: contrasts (differential expression) or multiplexed samples (scrnaseq)
+    for f in plan_contrasts.csv plan_barcodes.csv; do [ -f "$d/$f" ] && printf -- '--contrasts\n%s\n' "$d/$f"; done
     [ -f "$d/plan_profile.txt" ] && printf -- '--profile\n%s\n' "$(cat "$d/plan_profile.txt")"
     [ -f "$d/plan_upstream.txt" ] && printf -- '--upstream\n%s\n' "$(cat "$d/plan_upstream.txt")"
     return 0
@@ -89,6 +93,10 @@ show() {
     sed "s#$GETH_DATA_ROOT/##g" "$d/plan_samplesheet.csv" | column -s, -t | sed 's/^/  /'
     if [ -f "$d/plan_contrasts.csv" ]; then
         echo; echo "Contrasts (plan_contrasts.csv):"; column -s, -t < "$d/plan_contrasts.csv" | sed 's/^/  /'
+    fi
+    if [ -f "$d/plan_barcodes.csv" ]; then
+        echo; echo "Multiplexed samples, one row per sample of each library (plan_barcodes.csv):"
+        column -s, -t < "$d/plan_barcodes.csv" | sed 's/^/  /'
     fi
     echo; echo "Parameters (plan_params.json):"; sed "s#$GETH_DATA_ROOT/##g" "$d/plan_params.json" | sed 's/^/  /'; echo
     echo; check "$d" || true
@@ -151,13 +159,13 @@ case "$cmd" in
         [ -f "$d/APPROVED" ] || { echo "The plan has not been approved: geth approve $1" >&2; exit 1; }
         if [ "${2:-}" = "--detach" ]; then
             # Long runs: survive the end of this shell or session.
-            setsid nohup "$0" run "$1" > "$d/geth_run.out" 2>&1 < /dev/null &
+            setsid nohup "$self" run "$1" > "$d/geth_run.out" 2>&1 < /dev/null &
             echo "Started in the background (pid $!). Follow it with: geth status $1   (log: $d/geth_run.out)"
             exit 0
         fi
         echo "Running the approved plan in $d ..."
         nf "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
-        "$0" status "$1"
+        "$self" status "$1"
         ;;
     status)
         [ $# -eq 1 ] || usage
@@ -169,7 +177,8 @@ case "$cmd" in
         for a in "$d"/attempt_*; do
             [ -d "$a" ] || continue
             status=$(grep -hE '^STATUS' "$a"/*.txt 2>/dev/null | head -n 1 || true)
-            if [ -f "$a/nextflow.log" ]; then
+            if [ -f "$a/STOPPED" ]; then status="stopped by geth stop (not counted)"
+            elif [ -f "$a/nextflow.log" ]; then
                 grep -q 'Pipeline completed successfully' "$a/nextflow.log" && status="launched: success" || status="launched: failed"
             elif [ -s "$a/gate.txt" ]; then status="refused by the plan-diff gate"
             elif [ -s "$a/check.txt" ]; then status="failed the plan check"
@@ -187,6 +196,14 @@ case "$cmd" in
             printf '%-24s %-22s %s\n' "$(basename "$d")" "$(cat "$d/plan_pipeline.txt" 2>/dev/null || echo -)" "$(state "$d")"
         done
         [ -d "$runs/lab" ] && echo "(experimental lab runs are listed by: geth lab list)"
+        ;;
+    stop)
+        [ $# -eq 1 ] || usage
+        d=$(run_dir_of "$1")
+        [ -d "$d" ] || { echo "No run named '$1'." >&2; exit 1; }
+        "$GETH_HOME/geth/bin/stop_driver.sh" "$d"
+        [ -f "$d/APPROVED" ] && [ ! -f "$d/outcome.txt" ] && [ -f "$d/geth_run.log" ] && echo "Resume it with: geth run $1"
+        exit 0
         ;;
     doctor)
         [ $# -eq 0 ] || usage

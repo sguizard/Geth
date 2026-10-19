@@ -613,5 +613,175 @@ class SingleCellDesign(unittest.TestCase):
             run.close()
 
 
+# The 10x_multi_chicken solo test (2026-10-19): a GEM-X On-Chip Multiplexing delivery (two libraries, four
+# samples each, barcodes OB1-OB4) was planned as plain 10x with STAR and protocol 10XV3. Names are made up here.
+OCM = f"{ROOT}/data/ocm_delivery"
+OCM_README = """Single-cell RNA-seq of embryonic tissue, GEM-X On-Chip Multiplexing (OCM).
+Library A holds samples 1-4, library B samples 5-8.
+sample,barcode,condition
+s1,OB1,treated
+s2,OB2,treated
+s3,OB3,control
+s4,OB4,control
+s5,OB1,treated
+s6,OB2,treated
+s7,OB3,control
+s8,OB4,control
+"""
+OCM_REPORT = ("<html><style>.x{color:red}</style><body><table><tr><td>Library</td><td>JS-10XOCM-Indexed-A</td></tr>"
+              "</table><script>var data = {\"lib\": \"JS-10XOCM-Indexed-B\"};</script></body></html>")
+OCM_FASTQ = {lib: (f"{OCM}/fastq/{lib}/{lib}_S1_L001_R1_001.fastq.gz", f"{OCM}/fastq/{lib}/{lib}_S1_L001_R2_001.fastq.gz")
+             for lib in ("A", "B")}
+CHICK = f"{REFS}/gallus_gallus_test"
+PLAIN_SHEET = "sample,fastq_1,fastq_2,expected_cells\n" + "".join(
+    f"Library_{lib},{r1},{r2},\n" for lib, (r1, r2) in OCM_FASTQ.items())
+PLAIN_PARAMS = {"aligner": "star", "protocol": "10XV3", "fasta": f"{CHICK}/genome.fa.gz", "gtf": f"{CHICK}/genes.gtf.gz"}
+MULTI_SHEET = "sample,fastq_1,fastq_2,feature_type\n" + "".join(
+    f"Library_{lib},{r1},{r2},gex\n" for lib, (r1, r2) in OCM_FASTQ.items())
+MULTI_PARAMS = {"aligner": "cellrangermulti", "protocol": "auto", "skip_cellrangermulti_vdjref": True,
+                "fasta": f"{CHICK}/genome.fa.gz", "gtf": f"{CHICK}/genes.gtf.gz"}
+BARCODES = "sample,multiplexed_sample_id,probe_barcode_ids,cmo_ids,ocm_ids,description\n" + "".join(
+    f"Library_{'A' if i <= 4 else 'B'},s{i},,,OB{(i - 1) % 4 + 1},{'treated' if (i - 1) % 4 < 2 else 'control'}\n"
+    for i in range(1, 9))
+
+
+class Multiplexed10x(unittest.TestCase):
+    """Multiplexed 10x libraries (OCM, CellPlex, Flex) need Cell Ranger multi and a barcodes sheet."""
+
+    @classmethod
+    def setUpClass(cls):
+        def write(path, text, compress=False):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with (gzip.open(path, "wt") if compress else open(path, "w")) as fh:
+                fh.write(text)
+
+        for r1, r2 in OCM_FASTQ.values():
+            write(r1, "@r\nACGT\n+\nIIII\n", compress=True)
+            write(r2, "@r\nACGT\n+\nIIII\n", compress=True)
+        write(f"{OCM}/README.txt", OCM_README)
+        write(f"{OCM}/delivery_report.html", OCM_REPORT)
+        write(f"{CHICK}/genome.fa.gz", ">1\nACGT\n", compress=True)
+        write(f"{CHICK}/genes.gtf.gz", '1\tx\texon\t1\t4\t.\t+\t.\tgene_id "g";\n', compress=True)
+        cls.plain = f"{ROOT}/data/plain_10x"
+        for lib in ("pbmc",):
+            write(f"{cls.plain}/fastq/{lib}_S1_L001_R1_001.fastq.gz", "@r\nACGT\n+\nIIII\n", compress=True)
+            write(f"{cls.plain}/fastq/{lib}_S1_L001_R2_001.fastq.gz", "@r\nACGT\n+\nIIII\n", compress=True)
+        cls.data_root, gc.DATA_ROOT = gc.DATA_ROOT, f"{ROOT}/data"
+
+    @classmethod
+    def tearDownClass(cls):
+        gc.DATA_ROOT = cls.data_root
+
+    def problems(self, sheet, params, barcodes=""):
+        return gc.check_plan("scrnaseq", sheet, json.dumps(params), barcodes)[0]
+
+    def test_plain_plan_of_a_multiplexed_delivery_is_refused(self):
+        text = "\n".join(self.problems(PLAIN_SHEET, PLAIN_PARAMS))
+        self.assertIn("multiplexed 10x libraries", text)
+        self.assertIn("aligner=cellrangermulti", text)
+        self.assertIn("ocm_delivery/README.txt: ", text)  # OB1-OB4 and the OCM statement
+        self.assertIn("ocm_delivery/delivery_report.html: 10XOCM", text)  # the facility's report
+
+    def test_cellrangermulti_plan_with_barcodes_passes(self):
+        self.assertEqual(self.problems(MULTI_SHEET, MULTI_PARAMS, BARCODES), [])
+        self.assertEqual(gc.plan_warnings("scrnaseq", MULTI_SHEET, MULTI_PARAMS, BARCODES), [])
+
+    def test_cellrangermulti_needs_its_settings_and_the_barcodes(self):
+        bad = dict(MULTI_PARAMS, protocol="10XV3")
+        bad.pop("skip_cellrangermulti_vdjref")
+        text = "\n".join(self.problems(MULTI_SHEET.replace(",gex\n", ",\n"), bad))
+        for expected in ("needs feature_type", "skip_cellrangermulti_vdjref=true", "set protocol=auto",
+                         "list each library's samples"):
+            self.assertIn(expected, text)
+        self.assertIn("only used with aligner=cellrangermulti", "\n".join(self.problems(PLAIN_SHEET, PLAIN_PARAMS, BARCODES)))
+
+    def test_barcodes_sheet_rules(self):
+        lines = BARCODES.splitlines()
+        self.assertTrue(any("the header must be" in p for p in
+                            self.problems(MULTI_SHEET, MULTI_PARAMS, BARCODES.replace("ocm_ids", "ocm"))))
+        bad = [lines[0],
+               "Library_C,s1,,,OB1,treated",           # not a library of the samplesheet
+               "Library_A,s 2,,,OB2,treated",          # space in the id
+               "Library_A,s3,,,OB5,control",           # no such OCM barcode
+               "Library_A,s3,,CMO301,,control",        # id used twice; CMO in an OCM library
+               "Library_B,s5,,,OB1,",                  # no description
+               "Library_B,s6,,CMO302,OB2,treated"]     # two barcodes on one row
+        text = "\n".join(self.problems(MULTI_SHEET, MULTI_PARAMS, "\n".join(bad) + "\n"))
+        for expected in ("'Library_C' is not a sample", "without spaces", "ocm_ids must be OB1", "already used on line",
+                         "description is required", "exactly one of", "one kind of barcode per library",
+                         "samplesheet row with feature_type cmo"):
+            self.assertIn(expected, text)
+        no_b = "\n".join(lines[:5]) + "\n"  # library B left out
+        self.assertIn("library 'Library_B' has no rows", "\n".join(self.problems(MULTI_SHEET, MULTI_PARAMS, no_b)))
+
+    def test_flex_needs_the_probe_set(self):
+        flex = BARCODES.replace(",,,OB1,", ",BC001,,,").replace(",,,OB2,", ",BC002,,,").replace(
+            ",,,OB3,", ",BC003,,,").replace(",,,OB4,", ",BC004,,,")
+        self.assertIn("Flex (probe barcodes) needs the probe set: gex_frna_probe_set",
+                      self.problems(MULTI_SHEET, MULTI_PARAMS, flex))
+        probes = dict(MULTI_PARAMS, gex_frna_probe_set=f"{CHICK}/genome.fa.gz")
+        self.assertFalse(any("probe set" in p for p in self.problems(MULTI_SHEET, probes, flex)))
+
+    def test_plain_delivery_stays_plain(self):
+        sheet = (f"sample,fastq_1,fastq_2\npbmc,{self.plain}/fastq/pbmc_S1_L001_R1_001.fastq.gz,"
+                 f"{self.plain}/fastq/pbmc_S1_L001_R2_001.fastq.gz\n")
+        with open(f"{self.plain}/README.txt", "w") as fh:
+            fh.write("PBMC, Chromium Next GEM Single Cell 3' v3.1\n")
+        self.assertEqual(self.problems(sheet, PLAIN_PARAMS), [])
+        self.assertEqual(gc.plan_warnings("scrnaseq", sheet, PLAIN_PARAMS), [])
+        with open(f"{self.plain}/README.txt", "w") as fh:
+            fh.write("PBMC from a healthy donor\n")
+        self.assertTrue(any("never states the 10x chemistry" in w for w in gc.plan_warnings("scrnaseq", sheet, PLAIN_PARAMS)))
+
+    def test_warnings_on_the_plain_plan(self):
+        warnings = "\n".join(gc.plan_warnings("scrnaseq", PLAIN_SHEET, PLAIN_PARAMS))
+        self.assertIn("lists 8 entries that look like samples, and 8 of them appear nowhere in the plan", warnings)
+        self.assertIn("the plan has 2 sample(s)", warnings)
+        self.assertIn("GEM-X 3' is 10XV4", warnings)
+
+    def test_plan_files_and_gate_keep_the_barcodes(self):
+        run = Run("scrnaseq", MULTI_SHEET, json.dumps(MULTI_PARAMS))
+        try:
+            result = gc.save_plan(run.dir, "scrnaseq", MULTI_SHEET, json.dumps(MULTI_PARAMS), "OCM", BARCODES)
+            self.assertEqual(result, "PLAN CHECK: OK")
+            self.assertEqual(run.read("plan_barcodes.csv"), BARCODES)
+            self.assertFalse(os.path.exists(run.path("plan_contrasts.csv")))
+            gc.approve(run.dir, "tester")
+            self.assertIn("plan_barcodes.csv", json.load(open(run.path("APPROVED")))["sha256"])
+            sheet, params = run.read("plan_samplesheet.csv"), run.read("plan_params.json")
+            self.assertEqual(gc.gate(run.dir, "scrnaseq", sheet, params, BARCODES), [])
+            swapped = BARCODES.replace(",s1,", ",sX,")
+            self.assertIn("design change: the multiplexed samples sheet differs from the approved plan",
+                          gc.gate(run.dir, "scrnaseq", sheet, params, swapped))
+            self.assertTrue(gc.gate(run.dir, "scrnaseq", sheet, params, ""), "the barcodes cannot be dropped")
+        finally:
+            run.close()
+        bulk = Run("rnaseq", MISTRAL_SHEET, MISTRAL_PARAMS)
+        try:
+            gc.approve(bulk.dir, "tester")
+            self.assertIn("nf-core/rnaseq takes no contrasts: pass an empty string",
+                          gc.gate(bulk.dir, "rnaseq", MISTRAL_SHEET, MISTRAL_PARAMS, BARCODES))
+        finally:
+            bulk.close()
+
+class SitePrelude(unittest.TestCase):
+    """scrnaseq 4.2.0 sets its own beforeScript for CELLRANGER_MULTI, which replaced Eddie's module load of
+    apptainer: the job failed with "env: 'apptainer': No such file or directory" (v19ocm_sc_rat_ocm_2)."""
+    FLAT = ("process.executor = 'sge'\n"
+            "process.beforeScript = '\\n    . /etc/profile.d/modules.sh\\n    module load apptainer\\n    '\n"
+            "process.'withName:CELLRANGER_MULTI'.beforeScript = 'export TENX_DISABLE_TELEMETRY=1'\n"
+            "process.'withName:FASTQC'.cpus = 2\n")
+
+    def test_site_prelude_is_put_back(self):
+        config = gc.keep_prelude(self.FLAT)
+        self.assertIn("withName: 'CELLRANGER_MULTI' { beforeScript = '\\n    . /etc/profile.d/modules.sh\\n    "
+                      "module load apptainer\\n    ' + '\\n' + 'export TENX_DISABLE_TELEMETRY=1' }", config)
+        self.assertNotIn("FASTQC", config)
+
+    def test_nothing_to_do(self):
+        self.assertEqual(gc.keep_prelude(self.FLAT.replace("process.beforeScript", "process.queue")), "")
+        self.assertEqual(gc.keep_prelude("process.beforeScript = 'module load apptainer'\n"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

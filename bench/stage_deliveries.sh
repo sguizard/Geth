@@ -4,13 +4,13 @@
 # and a sample table. The planner must work out the design from these, as for a real delivery.
 # About 250 MB under $GETH_DATA_ROOT/testdata/<delivery>. Usage: stage_deliveries.sh [<delivery> ...]
 #   chipseq_spt5  atacseq_osmotic  methylseq_wgbs  ampliseq_16s  nanoseq_barcoded  eager_mammoth  isoseq_brain
-#   taxprofiler_reads  mag_gut
+#   taxprofiler_reads  mag_gut  sc_rat_ocm
 set -euo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "${GETH_HOME:-$(cd "$(dirname "$0")/.." && pwd)}/env.sh"
 
 TD=https://raw.githubusercontent.com/nf-core/test-datasets
 ROOT=$GETH_DATA_ROOT/testdata
-deliveries=${*:-chipseq_spt5 atacseq_osmotic methylseq_wgbs ampliseq_16s nanoseq_barcoded eager_mammoth isoseq_brain taxprofiler_reads mag_gut}
+deliveries=${*:-chipseq_spt5 atacseq_osmotic methylseq_wgbs ampliseq_16s nanoseq_barcoded eager_mammoth isoseq_brain taxprofiler_reads mag_gut sc_rat_ocm}
 
 get() {  # get <url> <file>: download once
     [ -s "$2" ] && return 0
@@ -209,6 +209,38 @@ mag_gut() {
 Shotgun metagenomes of the gut microbiota of two mice, A and B (Illumina paired-end, subsampled for this test).
 Mouse A was sequenced on two lanes (L001, L002). No host genome is provided with this delivery.
 We want metagenome-assembled genomes (bins) for each mouse, with their completeness and contamination.
+EOF
+}
+
+sc_rat_ocm() {  # multiplexed 10x (GEM-X On-Chip Multiplexing): nf-core/scrnaseq's rat cellrangermulti test data
+    local d=$ROOT/sc_rat_ocm t=$TD/modules/data/genomics/wistar_rat/10xgenomics/cellranger/10k_pbmc_ocm/fastqs/gex
+    local e=https://ftp.ensembl.org/pub/release-114 lane read
+    for lane in 1 2 3 4 5 6; do
+        for read in R1 R2; do
+            get "$t/10k_Wistar_Rat_PBMCs_Multiplex_3p_gem-x_Universal_OCM_S1_L00${lane}_${read}_001.fastq.gz" \
+                "$d/fastq/RatPBMC_pool_S1_L00${lane}_${read}_001.fastq.gz"
+        done
+    done
+    get "$e/fasta/rattus_norvegicus/dna/Rattus_norvegicus.GRCr8.dna.primary_assembly.6.fa.gz" \
+        "$d/reference/Rattus_norvegicus.GRCr8.dna.chromosome.6.fa.gz"
+    if [ ! -s "$d/reference/Rattus_norvegicus.GRCr8.114.chr6.gtf.gz" ]; then  # the annotation of chromosome 6 only
+        get "$e/gtf/rattus_norvegicus/Rattus_norvegicus.GRCr8.114.chr.gtf.gz" "$d/reference/all.gtf.gz"
+        zcat "$d/reference/all.gtf.gz" | awk -F'\t' '/^#/ || $1 == "6"' | gzip > "$d/reference/Rattus_norvegicus.GRCr8.114.chr6.gtf.gz"
+        rm -f "$d/reference/all.gtf.gz"
+    fi
+    cat > "$d/README.txt" <<'EOF'
+Single-cell RNA-seq of peripheral blood mononuclear cells (PBMCs) from four Wistar rats.
+10x Genomics GEM-X Universal 3' Gene Expression v4 with On-Chip Multiplexing (OCM): the cells of the four
+rats were loaded in one chip channel, each rat with its own OCM barcode (OB1-OB4, see samples.csv), so the
+reads of all four rats are in one library, sequenced on six lanes (L001-L006). About 2,500 cells per rat.
+Reads subsampled for this test; the reference is rat chromosome 6 only (GRCr8, Ensembl 114), in reference/.
+EOF
+    cat > "$d/samples.csv" <<'EOF'
+rat,ocm_barcode,sex
+rat_1,OB1,female
+rat_2,OB2,female
+rat_3,OB3,male
+rat_4,OB4,male
 EOF
 }
 

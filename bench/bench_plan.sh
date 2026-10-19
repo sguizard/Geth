@@ -4,7 +4,7 @@
 # Usage: bench_plan.sh <tag> <repeats> <delivery> [<delivery> ...]
 #   deliveries: chipseq_spt5 atacseq_osmotic methylseq_wgbs ampliseq_16s nanoseq_barcoded eager_mammoth isoseq_brain
 #   (bench/stage_deliveries.sh), bulk_yeast sc_mouse_chr19 (bench/stage_testdata.sh),
-#   airway_index_test pbmc_index_test (bench/stage_index_tests.sh)
+#   airway_index_test pbmc_index_test (bench/stage_index_tests.sh), sc_rat_ocm (multiplexed 10x)
 # Results: $GETH_BENCH_DIR/<tag>.jsonl (default $GETH_WORK_ROOT/bench)
 set -uo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
@@ -28,7 +28,8 @@ declare -A question=(
     [pbmc_index_test]="Process this single-cell RNA-seq sample into a count matrix with STARsolo and give me a QC overview of the cells."
     [chicken_wgs]="Call germline SNVs and small indels in these three chickens, genotyped together, and annotate them."
     [taxprofiler_reads]="Which organisms are in these two metagenomic samples, and how abundant are they?"
-    [mag_gut]="Reconstruct the bacterial genomes in these mouse gut metagenomes and tell me how complete they are." )
+    [mag_gut]="Reconstruct the bacterial genomes in these mouse gut metagenomes and tell me how complete they are."
+    [sc_rat_ocm]="Process these single-cell RNA-seq data into count matrices and give me a QC overview of the cells." )
 declare -A dataset=( [bulk_yeast]=bulk [sc_mouse_chr19]=sc )
 
 for delivery in "$@"; do

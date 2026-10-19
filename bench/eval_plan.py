@@ -4,7 +4,7 @@
 Usage: eval_plan.py <run_dir> <dataset>   -> prints one JSON line with every check and a score.
 Datasets: bulk, sc (bench/stage_testdata.sh); airway, pbmc, airway_de (bench/stage_public.sh);
 chipseq_spt5, atacseq_osmotic, methylseq_wgbs, ampliseq_16s, nanoseq_barcoded, eager_mammoth, isoseq_brain
-(bench/stage_deliveries.sh).
+(bench/stage_deliveries.sh); sc_rat_ocm (multiplexed 10x, also bench/stage_deliveries.sh).
 """
 import csv
 import io
@@ -418,18 +418,43 @@ def mag_gut(rows, params, pipeline):
             "ale_skipped_on_test_data": p.get("skip_ale") in (True, "true")}  # ALE crashes on these tiny assemblies (v1.6 run)
 
 
+def sc_rat_ocm(rows, params, pipeline, run_dir):
+    """Four rats in one GEM-X OCM library (six lanes): Cell Ranger multi, and a barcodes sheet giving OB1-OB4."""
+    d = f"{ROOT}/sc_rat_ocm"
+    p = params if isinstance(params, dict) else {}
+    path = os.path.join(run_dir, "plan_barcodes.csv")
+    barcodes = list(csv.DictReader(open(path))) if os.path.isfile(path) else []
+    library = {r.get("sample") for r in rows}
+    ob = {b.get("ocm_ids"): b for b in barcodes}
+    return {"pipeline": pipeline == "scrnaseq", "aligner_cellrangermulti": p.get("aligner") == "cellrangermulti",
+            "protocol_auto": p.get("protocol", "auto") == "auto",
+            "no_vdj_reference": p.get("skip_cellrangermulti_vdjref") in (True, "true"),
+            "one_library_six_lanes": len(rows) == 6 and len(library) == 1,
+            "feature_type_gex": bool(rows) and all(r.get("feature_type") == "gex" for r in rows),
+            "pairs": pairs_ok(rows),
+            "barcodes_4_rows": len(barcodes) == 4 and {b.get("sample") for b in barcodes} == library,
+            "barcodes_ob1_to_ob4": set(ob) == {"OB1", "OB2", "OB3", "OB4"},
+            # each rat keeps its own barcode: rat_N (or N) in the sample id or its description
+            "rats_matched": all(re.search(rf"(rat_?{i}\b|\b{i}\b)", (ob.get(f"OB{i}") or {}).get("multiplexed_sample_id", "")
+                                          + " " + (ob.get(f"OB{i}") or {}).get("description", ""), re.I)
+                                for i in range(1, 5)),
+            "fasta_gtf": (p.get("fasta") == f"{d}/reference/Rattus_norvegicus.GRCr8.dna.chromosome.6.fa.gz"
+                          and p.get("gtf") == f"{d}/reference/Rattus_norvegicus.GRCr8.114.chr6.gtf.gz"),
+            "skip_cellbender": p.get("skip_cellbender") in (True, "true")}
+
+
 SCORERS = {"bulk": bulk, "sc": sc, "airway": airway, "pbmc": pbmc, "airway_de": airway_de,
            "chicken_wgs": chicken_wgs, "taxprofiler_reads": taxprofiler_reads, "mag_gut": mag_gut,
            "airway_index_test": airway_index_test, "pbmc_index_test": pbmc_index_test,
            "chipseq_spt5": chipseq_spt5, "atacseq_osmotic": atacseq_osmotic, "methylseq_wgbs": methylseq_wgbs,
            "ampliseq_16s": ampliseq_16s, "nanoseq_barcoded": nanoseq_barcoded, "eager_mammoth": eager_mammoth,
-           "isoseq_brain": isoseq_brain}
+           "isoseq_brain": isoseq_brain, "sc_rat_ocm": sc_rat_ocm}
 PIPELINE = {"bulk": "rnaseq", "airway": "rnaseq", "sc": "scrnaseq", "pbmc": "scrnaseq", "airway_de": "differentialabundance",
             "airway_index_test": "rnaseq", "pbmc_index_test": "scrnaseq", "chicken_wgs": "sarek",
-            "taxprofiler_reads": "taxprofiler", "mag_gut": "mag",
+            "taxprofiler_reads": "taxprofiler", "mag_gut": "mag", "sc_rat_ocm": "scrnaseq",
             **{k: k.split("_")[0] for k in ("chipseq_spt5", "atacseq_osmotic", "methylseq_wgbs", "ampliseq_16s",
                                             "nanoseq_barcoded", "eager_mammoth", "isoseq_brain")}}
-NEEDS_RUN_DIR = {"airway_de"}
+NEEDS_RUN_DIR = {"airway_de", "sc_rat_ocm"}
 
 
 def main():

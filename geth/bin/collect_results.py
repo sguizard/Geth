@@ -112,23 +112,101 @@ def scrnaseq(run_dir, outdir):
             ["Sample", "Reads", "Valid barcodes (%)", "Uniquely mapped to genome (%)", "Estimated cells",
              "Mean reads per cell", "Median genes per cell", "Median UMIs per cell", "Genes detected"], rows))
     else:
-        parts.append("### Per-sample metrics\nNo STARsolo summary found (other aligners are not summarised yet).")
+        multi = cellranger_multi(outdir)
+        parts += multi or ["### Per-sample metrics\nNo STARsolo or Cell Ranger multi summary found (other "
+                           "aligners are not summarised yet)."]
 
-    # FastQC rows are named <sample>_<n>, n counting the sample's FASTQ files in samplesheet order.
+    # FastQC rows are named <sample>_<n>, n counting the sample's FASTQ files in samplesheet order
+    # (Cell Ranger multi: <sample>_<feature_type>_<n>, counting within the feature type).
     stats = general_stats(outdir)
-    files = {}
+    files, sample_of = {}, {}
     for row in latest_samplesheet(run_dir):
-        files.setdefault(row["sample"], []).extend(os.path.basename(row[k]) for k in ("fastq_1", "fastq_2") if row.get(k))
+        keys = [row["sample"]] + ([f"{row['sample']}_{row['feature_type']}"] if row.get("feature_type") else [])
+        for key in keys:
+            files.setdefault(key, []).extend(os.path.basename(row[k]) for k in ("fastq_1", "fastq_2") if row.get(k))
+            sample_of[key] = row["sample"]
     fq_rows = []
     for name, st in sorted(stats.items()):
         sample, _, idx = name.rpartition("_")
         if sample in files and idx.isdigit() and int(idx) <= len(files[sample]) and st.get("fastqc-total_sequences") is not None:
-            fq_rows.append([files[sample][int(idx) - 1], sample, count(st["fastqc-total_sequences"] * 1e6),
+            fq_rows.append([files[sample][int(idx) - 1], sample_of[sample], count(st["fastqc-total_sequences"] * 1e6),
                             pct(st.get("fastqc-percent_duplicates")), pct(st.get("fastqc-percent_gc"), 0)])
     if fq_rows:
+        fq_rows.sort(key=lambda r: (r[1], r[0]))
         parts.append("### FastQC per input file\n" + table(["File", "Sample", "Reads", "Duplicates (%)", "GC (%)"], fq_rows))
     h5ad = sorted(glob.glob(os.path.join(outdir, "**", "*.h5ad"), recursive=True))
     parts.append("### Count matrices\n" + ("\n".join(f"- `{os.path.relpath(p, outdir)}`" for p in h5ad) or "None found."))
+    return parts
+
+
+def cr_value(text):
+    """A Cell Ranger metric: fractions become percentages; values printed as "93.5%" or "1,234" are read as such."""
+    text = (text or "").strip()
+    if text.endswith("%"):
+        return num(text[:-1].replace(",", "")), True
+    return num(text.replace(",", "")), False
+
+
+def cellranger_multi(outdir):
+    """Cell Ranger multi: one table row per demultiplexed sample, one per library, and how the library's cells
+    were assigned to its samples (OCM, CMO or probe barcodes), from each sample's metrics_summary.csv."""
+    files = sorted(glob.glob(os.path.join(outdir, "cellrangermulti", "**", "per_sample_outs", "*", "metrics_summary.csv"),
+                             recursive=True))
+    if not files:
+        return []
+    per_sample, libraries, assignments = [], {}, {}
+    for path in files:
+        sample = os.path.basename(os.path.dirname(path))
+        library = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(path)))))
+        with open(path) as fh:
+            rows = list(csv.DictReader(fh))
+        cells = {r["Metric Name"]: cr_value(r["Metric Value"]) for r in rows
+                 if r["Category"] == "Cells" and r["Library Type"] == "Gene Expression"}
+        share = lambda k: "n/a" if k not in cells or cells[k][0] is None else pct(cells[k][0] if cells[k][1] else 100 * cells[k][0])
+        plain_n = lambda k: count(cells.get(k, (None, False))[0])
+        barcode = ""
+        for r in rows:
+            if r["Category"] != "Library" or r["Library Type"] != "Gene Expression":
+                continue
+            if r["Grouped By"] == "Physical library ID":
+                libraries.setdefault(library, {})[r["Metric Name"]] = cr_value(r["Metric Value"])
+            elif r["Metric Name"] == "Sample ID":
+                if r["Metric Value"] == sample:
+                    barcode = f"{r['Group Name']} ({r['Grouped By']})"
+                assignments.setdefault(library, {}).setdefault(r["Group Name"], {})["sample"] = r["Metric Value"]
+            elif r["Grouped By"] and r["Group Name"]:
+                assignments.setdefault(library, {}).setdefault(r["Group Name"], {})[r["Metric Name"]] = r["Metric Value"]
+        per_sample.append([sample, library, barcode or "n/a", plain_n("Cells"), plain_n("Median genes per cell"),
+                           plain_n("Median UMI counts per cell"), plain_n("Total genes detected"),
+                           plain_n("Number of reads in cells"), share("Confidently mapped to genome")])
+    parts = ["### Per-sample metrics (Cell Ranger multi, cells assigned to each sample)\n" + table(
+        ["Sample", "Library", "Barcode", "Cells", "Median genes per cell", "Median UMIs per cell", "Genes detected",
+         "Reads in cells", "Confidently mapped to genome (%)"], per_sample)]
+    lib_rows = []
+    for library, m in sorted(libraries.items()):
+        g = lambda k: m.get(k, (None, False))
+        frac = lambda k: "n/a" if g(k)[0] is None else pct(g(k)[0] if g(k)[1] else 100 * g(k)[0])
+        lib_rows.append([library, count(g("Number of reads")[0]), frac("Valid barcodes"), frac("Mapped to genome"),
+                         frac("Confidently mapped to transcriptome"), frac("Sequencing saturation"),
+                         count(g("Cells")[0]), count(g("Mean reads per cell")[0])])
+    if lib_rows:
+        parts.append("### Per-library metrics (Cell Ranger multi, all samples of the library)\n" + table(
+            ["Library", "Reads", "Valid barcodes (%)", "Mapped to genome (%)", "Confidently mapped to transcriptome (%)",
+             "Sequencing saturation (%)", "Cells", "Mean reads per cell"], lib_rows))
+    a_rows = []
+    for library, tags in sorted(assignments.items()):
+        for tag, m in sorted(tags.items()):
+            if "sample" not in m:  # other groups, e.g. per FASTQ: not a sample barcode
+                continue
+            cells = next((v for k, v in m.items() if k.startswith("Cells per")), None)
+            umis = next((v for k, v in m.items() if k.startswith("UMIs per")), None)
+            a_rows.append([library, tag, m.get("sample", "n/a"), count(cr_value(cells)[0]), count(cr_value(umis)[0])])
+    if a_rows:
+        parts.append("### Cells assigned per barcode (Cell Ranger multi)\n" + table(
+            ["Library", "Barcode", "Sample", "Cells", "UMIs of the barcode"], a_rows))
+    reports = sorted(glob.glob(os.path.join(outdir, "cellrangermulti", "**", "web_summary.html"), recursive=True))
+    if reports:
+        parts.append("### Cell Ranger web summaries\n" + "\n".join(f"- `{os.path.relpath(p, outdir)}`" for p in reports))
     return parts
 
 
