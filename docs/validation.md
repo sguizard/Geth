@@ -441,13 +441,40 @@ Getting there took five faults, all fixed:
 A failed tool once left the designer agent hanging for an hour; agent stages now run under time limits.
 Not tested: pulling a pipeline image that is not yet in the cache, from inside the sandbox.
 
+## Multiplexed single-cell libraries (version 1.9)
+
+The first real-data analysis that a user ran alone, with only the documentation, was a 10x GEM-X On-Chip
+Multiplexing delivery: two libraries, four samples in each, told apart by the barcodes OB1–OB4. The planner treated it as
+plain 10x: STAR, chemistry v3, one "sample" per library. Nothing in Geth knew about multiplexing. The plan
+check now reads the delivery's own text (README, sample tables, the facility's HTML report). If that text
+shows OCM, CellPlex or Flex, the check refuses any plan that does not use Cell Ranger multi with a barcodes
+sheet. That first plan is now refused, with the evidence named: `10XOCM` in the facility's report, OB1–OB4
+in the README. Two new warnings flagged it as well: 8 samples in the README appear nowhere in the plan, and
+GEM-X data was planned as v3.
+
+**Test delivery** `sc_rat_ocm` (`bench/stage_deliveries.sh`): nf-core's rat GEM-X OCM test reads, named
+like a facility delivery. They hold one library sequenced on six lanes, four rats on OB1–OB4, and a
+chromosome 6 reference.
+
+| Check | Result |
+|---|---|
+| Planner, 3 plans | 13/13, 13/13, 12/13: Cell Ranger multi, `protocol=auto`, one library over six lanes, each rat on its own barcode. The miss: CellBender left on for tiny test data |
+| Full run, sandboxed | first launch failed on Eddie: scrnaseq's own `beforeScript` for `CELLRANGER_MULTI` replaced the site's `module load apptainer` (fixed for every pipeline: Geth puts the site's prelude back). After the fix: succeeded in 1 attempt |
+| Demultiplexing | 499, 629, 595 and 571 cells for rat_1 to rat_4 (test data: medians of 1 gene and 1 UMI per cell) |
+| Report | 72/75 numbers traced; the 3 others are general advice (reads per cell, gene thresholds) |
+| Operator under failure | after the apptainer failure it tried to add a `docker` profile; the gate refused it, and the operator stopped and reported |
+| `geth stop` during the run, 4 jobs queued | stopped in 2 s; the pipeline's driver cancelled its 4 jobs; no process left; `geth run` resumed it |
+
+Only the plan check has been tested for CellPlex and Flex (unit tests); no full runs.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or
   batches.
 - Repeatability at scale: one full run per real-size dataset so far, with planner repeats on top.
 - A real analysis run from start to finish by someone other than its developers, with only this
-  documentation.
+  documentation. A first attempt (a multiplexed 10x delivery) led to version 1.9.
+- CellPlex and Flex libraries end to end (only their plan check is tested).
 - Other models, and other sites. The site configuration makes this possible; results are welcome. A
   comparison with a paid frontier model on the lab benchmarks is planned.
 - Language-model availability and rate limits under sustained use.

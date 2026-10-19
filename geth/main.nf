@@ -272,9 +272,14 @@ agent planner {
         toolbox instead (pipeline "sc_downstream"): load the sc-downstream skill, find the sample's filtered
         count matrix in the upstream results, call SC_INSPECT on it, and choose every design value from the
         observed data; the samplesheet is "sample,h5ad" and the parameters are the design key=value lines.
+        Multiplexed 10x single-cell data (on-chip multiplexing OCM, CellPlex/CMO, Flex/probe barcodes: several
+        samples share one library) needs nf-core/scrnaseq with aligner cellrangermulti and a second sheet that
+        maps each library's barcodes to its samples: read the nfcore-scrnaseq skill's multiplexed section.
         Before answering, call CHECK_PLAN with your pipeline, samplesheet and parameters (as key=value lines),
-        plus the contrasts CSV and analysis profile for differentialabundance (empty strings otherwise),
-        fix every problem it reports, and repeat until it prints "PLAN CHECK: OK".'''
+        plus the second sheet in contrasts_csv (differentialabundance: the contrasts; multiplexed scrnaseq: the
+        barcodes sheet) and the analysis profile for differentialabundance (empty strings otherwise),
+        fix every problem it reports, and repeat until it prints "PLAN CHECK: OK". Read every WARNING it
+        prints too: fix the plan, or explain in the rationale why the warning does not apply.'''
     tools 'nf:module_run:LIST_FILES', 'nf:module_run:READ_TEXT', 'nf:module_run:LIST_REFERENCES', 'nf:module_run:CHECK_PLAN',
         'nf:module_run:SC_INSPECT'
     skills 'nfcore-rnaseq', 'nfcore-scrnaseq', 'nfcore-differentialabundance', 'sc-downstream', 'nfcore-sarek',
@@ -299,10 +304,12 @@ agent planner {
     In your final answer give exactly the plan that passed CHECK_PLAN: the pipeline name (e.g. "rnaseq",
     "sarek", "differentialabundance"); the samplesheet (for differentialabundance: the observations sheet) as a
     list of CSV lines, header line first; the pipeline parameters as a list of key=value entries, one per
-    parameter (do not include "input", "outdir" or "contrasts"); for differentialabundance the contrasts
-    as a list of CSV lines, header line first, and the analysis profile (otherwise an empty list and an
-    empty string); and a short rationale that explains how files or samples were grouped, which were
-    left out and why, the contrasts and their direction, and why each parameter is set.
+    parameter (do not include "input", "outdir", "contrasts" or "cellranger_multi_barcodes"); in
+    contrasts_lines the second sheet as a list of CSV lines, header line first (differentialabundance: the
+    contrasts; multiplexed 10x scrnaseq: the barcodes sheet; otherwise an empty list); the analysis profile
+    for differentialabundance (otherwise an empty string); and a short rationale that explains how files or
+    samples were grouped, which were left out and why, the contrasts and their direction (or which samples
+    each multiplexed library holds), and why each parameter is set.
     """
 }
 
@@ -499,7 +506,7 @@ workflow {
             pipeline: d.resolve('plan_pipeline.txt').text.trim(),
             samplesheet_csv: d.resolve('plan_samplesheet.csv').text,
             params_json: d.resolve('plan_params.json').text,
-            contrasts_csv: d.resolve('plan_contrasts.csv').exists() ? d.resolve('plan_contrasts.csv').text : '',
+            contrasts_csv: ['plan_contrasts.csv', 'plan_barcodes.csv'].collect { f -> d.resolve(f) }.findAll { f -> f.exists() }.collect { f -> f.text }.join(''),
             profile: d.resolve('plan_profile.txt').exists() ? d.resolve('plan_profile.txt').text.trim() : '',
             rationale: d.resolve('plan_rationale.txt').text))
         def outcome = d.resolve('plan_pipeline.txt').text.trim() == 'sc_downstream' ? analyst(plan) : operator(plan)

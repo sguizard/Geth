@@ -2,6 +2,25 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 1.9.0 (2026-10-19)
+
+From the first real-data analysis run by a user alone: a 10x On-Chip Multiplexing delivery that Geth
+planned as plain 10x ([validation](docs/validation.md#multiplexed-single-cell-libraries-version-19)).
+
+- **Multiplexed single-cell libraries** (OCM, CellPlex, Flex): the plan check reads the delivery's README,
+  tables and facility report. If they show multiplexing, it refuses a plan that does not use Cell Ranger
+  multi with a barcodes sheet (`plan_barcodes.csv`, shown by `geth show`). The sheet is checked and frozen
+  at approval like the samplesheet. The scrnaseq skill has a section on them. Validated on a rat OCM test
+  delivery: plans 13/13, 13/13, 12/13; full run succeeded, four samples split; 72/75 report numbers traced.
+- **Plan warnings** (they never block a plan): samples listed in the delivery that appear nowhere in the
+  plan; a 10x chemistry the delivery never states; GEM-X data planned as v3. The skill no longer assumes
+  v3.
+- **`geth stop <name>` and `geth lab stop <name>`:** stop a planning or a run, its Nextflow drivers and its
+  cluster jobs. `geth run` resumes; an attempt ended this way does not count towards the limit.
+- **Cell Ranger multi on Eddie:** a pipeline's own `beforeScript` for a process no longer drops the site's
+  (`module load apptainer`); Geth puts it back at launch, for every pipeline.
+- Reports summarise Cell Ranger multi: per sample, per library, and the cells of each barcode.
+
 ## 1.8.0 (2026-10-18)
 
 - **Phase 11 closed** ([validation](docs/validation.md)). With skills, Qwen 3.5 designs coherent single-cell
