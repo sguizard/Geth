@@ -23,8 +23,10 @@ if ! revision=$(python3 "$checks" revision "$pipeline"); then
     echo "STATUS: REFUSED - $revision"; exit 0
 fi
 
-n=$(( $(find "$run_dir" -maxdepth 1 -type d -name 'attempt_*' | wc -l) + 1 ))
-if [ "$n" -gt "$max_attempts" ]; then
+# Attempts ended by geth stop (attempt_N/STOPPED) do not count towards the limit.
+n=$(( $(find "$run_dir" -maxdepth 1 -type d -name 'attempt_*' | sed 's/.*_//' | sort -n | tail -n 1) + 1 ))
+used=$(for a in "$run_dir"/attempt_*/; do [ -d "$a" ] && [ ! -f "$a/STOPPED" ] && echo; done | wc -l)
+if [ "$used" -ge "$max_attempts" ]; then
     echo "STATUS: REFUSED - attempt limit ($max_attempts) reached; stop and report the last error"
     exit 0
 fi
@@ -114,6 +116,12 @@ site_config=()
 # Separate launch dir: the Geth driver itself runs in $run_dir, and -resume must not pick its session.
 mkdir -p "$run_dir/nfcore"
 cd "$run_dir/nfcore"
+
+# A process whose own beforeScript replaces the site's (e.g. the module load that puts apptainer on the jobs'
+# PATH) gets the site's back, in front of its own.
+env "${nested_env[@]}" nextflow "${site_config[@]}" config "nf-core/$pipeline" -r "$revision" "${profile_args[@]}" -flat 2>/dev/null \
+    | python3 "$checks" keep-prelude > "$attempt/prelude.config"
+[ -s "$attempt/prelude.config" ] && extra+=(-c "$attempt/prelude.config")
 env "${nested_env[@]}" nextflow run "nf-core/$pipeline" -r "$revision" "${profile_args[@]}" "${extra[@]}" \
     -c "$GETH_HOME/geth/conf/$resources.config" "${site_config[@]}" \
     -params-file "$attempt/params.json" --input "$input" \

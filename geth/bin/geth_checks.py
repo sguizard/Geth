@@ -1423,6 +1423,30 @@ def parts(argv):
     return {"contrasts_text": read_text(contrasts), "profile": profile or "", "upstream": upstream or ""}, argv
 
 
+LITERAL = r"'(?:[^'\\]|\\.)*'"  # a single-quoted string as `nextflow config -flat` prints it
+
+
+def keep_prelude(flat):
+    """A pipeline's own beforeScript for some processes (scrnaseq 4.2.0: CELLRANGER_MULTI, to turn telemetry off)
+    replaces the site's, which may be what puts the container engine on the jobs' PATH (Eddie: module load
+    apptainer). From the resolved configuration (`nextflow config -flat`), a config that runs the site's
+    beforeScript first, then the pipeline's, for each such process selector. Empty when nothing is replaced."""
+    generic, specific = None, []
+    for line in flat.splitlines():
+        m = re.match(rf"^process\.beforeScript = ({LITERAL})\s*$", line)
+        if m:
+            generic = m.group(1)
+            continue
+        m = re.match(rf"^process\.'(withName|withLabel):([^']+)'\.beforeScript = ({LITERAL})\s*$", line)
+        if m:
+            specific.append(m.groups())
+    if not generic or not generic.strip("'").replace("\\n", "").strip():
+        return ""
+    lines = [f"    {kind}: '{name}' {{ beforeScript = {generic} + '\\n' + {value} }}"
+             for kind, name, value in specific if generic.strip("'") not in value]
+    return "process {\n" + "\n".join(lines) + "\n}\n" if lines else ""
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "check-plan":
@@ -1442,6 +1466,9 @@ def main(argv):
         print("PLAN CHECK: OK")
         for w in plan_warnings(pipeline, sheet_text, params, extra["contrasts_text"]):
             print(f"WARNING: {w}")
+        return 0
+    if cmd == "keep-prelude":  # keep-prelude < flat config: a config restoring the site's beforeScript (see above)
+        sys.stdout.write(keep_prelude(sys.stdin.read()))
         return 0
     if cmd == "sheet2":  # sheet2 <pipeline>: "<nf-core parameter> <file name>" of the plan's second sheet, if any
         spec = REGISTRY.get(pipeline_name(argv[2]), {}).get("second_sheet")

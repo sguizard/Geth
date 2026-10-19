@@ -764,5 +764,24 @@ class Multiplexed10x(unittest.TestCase):
         finally:
             bulk.close()
 
+class SitePrelude(unittest.TestCase):
+    """scrnaseq 4.2.0 sets its own beforeScript for CELLRANGER_MULTI, which replaced Eddie's module load of
+    apptainer: the job failed with "env: 'apptainer': No such file or directory" (v19ocm_sc_rat_ocm_2)."""
+    FLAT = ("process.executor = 'sge'\n"
+            "process.beforeScript = '\\n    . /etc/profile.d/modules.sh\\n    module load apptainer\\n    '\n"
+            "process.'withName:CELLRANGER_MULTI'.beforeScript = 'export TENX_DISABLE_TELEMETRY=1'\n"
+            "process.'withName:FASTQC'.cpus = 2\n")
+
+    def test_site_prelude_is_put_back(self):
+        config = gc.keep_prelude(self.FLAT)
+        self.assertIn("withName: 'CELLRANGER_MULTI' { beforeScript = '\\n    . /etc/profile.d/modules.sh\\n    "
+                      "module load apptainer\\n    ' + '\\n' + 'export TENX_DISABLE_TELEMETRY=1' }", config)
+        self.assertNotIn("FASTQC", config)
+
+    def test_nothing_to_do(self):
+        self.assertEqual(gc.keep_prelude(self.FLAT.replace("process.beforeScript", "process.queue")), "")
+        self.assertEqual(gc.keep_prelude("process.beforeScript = 'module load apptainer'\n"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

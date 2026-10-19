@@ -58,8 +58,9 @@ barcodes (`BC001`...). A sample table that lists more samples than there are FAS
     ...
     Library_B,spleen_1,,,OB1,spleen
     ```
-- Reference: `fasta` and `gtf` (Cell Ranger builds its own index from them). Results are per sample, under
-  `<outdir>/cellrangermulti/count/` (`per_sample_outs`).
+- Reference: `fasta` and `gtf` (Cell Ranger builds its own index from them). Results are per sample:
+  `<outdir>/cellrangermulti/count/<library>/outs/per_sample_outs/<sample>/` (metrics, web summary) and
+  `<outdir>/cellrangermulti/mtx_conversions/<sample>/` (`*.h5ad`, `*.rds`).
 
 ## Reusing a built index
 With `aligner=star`: if the reference catalogue entry you use lists a `STAR index:` for STAR 2.7.11b (the

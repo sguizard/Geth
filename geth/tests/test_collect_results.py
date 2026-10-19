@@ -97,5 +97,62 @@ class MagSummary(unittest.TestCase):
         self.assertIn("No completeness or contamination estimates", text)
         self.assertIn(812495.0, cr.raw_values(self.run))
 
+# Cell Ranger multi (scrnaseq 4.2.0, aligner cellrangermulti): rat_1's metrics_summary.csv from the sc_rat_ocm
+# test run (v19ocm_sc_rat_ocm_2), trimmed to the rows the summary reads.
+CR_METRICS = """Category,Library Type,Grouped By,Group Name,Metric Name,Metric Value
+Cells,Gene Expression,,,Cells,499
+Cells,Gene Expression,,,Confidently mapped to genome,0.240079860244572
+Cells,Gene Expression,,,Median UMI counts per cell,1
+Cells,Gene Expression,,,Median genes per cell,1
+Cells,Gene Expression,,,Number of reads in cells,4007
+Cells,Gene Expression,,,Total genes detected,212
+Library,Gene Expression,Fastq ID,RatPBMC_pool,Number of reads,60000
+Library,Gene Expression,OCM Barcode ID,OB1,Cells per OCM barcode,499
+Library,Gene Expression,OCM Barcode ID,OB1,Sample ID,rat_1
+Library,Gene Expression,OCM Barcode ID,OB1,UMIs per OCM barcode,586
+Library,Gene Expression,OCM Barcode ID,OB2,Cells per OCM barcode,629
+Library,Gene Expression,OCM Barcode ID,OB2,Sample ID,rat_2
+Library,Gene Expression,OCM Barcode ID,OB2,UMIs per OCM barcode,763
+Library,Gene Expression,Physical library ID,GEX_1,Cells,2294
+Library,Gene Expression,Physical library ID,GEX_1,Mapped to genome,0.12608333333333333
+Library,Gene Expression,Physical library ID,GEX_1,Mean reads per cell,26
+Library,Gene Expression,Physical library ID,GEX_1,Number of reads,60000
+Library,Gene Expression,Physical library ID,GEX_1,Sequencing saturation,0.25013743815283124
+Library,Gene Expression,Physical library ID,GEX_1,Valid barcodes,0.93525
+"""
+
+
+class CellRangerMultiSummary(unittest.TestCase):
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp(prefix="geth_collect_crm_")
+        outs = os.path.join(self.run, "results", "cellrangermulti", "count", "RatPBMC_pool", "outs", "per_sample_outs")
+        for sample in ("rat_1", "rat_2"):
+            os.makedirs(os.path.join(outs, sample))
+            open(os.path.join(outs, sample, "metrics_summary.csv"), "w").write(
+                CR_METRICS if sample == "rat_1" else CR_METRICS.replace("Cells,Gene Expression,,,Cells,499",
+                                                                        "Cells,Gene Expression,,,Cells,629"))
+        data = os.path.join(self.run, "results", "multiqc", "multiqc_data")
+        os.makedirs(data)
+        open(os.path.join(data, "multiqc_general_stats.txt"), "w").write(
+            "Sample\tfastqc-percent_duplicates\tfastqc-percent_gc\tfastqc-total_sequences\n"
+            "RatPBMC_pool_gex_1\t28.27\t51.0\t0.01\nRatPBMC_pool_gex_2\t30.37\t47.0\t0.01\n")
+        open(os.path.join(self.run, "plan_samplesheet.csv"), "w").write(
+            "sample,fastq_1,fastq_2,feature_type\n"
+            "RatPBMC_pool,/x/RatPBMC_pool_S1_L001_R1_001.fastq.gz,/x/RatPBMC_pool_S1_L001_R2_001.fastq.gz,gex\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.run)
+
+    def test_samples_library_and_barcodes(self):
+        text = "\n\n".join(cr.scrnaseq(self.run, os.path.join(self.run, "results")))
+        self.assertIn("| rat_1 | RatPBMC_pool | OB1 (OCM Barcode ID) | 499 | 1 | 1 | 212 | 4,007 | 24.0 |", text)
+        self.assertIn("| rat_2 | RatPBMC_pool | OB2 (OCM Barcode ID) | 629 |", text)
+        self.assertIn("| RatPBMC_pool | 60,000 | 93.5 | 12.6 | n/a | 25.0 | 2,294 | 26 |", text)
+        self.assertIn("| RatPBMC_pool | OB2 | rat_2 | 629 | 763 |", text)
+        self.assertNotIn("| RatPBMC_pool | RatPBMC_pool |", text)  # the per-FASTQ group is not a barcode
+        self.assertIn("| RatPBMC_pool_S1_L001_R2_001.fastq.gz | RatPBMC_pool | 10,000 | 30.4 | 47 |", text)
+
+
 if __name__ == "__main__":
     unittest.main()

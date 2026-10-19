@@ -93,7 +93,7 @@ person.
 | `.checked/` | `CHECK_PLAN` | the last plan version that passed the check during planning (fallback) |
 | `APPROVED` | `geth approve` | approver, time, SHA-256 of every plan file |
 | `gate_state.json` | `record` | the last accepted attempt and the error that may justify the next change |
-| `attempt_N/` | `run_nfcore.sh` | `samplesheet.csv`, `params.submitted.json`, `params.json` (normalised), `gate.txt`, `check.txt`, `nextflow.log`, `error.txt` (and `contrasts.csv` or `barcodes.csv`, `samplesheet.tsv`) |
+| `attempt_N/` | `run_nfcore.sh` | `samplesheet.csv`, `params.submitted.json`, `params.json` (normalised), `gate.txt`, `check.txt`, `nextflow.log`, `error.txt` (and `contrasts.csv` or `barcodes.csv`, `samplesheet.tsv`, `prelude.config`; `STOPPED` when `geth stop` ended it: such an attempt does not count towards the limit of 5) |
 | `analysis_N/` | `sc_analyse.sh` | toolbox analyses: `design.submitted.txt`, `design.json`, `diagnostics.json`, `summary.txt`, figures, `processed.h5ad` |
 | `nfcore/` | `run_nfcore.sh` | launch folder of the nested nf-core run (its `.nextflow/` and log) |
 | `results/`, `work/` | nf-core | the pipeline's outputs and work folder |
@@ -365,6 +365,12 @@ are often read-only in jobs.
 - The local tools (`executor 'local'`) inherit the driver's environment, so `run_nfcore.sh` and the
   checks see the site settings. Scheduler jobs do not: `SC_ANALYSE` exports `GETH_REFERENCES` itself,
   and the containers get `-B` binds for the three Geth folders.
+- **The site's task prelude survives a pipeline's own `beforeScript`.** An institutional profile often
+  loads the container engine in `process.beforeScript` (Eddie: `module load apptainer`). A pipeline that
+  sets `beforeScript` for one process replaces it there (scrnaseq 4.2.0's `CELLRANGER_MULTI`: the job
+  failed with `env: 'apptainer': No such file or directory`). Before each launch, `run_nfcore.sh` reads
+  the resolved configuration (`nextflow config -flat`, about 3 seconds) and `geth_checks.py keep-prelude`
+  writes `attempt_N/prelude.config`, which runs the site's prelude first for each such selector.
 - Scripts that may run as scheduler jobs (`bench/stage_*.sh`, `geth/references/*.sh`) find Geth through
   `GETH_HOME` when it is set. A job runs a copy of the script, so `$0` does not lead back to the
   repository.

@@ -64,6 +64,11 @@ else
         left=($(alive "${left[@]}"))
         [ ${#left[@]} -gt 0 ] && kill -KILL "${left[@]}" 2>/dev/null
     fi
+    # The nf-core launch it interrupted does not count towards the operator's attempts.
+    last=$(find "$run_dir" -maxdepth 1 -type d -name 'attempt_*' | sed 's/.*attempt_//' | sort -n | tail -n 1)
+    last=${last:+$run_dir/attempt_$last}
+    [ -n "$last" ] && [ -f "$last/nextflow.log" ] && ! grep -qs 'Pipeline completed successfully' "$last/nextflow.log" \
+        && date '+%F %T' > "$last/STOPPED"
     for s in "${stages[@]}"; do
         rm -f "$run_dir/.geth_$s.pid"
         [ -f "$run_dir/geth_$s.log" ] && echo "Geth: stopped by geth stop ($(whoami), $(date '+%F %T'))." >> "$run_dir/geth_$s.log"
