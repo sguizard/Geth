@@ -131,10 +131,10 @@ section { display: grid; gap: 14px; }
 .connector .arrow { width: 100%; min-width: 0; }
 
 /* Roadmap */
-.roadmap { min-width: 980px; display: grid; gap: 10px; }
-.bands { display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 0; }
+.roadmap { min-width: 1050px; display: grid; gap: 10px; }
+.bands { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 0; }
 .band { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--line); padding: 0 4px 4px; text-align: center; }
-.track { position: relative; display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); }
+.track { position: relative; display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); }
 .track::before { content: ""; position: absolute; left: 3.8%; right: 3.8%; top: 19px; border-top: 3px solid var(--line); }
 .station { position: relative; display: grid; justify-items: center; gap: 6px; text-align: center; padding: 0 3px; }
 .dot { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 500; border: 2.5px solid var(--edge); background: var(--panel); color: var(--muted); z-index: 1; }
@@ -302,14 +302,14 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
     <div class="section-head">
       <span class="eyebrow">Diagram 3</span>
       <h2 id="road-h">Development roadmap</h2>
-      <p class="caption">Each phase is one piece of work, numbered in the order it started. Phase 11 is an experiment, and phase 12 makes Geth fit for Eddie's sandboxing rule.</p>
+      <p class="caption">Each phase is one piece of work, numbered in the order it started. Phase 11 is an experiment, phase 12 makes Geth fit for Eddie's sandboxing rule, and phase 13 fixes what your first solo analysis found (multiplexed 10x, <code>geth stop</code>).</p>
     </div>
     <div class="figure"><div class="figure-inner roadmap">
       <div class="bands" aria-hidden="true">
         <div class="band" style="grid-column: 1 / span 5">Feasibility · v0.1</div>
         <div class="band" style="grid-column: 6 / span 2">Geth v1 · v1.0–1.1</div>
         <div class="band" style="grid-column: 8 / span 4">Extensions · v1.2–1.6</div>
-        <div class="band" style="grid-column: 12 / span 2">Next</div>
+        <div class="band" style="grid-column: 12 / span 3">Lab, sandbox, users · v1.7–1.9</div>
       </div>
       <ol class="track" style="list-style: none; margin: 0; padding: 0;">
         <li class="station done"><span class="dot">0</span><span class="name">Setup</span></li>
@@ -325,6 +325,7 @@ footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--li
         <li class="station done"><span class="dot">10</span><span class="name">Reusing indexes</span><span class="ver">v1.6</span></li>
         <li class="station done"><span class="dot">11</span><span class="name">Agents write analyses</span><span class="ver">experimental, closed</span></li>
         <li class="station done"><span class="dot">12</span><span class="name">Sandboxed agents</span><span class="ver">v1.7</span></li>
+        <li class="station done"><span class="dot">13</span><span class="name">First solo analysis</span><span class="ver">v1.9</span></li>
       </ol>
       <div class="roadmap-legend">
         <span><i class="mini done"></i>done</span>
