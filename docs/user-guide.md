@@ -36,7 +36,10 @@ Say, in plain words:
 - **replicates**: which samples are biological replicates, and which files are the same library
   sequenced twice (technical replicates or lanes)
 - **pairing or batches**: e.g. "each donor gave one treated and one untreated sample"
-- **the organism**, and anything unusual: library kit, strandedness, 10x chemistry version, spike-ins
+- **the organism**, and anything unusual: library kit, strandedness, 10x chemistry version (e.g. GEM-X
+  3' v4, Next GEM 3' v3.1), spike-ins
+- **multiplexed single-cell libraries**: if several samples share one 10x library (On-Chip Multiplexing,
+  CellPlex, Flex), say so, and give the table of which barcode (OB1, CMO301, BC001, ...) is which sample
 
 Example folder:
 
@@ -95,8 +98,11 @@ You will see:
   left out on purpose, and why each parameter is set.
 - **Samplesheet**: one row per file (or pair of files) with its sample name.
 - **Parameters**: pipeline settings, such as the reference genome and annotation, or the aligner.
+- **Multiplexed samples** (single-cell only, when several samples share one library): which sample each
+  barcode of a library holds.
 - **Plan check**: Geth's automatic check of the plan against the pipeline. It should say
-  `PLAN CHECK: OK`.
+  `PLAN CHECK: OK`. It may add `WARNING:` lines: things to check before you approve, for example samples
+  listed in your README that appear nowhere in the plan, or a 10x chemistry the delivery does not state.
 
 **What to check.** This is the moment where your knowledge of the experiment matters:
 
@@ -116,6 +122,7 @@ You will see:
 | `plan_samplesheet.csv` | the samplesheet (or, for differential expression, the samples and their conditions) |
 | `plan_params.json` | the parameters |
 | `plan_contrasts.csv` | differential expression only: the comparisons |
+| `plan_barcodes.csv` | multiplexed single-cell only: the samples of each library and their barcodes |
 
 To start again instead, improve the README or the question, and plan under a new name.
 
@@ -160,6 +167,16 @@ sites that use one.
 
 If the run was interrupted, for example because the machine rebooted, run `geth run my_analysis` again.
 It resumes where it stopped.
+
+**To stop** a planning or a run yourself:
+
+```bash
+geth stop my_analysis
+```
+
+It stops the agents and the pipeline, and deletes the run's jobs on the cluster. It takes up to two
+minutes, while the pipeline cancels its jobs. The work done so far is kept: `geth run my_analysis` resumes
+the run later.
 
 Each stage has a time limit, so a stuck agent cannot hold the machine forever: 2 hours for planning, 72 hours
 for a run, by default. If a stage hits its limit, Geth says so; your site can raise the limits.
@@ -243,6 +260,7 @@ The annotation model must match your tissue and species. Available models are li
 ## Managing your analyses
 
 - `geth list` shows every analysis and its state: planned, approved, running, succeeded or failed.
+- `geth stop my_analysis` stops a planning or a run (see [step 5](#step-5-run)).
 - `geth version` prints the version of Geth you are using: worth quoting when you report a problem.
 - **To change an analysis that already ran,** plan again under a new name. That keeps the history of
   what was run clear.
@@ -259,6 +277,9 @@ The annotation model must match your tissue and species. Available models are li
 | `Agents can only read data under GETH_DATA_ROOT` | Move the data folder inside `$GETH_DATA_ROOT`. |
 | `Planning failed: see .../geth_plan.log` | Often the model endpoint: run `geth doctor`. Otherwise look at the end of the log. |
 | The plan check lists problems | Fix the plan files (the message says what is wrong), or plan again with a clearer README or question. |
+| `the delivery describes multiplexed 10x libraries` | Several samples share each library: plan again, saying so in the question, or fix the plan as the message says (Cell Ranger multi and a `plan_barcodes.csv`). |
+| `WARNING: ...` under the plan check | Not an error: check what it points to before approving. |
+| The run is stuck, or you started the wrong one | `geth stop my_analysis` |
 | `... changed after approval` | You (or someone) edited a plan file: review it, then `geth approve` again. |
 | The run failed | `geth status` lists the attempts. `report.md` explains the failure. The error of each attempt is in `attempt_N/error.txt`, and the pipeline's log in `attempt_N/nextflow.log`. |
 | The report says some numbers could not be traced | Check those numbers against the results before using them. |

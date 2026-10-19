@@ -8,6 +8,7 @@
 #   geth run <name> [--detach]                 operator + reporter agents run the approved plan
 #   geth status <name>                         outcome, report check and attempts
 #   geth list                                  all runs and where they stand
+#   geth stop <name>                           stop a planning or a run, and its scheduler jobs (geth run resumes it)
 #   geth doctor                                check the installation and the site configuration
 #   geth version                               print Geth's version
 #   geth lab ...                               EXPERIMENTAL agent-designed analyses (not for real analyses)
@@ -18,7 +19,7 @@ runs="$GETH_RUNS_DIR"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
     local commit; commit=$(git -C "$GETH_HOME" rev-parse --short HEAD 2>/dev/null || true)
     echo "Geth $(cat "$GETH_HOME/VERSION" 2>/dev/null || echo unknown)${commit:+ (commit $commit)}"
@@ -60,6 +61,7 @@ state() {  # one-line state of a run
     elif [ -f "$d/APPROVED" ]; then echo "approved, not run yet"
     elif active "$d" plan; then echo "planning"
     elif [ -f "$d/plan_pipeline.txt" ]; then echo "planned, waiting for approval"
+    elif grep -qs 'stopped by geth stop' "$d/geth_plan.log"; then echo "planning stopped"
     else echo "planning failed"
     fi
 }
@@ -192,6 +194,14 @@ case "$cmd" in
             printf '%-24s %-22s %s\n' "$(basename "$d")" "$(cat "$d/plan_pipeline.txt" 2>/dev/null || echo -)" "$(state "$d")"
         done
         [ -d "$runs/lab" ] && echo "(experimental lab runs are listed by: geth lab list)"
+        ;;
+    stop)
+        [ $# -eq 1 ] || usage
+        d=$(run_dir_of "$1")
+        [ -d "$d" ] || { echo "No run named '$1'." >&2; exit 1; }
+        "$GETH_HOME/geth/bin/stop_driver.sh" "$d"
+        [ -f "$d/APPROVED" ] && [ ! -f "$d/outcome.txt" ] && [ -f "$d/geth_run.log" ] && echo "Resume it with: geth run $1"
+        exit 0
         ;;
     doctor)
         [ $# -eq 0 ] || usage

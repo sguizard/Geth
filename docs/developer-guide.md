@@ -43,7 +43,7 @@ site/
   site.env.example         documented template of the site configuration (copy to site/site.env)
   examples/                worked site configurations: local machine, an SGE cluster with GPUs
 geth/
-  geth                     the command line: plan, show, approve, run, status, list, doctor, version, lab
+  geth                     the command line: plan, show, approve, run, status, list, stop, doctor, version, lab
   main.nf                  the workflow: records, tools (processes), agents, bookkeeping, workflow block
   nextflow.config          Geth's own settings, read from the environment (model, endpoint, folders)
   bin/                     on the tasks' PATH (Nextflow adds a pipeline's bin/ automatically)
@@ -55,6 +55,7 @@ geth/
     check_report.py        traces every number and link of the report to the facts
     geth_doctor.sh         installation checks (geth doctor)
     driver_slots.sh        driver slots (GETH_MAX_DRIVERS), stage time limits, the sandboxed() launcher
+    stop_driver.sh         geth stop / geth lab stop: ends a run's drivers, processes and scheduler jobs
     agent_sandbox.sh       runs an agent driver in a container (GETH_AGENT_SANDBOX, phase 12)
     env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
   completions/geth.fish    fish tab completion (loaded by env.fish)
@@ -64,7 +65,7 @@ geth/
   references/              scripts that add entries to the reference catalogue
   tests/                   unit tests of the gates and of the lab's bookkeeping (self-contained)
   lab/                     the EXPERIMENTAL lab (phase 11): not used by geth plan / geth run
-    lab.sh                 geth lab: design, judge, show, list, build (arm B), build-c (arm C)
+    lab.sh                 geth lab: design, judge, show, list, build (arm B), build-c (arm C), stop
     main.nf                designer, judge, engineer, reviewer agents and their tools
     bin/                   lab_checks.py (design format), lab_inspect.py, lab_build.py (arm B/C bookkeeping),
                            lab_step_check.py (static check), lab_sandbox.sh and lab_nf_sandbox.sh (the
@@ -87,11 +88,12 @@ person.
 | `question.txt`, `data_dir.txt` | workflow (plan mode) | the request and the data folder |
 | `plan_pipeline.txt`, `plan_samplesheet.csv`, `plan_params.json`, `plan_rationale.txt` | `SAVE_PLAN` (`save-plan`) | the plan |
 | `plan_contrasts.csv`, `plan_profile.txt`, `plan_upstream.txt` | `SAVE_PLAN` | downstream pipelines only |
+| `plan_barcodes.csv` | `SAVE_PLAN` | multiplexed scrnaseq only: the Cell Ranger multi barcodes sheet |
 | `plan_check.txt` | `SAVE_PLAN` | the plan check result |
 | `.checked/` | `CHECK_PLAN` | the last plan version that passed the check during planning (fallback) |
 | `APPROVED` | `geth approve` | approver, time, SHA-256 of every plan file |
 | `gate_state.json` | `record` | the last accepted attempt and the error that may justify the next change |
-| `attempt_N/` | `run_nfcore.sh` | `samplesheet.csv`, `params.submitted.json`, `params.json` (normalised), `gate.txt`, `check.txt`, `nextflow.log`, `error.txt` (and `contrasts.csv`, `samplesheet.tsv`) |
+| `attempt_N/` | `run_nfcore.sh` | `samplesheet.csv`, `params.submitted.json`, `params.json` (normalised), `gate.txt`, `check.txt`, `nextflow.log`, `error.txt` (and `contrasts.csv` or `barcodes.csv`, `samplesheet.tsv`) |
 | `analysis_N/` | `sc_analyse.sh` | toolbox analyses: `design.submitted.txt`, `design.json`, `diagnostics.json`, `summary.txt`, figures, `processed.h5ad` |
 | `nfcore/` | `run_nfcore.sh` | launch folder of the nested nf-core run (its `.nextflow/` and log) |
 | `results/`, `work/` | nf-core | the pipeline's outputs and work folder |
@@ -99,10 +101,17 @@ person.
 | `annotations.txt` | `SAVE_ANNOTATIONS` | single-cell cluster annotations |
 | `report.md`, `report_check.txt` | `FINALIZE_REPORT` | the checked report |
 | `geth_<mode>.log`, `geth_trace_<mode>.txt`, `.nextflow.log*`, `geth_work/` | Nextflow | Geth's own driver: log, task trace, work folder |
-| `.geth_<mode>.pid` | `geth` | present while a driver works on the run (`geth list`) |
+| `.geth_<mode>.pid` | `geth` | present while a driver works on the run (`geth list`, `geth stop`): host, pid, driver slots |
 
 Because the folder holds the whole state, `geth run` resumes after an interruption: Nextflow `-resume`
 in `nfcore/`, attempt numbering continues, and the gate state persists.
+
+**Stopping.** `geth stop` (`stop_driver.sh`) reads the live `.geth_*.pid` files and walks the process tree
+below each pid (sandbox included: apptainer's PID namespace is visible from the host). It stops the Geth
+command first, so no further stage starts, then sends SIGTERM to every Nextflow driver in the tree at once:
+each cancels its own scheduler jobs. After `GETH_STOP_GRACE` seconds the rest of the tree gets SIGTERM, then
+SIGKILL. Last, it deletes any job of the user whose working folder (`qstat -j`: `cwd`) is inside the run
+folder. It appends `stopped by geth stop` to the stage's log, which `geth list` shows.
 
 ## Lifecycle of an analysis
 
@@ -122,9 +131,12 @@ in `nfcore/`, attempt numbering continues, and the gate state persists.
    | `CHECK_PLAN` | `geth_checks.py check-plan`; also saves passing versions to `.checked/` |
 
    It also gets **skills**: one per pipeline. It must call `CHECK_PLAN` until it prints
-   `PLAN CHECK: OK`.
-3. The planner answers with a `PlanProposal` record. The samplesheet, parameters and contrasts come back
-   as **lists of lines**: JSON nested in a text field was mangled by the structured-output step.
+   `PLAN CHECK: OK`, and fix or explain every `WARNING:` line (`plan_warnings()`: samples of the
+   delivery's tables that appear nowhere in the plan; a 10x chemistry the delivery never states, or GEM-X
+   planned as v3). Warnings never block a plan.
+3. The planner answers with a `PlanProposal` record. The samplesheet, parameters and the second sheet
+   (`contrasts_lines`: contrasts, or the multiplexed samples) come back as **lists of lines**: JSON nested
+   in a text field was mangled by the structured-output step.
 4. `SAVE_PLAN` runs `geth_checks.py save-plan`. It re-checks the answer and writes the `plan_*` files.
    If the final answer fails the check but a version in `.checked/` passed, it keeps the checked
    version and says so in the rationale.
@@ -176,7 +188,9 @@ the files. A file edited after approval makes every gate call fail until a perso
 - **Design:** frozen. The registry's `design` columns are compared as a sorted multiset: sample names,
   file assignments, and for chipseq the replicate and control links. For downstream pipelines,
   `design = None` freezes every column of the observations sheet, plus the contrasts and the analysis
-  profile. Each violation is described per file (`design change: sample of X.fastq.gz changed ...`).
+  profile. The registry's `design_params` (scrnaseq: `protocol`, `aligner`) and the second sheet (the
+  multiplexed samples of a Cell Ranger multi plan) are frozen too. Each violation is described per file
+  (`design change: sample of X.fastq.gz changed ...`).
 - **Other samplesheet columns** (e.g. `strandedness`) may change only if the previous error mentions
   the column by name.
 - **Parameters:**
@@ -256,6 +270,8 @@ Keep skills short (30 to 50 lines) and factual. The plan check, not the skill, i
 | `extra_config` | a config from `geth/conf/` added to the nested run |
 | `input_format` | `tsv`: the samplesheet is converted before launch (eager) |
 | `legacy_limits` | pass `--max_cpus/--max_memory/--max_time` (pre-`resourceLimits` templates) |
+| `design_params` | parameters that describe the data, frozen by the gate like the design columns |
+| `second_sheet` | a second plan sheet: its file (`plan_contrasts.csv`, `plan_barcodes.csv`), the nf-core parameter `run_nfcore.sh` passes it as, and its name in messages. Internally it travels as "contrasts" (`--contrasts`, `contrasts_lines`) |
 
 **Data-dependent memory.** `geth_checks.py resources` writes an extra config for jobs whose memory depends on
 the data: Kraken2 loads its whole index in RAM, so taxprofiler's Kraken2 jobs ask for the index size plus a
@@ -269,6 +285,15 @@ say when to use it. `check_star_index()` refuses three cases: an index without `
 version other than the registry's `star`, and a plan whose `fasta` or `gtf` differ from the recorded ones. A
 STAR index stores the annotation's transcript and gene models, so STARsolo counts and Salmon's transcriptome
 BAM depend on it.
+
+**Multiplexed 10x.** `check_multiplexing()` reads the delivery's own text (`delivery_texts()`: README,
+tables and the facility's HTML report, from the FASTQ folder up to two levels above, never above
+`GETH_DATA_ROOT`). Signs of OCM, CellPlex or Flex refuse a plain scrnaseq plan: only `aligner=cellrangermulti`
+with a barcodes sheet separates the samples of a library. The sheet is checked with the rules of
+the release's `cellranger_multi_barcodes` schema (header, ids without spaces, a description, OCM barcodes
+OB1–OB4) plus Geth's own: library names from the samplesheet, one barcode kind per library, a `cmo`
+library for CellPlex, the probe set for Flex. In HTML only the strong
+markers count (`10xOCM`, CellPlex, CMO301...), since reports carry boilerplate.
 
 Pipeline-specific rules live in `EXTRA_CHECKS`, one function per pipeline taking the rows and params.
 Examples: tumour/normal status in sarek, IP-to-control links in chipseq, the UDG treatment and its

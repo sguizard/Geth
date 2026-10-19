@@ -85,6 +85,7 @@ that holds only deliveries (not the whole `GETH_WORK_ROOT`), and plan each analy
 | `GETH_AGENT_TIMEOUT` | `2h` | Time limit for a planning, design or review stage (`timeout` syntax: `30m`, `2h`). |
 | `GETH_ENGINEER_TIMEOUT` | `4h` | Time limit for a lab engineer stage. |
 | `GETH_RUN_TIMEOUT` | `72h` | Time limit for `geth run` (the whole pipeline run, retries included). |
+| `GETH_STOP_GRACE` | `120` | Seconds `geth stop` gives the Nextflow drivers to cancel their scheduler jobs before it ends them. |
 | `GETH_AGENT_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_agent_54cf9ab304820814.sif` | The image the drivers run in: Python 3.12 and the usual command-line tools (`oras://community.wave.seqera.io/library/python_findutils_coreutils_gawk_pruned:54cf9ab304820814`). |
 
 Anything else your institutional profile reads from the environment goes in `site.env` too, for example

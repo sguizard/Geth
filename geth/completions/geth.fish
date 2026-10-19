@@ -31,6 +31,9 @@ function __geth_runs --argument-names want  # run names, with their pipeline as 
                 test -f $d/APPROVED; or continue
             case succeeded
                 test -f $d/outcome.txt; and string match -q 'succeeded: true' <$d/outcome.txt; or continue
+            case active
+                set -l pids $d/.geth_*.pid
+                test (count $pids) -gt 0; or continue
         end
         set -l pipeline -
         test -f $d/plan_pipeline.txt; and set pipeline (string trim <$d/plan_pipeline.txt)
@@ -38,17 +41,21 @@ function __geth_runs --argument-names want  # run names, with their pipeline as 
     end
 end
 
-function __geth_lab_runs  # lab run names, with their arm as description
+function __geth_lab_runs --argument-names want  # lab run names, with their arm as description
     set -q GETH_RUNS_DIR; or return
     for d in $GETH_RUNS_DIR/lab/*/
         set d (string trim -r -c / -- $d)
+        if test "$want" = active
+            set -l pids $d/.geth_*.pid
+            test (count $pids) -gt 0; or continue
+        end
         set -l arm -
         test -f $d/lab_arm.txt; and set arm (string trim <$d/lab_arm.txt)
         printf '%s\t%s\n' (string replace -r '.*/' '' -- $d) $arm
     end
 end
 
-set -l __geth_commands plan show approve run status list doctor version lab
+set -l __geth_commands plan show approve run status list stop doctor version lab
 complete -c geth -f
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a plan -d 'Planner agent writes a plan'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a show -d 'Print a plan and its check'
@@ -56,6 +63,7 @@ complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a approv
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a run -d 'Run an approved plan'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a status -d 'Outcome, report check, attempts'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a list -d 'All runs and where they stand'
+complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a stop -d 'Stop a planning or a run'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a doctor -d 'Check the installation'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a version -d "Print Geth's version"
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a lab -d 'EXPERIMENTAL agent-designed analyses'
@@ -71,11 +79,14 @@ complete -c geth -n '__geth_at approve 0' -a '(__geth_runs planned)'
 complete -c geth -n '__geth_at approve 1' -l yes -d 'Approve without the prompt'
 complete -c geth -n '__geth_at run 0' -a '(__geth_runs approved)'
 complete -c geth -n '__geth_at run 1' -l detach -d 'Run in the background'
+complete -c geth -n '__geth_at stop 0' -a '(__geth_runs active)'
 
 # geth lab design <data_dir> "<question>" <name> [--no-skill]   |   geth lab show <name>   |   geth lab list
 complete -c geth -n '__geth_at lab 0' -a design -d 'Designer agent writes an analysis design'
 complete -c geth -n '__geth_at lab 0' -a show -d 'Print a design and its check'
 complete -c geth -n '__geth_at lab 0' -a list -d 'All lab runs and where they stand'
+complete -c geth -n '__geth_at lab 0' -a stop -d 'Stop a lab run'
+complete -c geth -n '__geth_lab_at stop 0' -a '(__geth_lab_runs active)'
 complete -c geth -n '__geth_lab_at design 0' -a '(__fish_complete_directories (commandline -ct) "benchmark data folder")'
 complete -c geth -n '__geth_lab_at design 3' -l no-skill -d 'Designer without the best-practice skill'
 complete -c geth -n '__geth_lab_at show 0' -a '(__geth_lab_runs)'
