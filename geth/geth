@@ -174,10 +174,13 @@ case "$cmd" in
         [ -f "$d/report_check.txt" ] && cat "$d/report_check.txt"
         # agent_sandbox.sh leaves .agent_home in the run folder: say plainly whether the agents were contained
         [ -d "$d/.agent_home" ] && echo "agents' driver: in the agent sandbox (container)" || echo "agents' driver: not sandboxed"
+        latest=$(find "$d" -maxdepth 1 -type d -name 'attempt_*' | sed 's/.*attempt_//' | sort -n | tail -n 1)
         for a in "$d"/attempt_*; do
             [ -d "$a" ] || continue
             status=$(grep -hE '^STATUS' "$a"/*.txt 2>/dev/null | head -n 1 || true)
             if [ -f "$a/STOPPED" ]; then status="stopped by geth stop (not counted)"
+            elif [ "$a" = "$d/attempt_$latest" ] && active "$d" run && ! grep -qs 'Pipeline completed successfully' "$a/nextflow.log"; then
+                status="running"
             elif [ -f "$a/nextflow.log" ]; then
                 grep -q 'Pipeline completed successfully' "$a/nextflow.log" && status="launched: success" || status="launched: failed"
             elif [ -s "$a/gate.txt" ]; then status="refused by the plan-diff gate"
