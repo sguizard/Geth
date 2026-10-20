@@ -7,6 +7,7 @@
 #   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
 #   geth run <name> [--detach]                 operator + reporter agents run the approved plan
 #   geth status <name>                         outcome, report check and attempts
+#   geth report <name>                         reporter agent writes the report again from the results (no rerun)
 #   geth list                                  all runs and where they stand
 #   geth stop <name>                           stop a planning or a run, and its scheduler jobs (geth run resumes it)
 #   geth doctor                                check the installation and the site configuration
@@ -20,7 +21,7 @@ checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
 self=$(readlink -f "${BASH_SOURCE[0]}")  # nf() changes folder: call this script back by its full path
-usage() { sed -n '2,14p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,15p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
     local commit; commit=$(git -C "$GETH_HOME" rev-parse --short HEAD 2>/dev/null || true)
     echo "Geth $(cat "$GETH_HOME/VERSION" 2>/dev/null || echo unknown)${commit:+ (commit $commit)}"
@@ -167,6 +168,20 @@ case "$cmd" in
         nf "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
         "$self" status "$1"
         ;;
+    report)
+        [ $# -eq 1 ] || usage
+        d=$(run_dir_of "$1")
+        [ -f "$d/APPROVED" ] && [ -f "$d/outcome.txt" ] || { echo "Run '$1' has not finished: nothing to report." >&2; exit 1; }
+        active "$d" run && { echo "Run '$1' is running: wait for it, or geth stop $1." >&2; exit 1; }
+        if [ -f "$d/report.md" ]; then  # keep the previous report
+            keep="$d/report.$(date -r "$d/report.md" +%Y%m%d-%H%M%S).md"
+            cp "$d/report.md" "$keep"; cp "$d/report_check.txt" "${keep%.md}.check.txt" 2>/dev/null || true
+            echo "Previous report kept as $(basename "$keep")"
+        fi
+        echo "Writing the report again from $d/results ..."
+        nf "$d" report || { echo "Report failed: see $d/geth_report.log" >&2; exit 1; }
+        "$self" status "$1"
+        ;;
     status)
         [ $# -eq 1 ] || usage
         d=$(run_dir_of "$1")
@@ -174,10 +189,13 @@ case "$cmd" in
         [ -f "$d/report_check.txt" ] && cat "$d/report_check.txt"
         # agent_sandbox.sh leaves .agent_home in the run folder: say plainly whether the agents were contained
         [ -d "$d/.agent_home" ] && echo "agents' driver: in the agent sandbox (container)" || echo "agents' driver: not sandboxed"
+        latest=$(find "$d" -maxdepth 1 -type d -name 'attempt_*' | sed 's/.*attempt_//' | sort -n | tail -n 1)
         for a in "$d"/attempt_*; do
             [ -d "$a" ] || continue
             status=$(grep -hE '^STATUS' "$a"/*.txt 2>/dev/null | head -n 1 || true)
             if [ -f "$a/STOPPED" ]; then status="stopped by geth stop (not counted)"
+            elif [ "$a" = "$d/attempt_$latest" ] && active "$d" run && ! grep -qs 'Pipeline completed successfully' "$a/nextflow.log"; then
+                status="running"
             elif [ -f "$a/nextflow.log" ]; then
                 grep -q 'Pipeline completed successfully' "$a/nextflow.log" && status="launched: success" || status="launched: failed"
             elif [ -s "$a/gate.txt" ]; then status="refused by the plan-diff gate"

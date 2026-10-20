@@ -272,7 +272,9 @@ def cellbender(outdir):
                      + table(["Library", "Sample", "Cells called by Cell Ranger", "Cells kept by CellBender"], split)
                      + "\n\nWith multiplexed libraries, use the library runs above, split by sample. The per-sample "
                      "CellBender runs (`*_cellbender_filter_matrix.h5ad` of each sample) are not valid: a sample's raw "
-                     "matrix lacks the library's empty droplets, so CellBender cannot learn the background.")
+                     "matrix lacks the library's empty droplets, so CellBender cannot learn the background. Do not use "
+                     "`combined_cellbender_filter_matrix.h5ad` either: it stacks every CellBender run, per sample and "
+                     "per library, so each cell appears twice.")
     return parts
 
 

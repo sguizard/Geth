@@ -7,6 +7,7 @@
  *   (a person reviews and approves the plan: `geth approve`)
  *   --mode run  : operator launches the approved plan (gated retries), reporter writes report.md,
  *                 every number in the report is checked against the results
+ *   --mode report : reporter writes report.md again from a finished run's results (no pipeline launch)
  *
  * Most tools run as local processes next to the driver (which must be able to submit jobs); the nf-core
  * runs submit their own jobs through the site profile; the single-cell toolbox runs as cluster jobs.
@@ -476,6 +477,11 @@ cat "${params.run_dir}/report_check.txt"
     """
 }
 
+// A list as SAVE_OUTCOME printed it ("[a, b]"), back as one entry for the reporter ([] when empty).
+def savedList(text: String) -> List<String> {
+    return text && text != '[]' ? [text.replaceAll(/^\[|\]$/, '')] : []
+}
+
 workflow {
     if( !params.model || !params.runs_dir || !params.data_root || !params.references )
         error "Geth's site settings are missing: source env.sh (it loads site/site.env) before running Geth"
@@ -514,7 +520,35 @@ workflow {
         def report = reporter(question, plan.combine(outcome))
         FINALIZE_REPORT(report.combine(outcome)).view()
     }
+    else if( params.mode == 'report' ) {
+        // The report of a finished run, written again from its results (e.g. after a better results summary)
+        def d = file(params.run_dir)
+        if( !d.resolve('APPROVED').exists() || !d.resolve('outcome.txt').exists() )
+            error "No finished run in ${params.run_dir}: nothing to report"
+        def question = d.resolve('question.txt').text.trim()
+        def plan = channel.of(record(
+            pipeline: d.resolve('plan_pipeline.txt').text.trim(),
+            samplesheet_csv: d.resolve('plan_samplesheet.csv').text,
+            params_json: d.resolve('plan_params.json').text,
+            contrasts_csv: ['plan_contrasts.csv', 'plan_barcodes.csv'].collect { f -> d.resolve(f) }.findAll { f -> f.exists() }.collect { f -> f.text }.join(''),
+            profile: d.resolve('plan_profile.txt').exists() ? d.resolve('plan_profile.txt').text.trim() : '',
+            rationale: d.resolve('plan_rationale.txt').text))
+        def saved: Map<String,String> = [:]  // outcome.txt: "key: value" lines written by SAVE_OUTCOME
+        d.resolve('outcome.txt').readLines().each { line ->
+            def i = line.indexOf(': ')
+            if( i > 0 ) saved[line.substring(0, i)] = line.substring(i + 2)
+        }
+        def outcome = channel.of(record(
+            succeeded: saved['succeeded'] == 'true',
+            attempts: (saved['attempts'] ?: '0').toInteger(),
+            outdir: saved['outdir'] ?: 'none',
+            fixes_applied: savedList(saved['changes_to_plan'] ?: ''),
+            annotations: savedList(saved['annotations'] ?: ''),
+            last_error: saved['last_error'] ?: 'none'))
+        def report = reporter(question, plan.combine(outcome))
+        FINALIZE_REPORT(report.combine(outcome)).view()
+    }
     else {
-        error "--mode must be 'plan' or 'run'"
+        error "--mode must be 'plan', 'run' or 'report'"
     }
 }
