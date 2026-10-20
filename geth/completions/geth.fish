@@ -55,7 +55,7 @@ function __geth_lab_runs --argument-names want  # lab run names, with their arm 
     end
 end
 
-set -l __geth_commands plan show approve run status list stop doctor version lab
+set -l __geth_commands plan show approve run status report list stop doctor version lab
 complete -c geth -f
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a plan -d 'Planner agent writes a plan'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a show -d 'Print a plan and its check'
@@ -63,6 +63,7 @@ complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a approv
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a run -d 'Run an approved plan'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a status -d 'Outcome, report check, attempts'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a list -d 'All runs and where they stand'
+complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a report -d 'Write the report again from the results'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a stop -d 'Stop a planning or a run'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a doctor -d 'Check the installation'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a version -d "Print Geth's version"
@@ -80,6 +81,7 @@ complete -c geth -n '__geth_at approve 1' -l yes -d 'Approve without the prompt'
 complete -c geth -n '__geth_at run 0' -a '(__geth_runs approved)'
 complete -c geth -n '__geth_at run 1' -l detach -d 'Run in the background'
 complete -c geth -n '__geth_at stop 0' -a '(__geth_runs active)'
+complete -c geth -n '__geth_at report 0' -a '(__geth_runs succeeded)'
 
 # geth lab design <data_dir> "<question>" <name> [--no-skill]   |   geth lab show <name>   |   geth lab list
 complete -c geth -n '__geth_at lab 0' -a design -d 'Designer agent writes an analysis design'
