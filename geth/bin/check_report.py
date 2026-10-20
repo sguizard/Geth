@@ -28,10 +28,13 @@ def strip_fences(text):
 
 
 def scrub(text):
-    """Remove code spans, URLs and version strings, which are not quantities."""
+    """Remove code spans, URLs, version strings and dates, which are not quantities; split ranges ("990-1,218",
+    "83.5–85.4%") so that both ends are checked."""
     text = re.sub(r"`[^`]*`", " ", text)
     text = URL.sub(" ", text)
-    return re.sub(r"\d+\.\d+\.\d+", " ", text)
+    text = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", " ", text)
+    text = re.sub(r"\d+\.\d+\.\d+", " ", text)
+    return re.sub(r"(?<=\d)\s?[-–]\s?(?=\d)", " to ", text)
 
 
 def numbers(text):
@@ -54,9 +57,8 @@ def traced(token, value, facts):
     return False
 
 
-def main():
-    report_path, run_dir, pipeline, attempts = sys.argv[1:5]
-    report = strip_fences(open(report_path).read())
+def check(report, run_dir, pipeline, attempts):
+    """(summary line, untraced numbers, untraced links) of a report; writes nothing."""
     fact_text = collect(run_dir, pipeline) + f"\nattempts {attempts}\n"
     for f in ("question.txt", "plan_samplesheet.csv", "plan_params.json", "plan_rationale.txt"):
         p = os.path.join(run_dir, f)
@@ -80,6 +82,13 @@ def main():
         summary += f"; not traced: {', '.join(sorted(set(unverified)))}"
     if links:
         summary += f"; untraced links: {', '.join(links)}"
+    return summary, unverified, links
+
+
+def main():  # check_report.py <report.raw.md> <run_dir> <pipeline> <attempts>: writes report_check.txt, prints the report
+    report_path, run_dir, pipeline, attempts = sys.argv[1:5]
+    report = strip_fences(open(report_path).read())
+    summary, unverified, links = check(report, run_dir, pipeline, attempts)
     open(os.path.join(run_dir, "report_check.txt"), "w").write(summary + "\n")
 
     if unverified or links:
