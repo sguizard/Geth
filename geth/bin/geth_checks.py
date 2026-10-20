@@ -1107,7 +1107,8 @@ def plan_warnings(pipeline, sheet_text, params, sheet2_text=""):
     # and lanes grouped under one sample name are fine, since their files carry the entry's name.
     plan_text = sheet_text + (sheet2_text or "") + json.dumps(params)
     entries = sample_entries(texts)
-    missing = [e for e in entries if e not in plan_text]
+    missing = [e for e in entries  # a whole name: "s3" is not in ".../tmp_ab3s3x/...", "ATAC01" is in "ATAC01_S1_..."
+               if not re.search(rf"(?<![A-Za-z0-9]){re.escape(e)}(?![A-Za-z0-9])", plan_text)]
     if missing:
         warnings.append(f"the delivery's text lists {len(entries)} entries that look like samples, and "
                         f"{len(missing)} of them appear nowhere in the plan ({', '.join(missing[:6])}"

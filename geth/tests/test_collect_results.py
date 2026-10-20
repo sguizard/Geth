@@ -65,6 +65,13 @@ class GenericSummary(unittest.TestCase):
         self.assertIn("3/4 numbers traced", check)
         self.assertIn("73.9", check)
 
+    def test_ranges_and_dates(self):
+        # 10x_multi_chicken2: "990-1,218" was read as 990 and "218" (untraced), and "83.5-85.4%" as 83.5 only
+        import check_report as c
+        text = c.scrub("medians 990-1,218 and 1,638–2,164; mapping 83.5-85.4%; run on 2026-10-19; 1-max-sharp")
+        self.assertEqual([t for t, _ in c.numbers(text)], ["990", "1,218", "1,638", "2,164", "83.5", "85.4", "1"])
+        self.assertEqual([t for t, _ in c.numbers("sample,fastq_1,expected_cells\nA,/x/a.fq.gz,5000")], ["5000"])
+
 
 
 class MagSummary(unittest.TestCase):
