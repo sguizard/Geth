@@ -43,7 +43,7 @@ site/
   site.env.example         documented template of the site configuration (copy to site/site.env)
   examples/                worked site configurations: local machine, an SGE cluster with GPUs
 geth/
-  geth                     the command line: plan, show, approve, run, status, list, stop, doctor, version, lab
+  geth                     the command line: plan, show, approve, run, status, report, list, stop, doctor, version, lab
   main.nf                  the workflow: records, tools (processes), agents, bookkeeping, workflow block
   nextflow.config          Geth's own settings, read from the environment (model, endpoint, folders)
   bin/                     on the tasks' PATH (Nextflow adds a pipeline's bin/ automatically)
@@ -105,6 +105,16 @@ person.
 
 Because the folder holds the whole state, `geth run` resumes after an interruption: Nextflow `-resume`
 in `nfcore/`, attempt numbering continues, and the gate state persists.
+
+**Writing the report again.** `geth report` runs `main.nf --mode report`: the plan from the `plan_*` files,
+the outcome from `outcome.txt`, then only the reporter and `FINALIZE_REPORT`. No pipeline is launched and no
+attempt is used; the previous `report.md` and `report_check.txt` are kept as `report.<date>.*`.
+
+**Resume and input paths.** Nextflow's cache knows an input file by its path, size and date. Each attempt
+copies the samplesheet and second sheet into `attempt_N/`, so `run_nfcore.sh` launches with the identical
+copy of the latest completed attempt (`stable()`): a process that reads a sheet (scrnaseq's Cell Ranger multi
+barcodes) is not redone. One unexplained miss remains: on `sc_rat_ocm`, a launch right after a stopped
+attempt redid Cell Ranger multi once, although its cache key was unchanged; later launches reused it.
 
 **Stopping.** `geth stop` (`stop_driver.sh`) reads the live `.geth_*.pid` files and walks the process tree
 below each pid (sandbox included: apptainer's PID namespace is visible from the host). It stops the Geth

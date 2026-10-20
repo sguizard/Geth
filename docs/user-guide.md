@@ -178,6 +178,15 @@ It stops the agents and the pipeline, and deletes the run's jobs on the cluster.
 minutes, while the pipeline cancels its jobs. The work done so far is kept: `geth run my_analysis` resumes
 the run later.
 
+**To write the report again** (for example after a Geth update that summarises the results better), without
+running the pipeline again:
+
+```bash
+geth report my_analysis
+```
+
+It takes a minute or two. The previous report is kept next to it, as `report.<date>.md`.
+
 Each stage has a time limit, so a stuck agent cannot hold the machine forever: 2 hours for planning, 72 hours
 for a run, by default. If a stage hits its limit, Geth says so; your site can raise the limits.
 
@@ -261,6 +270,7 @@ The annotation model must match your tissue and species. Available models are li
 
 - `geth list` shows every analysis and its state: planned, approved, running, succeeded or failed.
 - `geth stop my_analysis` stops a planning or a run (see [step 5](#step-5-run)).
+- `geth report my_analysis` writes the report of a finished run again, from its results.
 - `geth version` prints the version of Geth you are using: worth quoting when you report a problem.
 - **To change an analysis that already ran,** plan again under a new name. That keeps the history of
   what was run clear.

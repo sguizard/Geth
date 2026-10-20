@@ -2,6 +2,16 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 1.9.2 (2026-10-20)
+
+- **`geth report <name>`:** the reporter writes the report of a finished run again from its results, in
+  about a minute, without launching the pipeline. The previous report is kept as `report.<date>.md`.
+- **Resume no longer redoes Cell Ranger multi:** each attempt copied the barcodes sheet to a new path, and
+  Nextflow's cache knows input files by path, so `geth run` on a finished multiplexed run redid Cell Ranger
+  (about 10 hours on the user's data). Attempts now launch with an earlier attempt's identical sheets.
+- `geth status` shows the running attempt as running (it said "launched: failed").
+- The report warns not to use `combined_cellbender_filter_matrix.h5ad` with multiplexed libraries.
+
 ## 1.9.1 (2026-10-20)
 
 From comparing the user's rerun of their multiplexed delivery with their own analysis

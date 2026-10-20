@@ -32,6 +32,23 @@ if [ "$used" -ge "$max_attempts" ]; then
 fi
 attempt="$run_dir/attempt_$n"
 mkdir -p "$attempt"
+# Nextflow's cache knows an input file by its path: a sheet that a process reads (e.g. scrnaseq's Cell Ranger
+# multi barcodes) copied anew into each attempt made -resume redo everything after it (10 hours of Cell Ranger
+# on 10x_multi_chicken2). The launch uses an earlier attempt's identical copy instead: the latest attempt whose
+# pipeline completed (its cache is whole), else the earliest. (No cmp: the agent sandbox has no diffutils.)
+stable() {  # stable <file in this attempt>: the path to launch with
+    local f=$1 k sum ks done_ks
+    sum=$(sha256sum < "$f")
+    ks=$(find "$run_dir" -maxdepth 1 -type d -name 'attempt_*' | sed 's/.*attempt_//' | sort -n)
+    done_ks=$(for k in $ks; do grep -qs 'Pipeline completed successfully' "$run_dir/attempt_$k/nextflow.log" && echo "$k"; done | sort -rn)
+    for k in $done_ks $ks; do
+        if [ -f "$run_dir/attempt_$k/$(basename "$f")" ] && [ "$(sha256sum < "$run_dir/attempt_$k/$(basename "$f")")" = "$sum" ]; then
+            echo "$run_dir/attempt_$k/$(basename "$f")"
+            return
+        fi
+    done
+    echo "$f"
+}
 cp "$sheet" "$attempt/samplesheet.csv"
 cp "$params" "$attempt/params.submitted.json"
 parts=()
@@ -75,7 +92,7 @@ print(sum(os.path.getsize(v) for r in csv.DictReader(open(sys.argv[1])) for v in
 profiles=${GETH_NFCORE_PROFILE:-}
 extra=()
 [ -n "$analysis_profile" ] && profiles=${profiles:+$profiles,}$analysis_profile
-[ -n "$sheet2" ] && [ -n "${sheet2_param:-}" ] && extra+=("--$sheet2_param" "$sheet2")
+[ -n "$sheet2" ] && [ -n "${sheet2_param:-}" ] && extra+=("--$sheet2_param" "$(stable "$sheet2")")
 # CellBender runs on a GPU when the site has one (GETH_GPU=yes), unless the plan skips it.
 if [ "$pipeline" = scrnaseq ] && [ "${GETH_GPU:-no}" = yes ] && \
         ! python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("skip_cellbender") in (True, "true") else 1)' "$attempt/params.json"; then
@@ -97,11 +114,11 @@ nested_env=()
 [ -n "$pipeline_nxf_ver" ] && nested_env+=(NXF_VER="$pipeline_nxf_ver")
 [ -n "$pipeline_java_home" ] && nested_env+=(JAVA_HOME="$pipeline_java_home" NXF_JAVA_HOME="$pipeline_java_home")
 nested_env+=("${pipeline_env[@]}")
-input="$attempt/samplesheet.csv"
+input=$(stable "$attempt/samplesheet.csv")
 if [ "$pipeline_input_format" = tsv ]; then
     python3 -c 'import csv, sys; csv.writer(sys.stdout, delimiter="\t", lineterminator="\n").writerows(csv.reader(open(sys.argv[1])))' \
         "$attempt/samplesheet.csv" > "$attempt/samplesheet.tsv"
-    input="$attempt/samplesheet.tsv"
+    input=$(stable "$attempt/samplesheet.tsv")
 fi
 [ -n "$pipeline_extra_config" ] && extra+=(-c "$GETH_HOME/geth/conf/$pipeline_extra_config")
 # Memory that depends on the data (e.g. Kraken2 loads its database index in RAM).
