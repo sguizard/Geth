@@ -115,6 +115,7 @@ def scrnaseq(run_dir, outdir):
         multi = cellranger_multi(outdir)
         parts += multi or ["### Per-sample metrics\nNo STARsolo or Cell Ranger multi summary found (other "
                            "aligners are not summarised yet)."]
+    parts += cellbender(outdir)
 
     # FastQC rows are named <sample>_<n>, n counting the sample's FASTQ files in samplesheet order
     # (Cell Ranger multi: <sample>_<feature_type>_<n>, counting within the feature type).
@@ -207,6 +208,71 @@ def cellranger_multi(outdir):
     reports = sorted(glob.glob(os.path.join(outdir, "cellrangermulti", "**", "web_summary.html"), recursive=True))
     if reports:
         parts.append("### Cell Ranger web summaries\n" + "\n".join(f"- `{os.path.relpath(p, outdir)}`" for p in reports))
+    return parts
+
+
+def barcodes(path, column=-1):
+    """The barcodes of a CSV (one per line, possibly after other columns), without a header line."""
+    out = set()
+    with open(path) as fh:
+        for line in fh:
+            value = line.strip().split(",")[column] if line.strip() else ""
+            if value and value.lower() != "barcode":
+                out.add(value)
+    return out
+
+
+def cellbender(outdir):
+    """CellBender (ambient RNA removal) runs, from each run's metrics.csv. With Cell Ranger multi, nf-core runs it on
+    each sample and on each library: only the library runs are valid (a sample's raw matrix lacks the library's
+    empty droplets, so CellBender cannot learn the background), so they are split by sample here."""
+    files = sorted(glob.glob(os.path.join(outdir, "**", "cellbender_removebackground", "*_metrics.csv"), recursive=True))
+    if not files:
+        return []
+    per_sample = {}  # Cell Ranger multi: sample -> (library, the barcodes Cell Ranger assigned to it)
+    for path in glob.glob(os.path.join(outdir, "cellrangermulti", "count", "*", "outs", "per_sample_outs", "*",
+                                       "sample_filtered_barcodes.csv")):
+        sample = os.path.basename(os.path.dirname(path))
+        library = path.split(os.sep + "count" + os.sep)[1].split(os.sep)[0]
+        per_sample[sample] = (library, barcodes(path))
+    libraries = {lib for lib, _ in per_sample.values()}
+    rows, runs = [], {}
+    for path in files:
+        name = os.path.basename(path)[:-len("_metrics.csv")]
+        with open(path) as fh:
+            m = dict(line.strip().split(",", 1) for line in fh if "," in line)
+        f = lambda k: num(m.get(k))
+        level = "library" if name in libraries else "sample" if name in per_sample else "-"
+        called = count(len(per_sample[name][1])) if name in per_sample else (
+            count(sum(len(b) for lib, b in per_sample.values() if lib == name)) if name in libraries else "n/a")
+        rows.append([name, level, count(f("expected_cells")), count(f("found_cells")), called,
+                     pct(100 * f("fraction_counts_removed_from_cells")) if f("fraction_counts_removed_from_cells") is not None else "n/a",
+                     pct(100 * f("fraction_of_analyzed_droplets_that_are_nonempty")) if f("fraction_of_analyzed_droplets_that_are_nonempty") is not None else "n/a"])
+        runs[name] = os.path.dirname(path)
+    header = ["Matrix", "Level", "Expected cells (CellBender)", "Cells kept by CellBender", "Cells called by Cell Ranger",
+              "Counts removed from cells (%)", "Analysed droplets called non-empty (%)"]
+    if not per_sample:  # not multiplexed: no level, no Cell Ranger multi cell calls
+        header = [h for i, h in enumerate(header) if i not in (1, 4)]
+        rows = [[c for i, c in enumerate(r) if i not in (1, 4)] for r in rows]
+    parts = ["### CellBender (ambient RNA removal)\n" + table(header, rows)]
+    split = []
+    for library in sorted(libraries & set(runs)):
+        kept = glob.glob(os.path.join(runs[library], f"{library}_cell_barcodes.csv"))
+        if not kept:
+            continue
+        kept = barcodes(kept[0], 0)
+        assigned = set()
+        for sample, (lib, bcs) in sorted(per_sample.items()):
+            if lib == library:
+                assigned |= bcs
+                split.append([library, sample, count(len(bcs)), count(len(kept & bcs))])
+        split.append([library, "no sample (cells Cell Ranger did not call)", "0", count(len(kept - assigned))])
+    if split:
+        parts.append("### Cells per sample after CellBender (library run, split by Cell Ranger's sample assignment)\n"
+                     + table(["Library", "Sample", "Cells called by Cell Ranger", "Cells kept by CellBender"], split)
+                     + "\n\nWith multiplexed libraries, use the library runs above, split by sample. The per-sample "
+                     "CellBender runs (`*_cellbender_filter_matrix.h5ad` of each sample) are not valid: a sample's raw "
+                     "matrix lacks the library's empty droplets, so CellBender cannot learn the background.")
     return parts
 
 

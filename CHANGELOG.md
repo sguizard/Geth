@@ -2,6 +2,20 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 1.9.1 (2026-10-20)
+
+From comparing the user's rerun of their multiplexed delivery with their own analysis
+([validation](docs/validation.md#multiplexed-single-cell-libraries-version-19)).
+
+- **CellBender in the report:** every CellBender run (expected and kept cells, counts removed). For Cell
+  Ranger multi, the library runs are split by sample (these match the user's own analysis to within 1%),
+  and the report says the per-sample runs are not valid (a sample's raw matrix lacks the library's empty
+  droplets).
+- The plan check refuses a sample's own CellBender matrix as input of a single-cell follow-up; the
+  skills say which matrices to use with multiplexed libraries.
+- Report check: both ends of a range are checked ("990-1,218" was read as 990 and 218); dates are ignored.
+- Plan warning about missing samples: whole names only (a short name could match inside a file path).
+
 ## 1.9.0 (2026-10-19)
 
 From the first real-data analysis run by a user alone: a 10x On-Chip Multiplexing delivery that Geth
