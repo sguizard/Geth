@@ -148,14 +148,14 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill ok">v1.9.1 released</span>
+    <span class="pill ok">v1.9.2 released</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (13 pinned pipelines, from RNA-seq to metagenomics) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model. An experimental lab tests agents that design and write analyses themselves.</p>
   <div class="meta">
     <span>Updated 2026-10-20</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>13 nf-core pipelines + a single-cell toolbox</span>
-    <span>repo sguizard/Geth · release v1.9.1</span>
+    <span>repo sguizard/Geth · release v1.9.2</span>
   </div>
 </header>
 
@@ -614,6 +614,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-18">2026-10-18</time><span>Phase 11 closed: teams, not swarms (designer, engineer, reviewer); the lab stays experimental. Paid frontier models only with you, never in an unattended run.</span></li>
     <li><time datetime="2026-10-19">2026-10-19</time><span>Your solo test on a multiplexed 10x delivery was killed by hand; you approved five fixes (multiplexing check, sample and chemistry warnings, <code>geth stop</code>). Release v1.9.0.</span></li>
     <li><time datetime="2026-10-20">2026-10-20</time><span>Your rerun checked against your own analysis: Geth agrees; only the per-sample CellBender runs are wrong. Release v1.9.1 (CellBender per library, split by sample).</span></li>
+    <li><time datetime="2026-10-20">2026-10-20</time><span>Your <code>geth run</code> to refresh the report was redoing 10 hours of Cell Ranger (a resume bug); stopped at your request. Release v1.9.2: <code>geth report</code> rewrites a report without rerunning, and resume reuses Cell Ranger.</span></li>
   </ul>
 </section>
 
