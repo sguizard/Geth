@@ -581,6 +581,22 @@ class SingleCellDesign(unittest.TestCase):
         self.assertEqual(design["leiden.resolutions"], [0.5, 0.8, 1.2])
         self.assertEqual(design["markers.panel"][:2], ["CD3E", "CD8A"])
 
+    def test_multiplexed_sample_cellbender_matrix_is_refused(self):
+        # 10x_multi_chicken2: per-sample CellBender kept ~40,000 "cells" where the library run kept ~4,500
+        crm = f"{ROOT}/runs/chick/results/cellrangermulti"
+        os.makedirs(f"{crm}/count/A/outs", exist_ok=True)
+        paths = {}
+        for name in ("2-min-blunt", "A"):
+            for kind in ("cellbender_filter", "filtered"):
+                paths[name, kind] = f"{crm}/mtx_conversions/{name}/{name}_{kind}_matrix.h5ad"
+                os.makedirs(os.path.dirname(paths[name, kind]), exist_ok=True)
+                open(paths[name, kind], "w").write("placeholder")
+        problems = lambda path: gc.check_plan("sc_downstream", f"sample,h5ad\nx,{path}\n", SC_DESIGN)[0]
+        self.assertTrue(any("not valid" in p and "2-min-blunt_filtered_matrix.h5ad" in p
+                            for p in problems(paths["2-min-blunt", "cellbender_filter"])))
+        self.assertEqual(problems(paths["2-min-blunt", "filtered"]), [])
+        self.assertEqual(problems(paths["A", "cellbender_filter"]), [])  # a library's own run is valid
+
     def test_menu_ranges_and_consistency(self):
         bad = SC_DESIGN.replace("qc.max_pct_mt=20", "qc.max_pct_mt=150").replace("leiden.chosen=0.8", "leiden.chosen=2.0")
         bad += "\nhvg.flavor=seurat_v3\nqc.max_mito=10\nannotation.model=/tmp/model.pkl"

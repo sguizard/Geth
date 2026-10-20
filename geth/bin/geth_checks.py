@@ -923,6 +923,13 @@ def check_sc_design(sheet_text, params_text):
         h5ad = r.get("h5ad", "")
         if not (h5ad.startswith("/") and h5ad.endswith(".h5ad") and os.path.isfile(h5ad)):
             problems.append(f"h5ad must be an existing .h5ad file given by absolute path: {h5ad}")
+        # Cell Ranger multi: a sample's own CellBender run is not valid (its raw matrix lacks the library's empty
+        # droplets, so CellBender keeps thousands of empty droplets as cells: 10x_multi_chicken2)
+        m = re.search(r"/cellrangermulti/mtx_conversions/([^/]+)/\1_cellbender_filter_matrix\.h5ad$", h5ad)
+        if m and not os.path.isdir(os.path.join(h5ad.split("/mtx_conversions/")[0], "count", m.group(1), "outs")):
+            problems.append(f"{os.path.basename(h5ad)} is the CellBender run of one sample of a multiplexed library, "
+                            "which is not valid (the sample's raw matrix lacks the library's empty droplets). Use "
+                            f"the sample's Cell Ranger matrix, {m.group(1)}_filtered_matrix.h5ad, in the same folder")
     return problems, design
 
 
@@ -1107,7 +1114,8 @@ def plan_warnings(pipeline, sheet_text, params, sheet2_text=""):
     # and lanes grouped under one sample name are fine, since their files carry the entry's name.
     plan_text = sheet_text + (sheet2_text or "") + json.dumps(params)
     entries = sample_entries(texts)
-    missing = [e for e in entries if e not in plan_text]
+    missing = [e for e in entries  # a whole name: "s3" is not in ".../tmp_ab3s3x/...", "ATAC01" is in "ATAC01_S1_..."
+               if not re.search(rf"(?<![A-Za-z0-9]){re.escape(e)}(?![A-Za-z0-9])", plan_text)]
     if missing:
         warnings.append(f"the delivery's text lists {len(entries)} entries that look like samples, and "
                         f"{len(missing)} of them appear nowhere in the plan ({', '.join(missing[:6])}"

@@ -148,14 +148,14 @@ a { color: var(--accent); }
   <span class="eyebrow">Agentic bioinformatics on Eddie · University ELM models</span>
   <div class="title-row">
     <h1>Geth</h1>
-    <span class="pill ok">v1.8.0 released</span>
+    <span class="pill ok">v1.9.0 released</span>
   </div>
   <p class="lede">LLM agents that <strong>plan, run, fix and report</strong> routine nf-core analyses (13 pinned pipelines, from RNA-seq to metagenomics) on the Eddie cluster, driven by Nextflow's <code>agent</code> primitive and the University's free <strong>Qwen 3.5</strong> model. An experimental lab tests agents that design and write analyses themselves.</p>
   <div class="meta">
-    <span>Updated 2026-10-18</span>
+    <span>Updated 2026-10-19</span>
     <span>Nextflow 26.10.2 · nf-agent 0.2.0</span>
     <span>13 nf-core pipelines + a single-cell toolbox</span>
-    <span>repo sguizard/Geth · release v1.8.0</span>
+    <span>repo sguizard/Geth · release v1.9.0</span>
   </div>
 </header>
 
@@ -340,6 +340,21 @@ a { color: var(--accent); }
         </ul>
       </div>
     </li>
+    <li class="phase done">
+      <div class="node"><span class="dot">13</span></div>
+      <div class="phase-body">
+        <div class="phase-head"><h3>Your first solo analysis</h3><span class="pill ok">done</span></div>
+        <p>You ran Geth alone on your own data (2026-10-19): a 10x GEM-X On-Chip Multiplexing delivery, two libraries of four samples each. Geth planned it as plain 10x (STAR, chemistry v3, one "sample" per library) and had no way to stop it. Your five fixes, released as v1.9.0:</p>
+        <ul class="check">
+          <li class="done">Multiplexed libraries (OCM, CellPlex, Flex): the plan check reads the delivery's README and facility report, and refuses a plan without Cell Ranger multi and a barcodes sheet. Your original plan is now refused, citing <code>10XOCM</code> in the Azenta report and OB1–OB4 in the README</li>
+          <li class="done">Warning when samples of the delivery appear nowhere in the plan (your run: 8 samples missing)</li>
+          <li class="done">Chemistry: never assume v3; warning when GEM-X data is planned as v3 (GEM-X 3' is 10XV4)</li>
+          <li class="done"><code>geth stop</code> and <code>geth lab stop</code>: tested on a sandboxed run with 4 queued jobs, which stopped in 2 s with nothing left; <code>geth run</code> resumed it</li>
+          <li class="done">Rat OCM test delivery: plans 13/13, 13/13, 12/13; full run succeeded once a site clash was fixed (scrnaseq dropped Eddie's <code>module load apptainer</code> for Cell Ranger); 4 rats split; 72/75 report numbers traced</li>
+          <li>Next: you rerun your chicken analysis with v1.9.0</li>
+        </ul>
+      </div>
+    </li>
   </ol>
 </section>
 
@@ -451,13 +466,13 @@ a { color: var(--accent); }
   </div>
   <p>Expected populations: CD4 T, CD8 T, NK, B, classical and non-classical monocytes, dendritic cells. The analyst never revised the design: it answered each flag (e.g. 8 plasma cells kept as a real rare population; platelets hard for classifiers).</p>
 
-  <h3>Pipelines Geth can run (v1.6.0)</h3>
+  <h3>Pipelines Geth can run (v1.9.0)</h3>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Pipeline</th><th>Version</th><th>Nested Nextflow</th><th>Test profile on Eddie</th><th>Validated with agents</th></tr></thead>
       <tbody>
         <tr><td>rnaseq</td><td class="n">3.27.0</td><td>26.10.2</td><td><span class="pill ok">234 tasks</span></td><td>test data + airway</td></tr>
-        <tr><td>scrnaseq</td><td class="n">4.2.0</td><td>26.10.2, GPU CellBender</td><td><span class="pill ok">19 tasks</span></td><td>test data + PBMC 1k v3</td></tr>
+        <tr><td>scrnaseq</td><td class="n">4.2.0</td><td>26.10.2, GPU CellBender</td><td><span class="pill ok">19 tasks</span></td><td>test data + PBMC 1k v3; multiplexed (Cell Ranger multi): rat OCM delivery, plans 3/3 correct designs, full run, 72/75</td></tr>
         <tr><td>differentialabundance</td><td class="n">2.0.0</td><td>26.10.2</td><td><span class="pill ok">airway baseline</span></td><td>airway DE</td></tr>
         <tr><td>single-cell toolbox</td><td class="n">1.0.0</td><td>—</td><td>—</td><td>PBMC 1k v3 designs</td></tr>
         <tr><td>isoseq</td><td class="n">3.0.1</td><td>26.10.2</td><td><span class="pill ok">45 tasks</span></td><td>test delivery: plans 3/3, full run, 21/24 report numbers</td></tr>
@@ -561,6 +576,11 @@ a { color: var(--accent); }
       <p class="seen">The first no-skill control in the lab silently used the skill: <code>--lab_skill false</code> reaches Nextflow as the text "false", which is true in Groovy.</p>
       <p class="fix"><strong>Compare the text</strong>, and record the arm each run really used; the six affected designs were counted with the skill and the control was rerun.</p>
     </div>
+    <div class="lesson">
+      <span class="pill warn" style="justify-self:start">v1.9</span>
+      <p class="seen">Your first solo run: a multiplexed 10x delivery passed every check as plain 10x. The checks only knew what the plan said, not what the delivery said. A stuck run could only be stopped with <code>kill</code>.</p>
+      <p class="fix"><strong>Check the plan against the delivery's own words:</strong> the plan check now reads the README and facility report, and warns about samples or chemistry the plan ignores. <code>geth stop</code> ends a run and its cluster jobs.</p>
+    </div>
   </div>
 </section>
 
@@ -591,6 +611,7 @@ a { color: var(--accent); }
     <li><time datetime="2026-10-18">2026-10-18</time><span>Go for arm C. Phase 12: the agents stay on node1q01 with their drivers in a container; no key file.</span></li>
     <li><time datetime="2026-10-18">2026-10-18</time><span>Release v1.7.0: agents' drivers in a container (on by default on Eddie), arm C, the lab image with scikit-image and scikit-misc.</span></li>
     <li><time datetime="2026-10-18">2026-10-18</time><span>Phase 11 closed: teams, not swarms (designer, engineer, reviewer); the lab stays experimental. Paid frontier models only with you, never in an unattended run.</span></li>
+    <li><time datetime="2026-10-19">2026-10-19</time><span>Your solo test on a multiplexed 10x delivery was killed by hand; you approved five fixes (multiplexing check, sample and chemistry warnings, <code>geth stop</code>). Release v1.9.0.</span></li>
   </ul>
 </section>
 

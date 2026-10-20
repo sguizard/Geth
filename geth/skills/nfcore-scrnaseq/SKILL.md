@@ -58,6 +58,9 @@ barcodes (`BC001`...). A sample table that lists more samples than there are FAS
     ...
     Library_B,spleen_1,,,OB1,spleen
     ```
+- CellBender: keep it on for real data. nf-core runs it on each library and on each sample; only the library
+  runs are valid for multiplexed data (a sample's raw matrix lacks the library's empty droplets). Geth's
+  report splits the library runs by sample.
 - Reference: `fasta` and `gtf` (Cell Ranger builds its own index from them). Results are per sample:
   `<outdir>/cellrangermulti/count/<library>/outs/per_sample_outs/<sample>/` (metrics, web summary) and
   `<outdir>/cellrangermulti/mtx_conversions/<sample>/` (`*.h5ad`, `*.rds`).
