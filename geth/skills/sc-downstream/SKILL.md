@@ -14,6 +14,12 @@ upstream run. Prefer the CellBender-corrected matrix (`*cellbender*filter*.h5ad`
 CellBender; otherwise `star/mtx_conversions/<sample>/<sample>_filtered_matrix.h5ad`. List the upstream
 `results/` folder to find it. Call **SC_INSPECT** on it before choosing QC thresholds.
 
+**Multiplexed upstream (Cell Ranger multi: OCM, CellPlex, Flex):** never use a sample's own CellBender
+matrix (`cellrangermulti/mtx_conversions/<sample>/<sample>_cellbender_filter_matrix.h5ad`): it is not valid,
+because a sample's raw matrix lacks the library's empty droplets. Use the sample's Cell Ranger matrix
+(`<sample>_filtered_matrix.h5ad`), and choose QC thresholds that remove empty droplets: the upstream
+report's "Cells per sample after CellBender" table says how many real cells to expect.
+
 ## Menu (keys, meaning, good starting values)
 - QC (per cell): `qc.min_genes` (typically 200–500), optional `qc.max_genes` (doublet-like cells, e.g. the
   99th percentile), optional `qc.min_counts`/`qc.max_counts`, `qc.max_pct_mt` (mitochondrial %: fresh PBMC

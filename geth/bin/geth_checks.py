@@ -923,6 +923,13 @@ def check_sc_design(sheet_text, params_text):
         h5ad = r.get("h5ad", "")
         if not (h5ad.startswith("/") and h5ad.endswith(".h5ad") and os.path.isfile(h5ad)):
             problems.append(f"h5ad must be an existing .h5ad file given by absolute path: {h5ad}")
+        # Cell Ranger multi: a sample's own CellBender run is not valid (its raw matrix lacks the library's empty
+        # droplets, so CellBender keeps thousands of empty droplets as cells: 10x_multi_chicken2)
+        m = re.search(r"/cellrangermulti/mtx_conversions/([^/]+)/\1_cellbender_filter_matrix\.h5ad$", h5ad)
+        if m and not os.path.isdir(os.path.join(h5ad.split("/mtx_conversions/")[0], "count", m.group(1), "outs")):
+            problems.append(f"{os.path.basename(h5ad)} is the CellBender run of one sample of a multiplexed library, "
+                            "which is not valid (the sample's raw matrix lacks the library's empty droplets). Use "
+                            f"the sample's Cell Ranger matrix, {m.group(1)}_filtered_matrix.h5ad, in the same folder")
     return problems, design
 
 

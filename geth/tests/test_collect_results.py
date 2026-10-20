@@ -147,6 +147,21 @@ class CellRangerMultiSummary(unittest.TestCase):
         open(os.path.join(self.run, "plan_samplesheet.csv"), "w").write(
             "sample,fastq_1,fastq_2,feature_type\n"
             "RatPBMC_pool,/x/RatPBMC_pool_S1_L001_R1_001.fastq.gz,/x/RatPBMC_pool_S1_L001_R2_001.fastq.gz,gex\n")
+        # CellBender, as nf-core runs it after Cell Ranger multi: per sample and per library (10x_multi_chicken2 shape)
+        called = {"rat_1": ["AAA-1", "AAC-1", "AAG-1"], "rat_2": ["CCA-1", "CCC-1"]}
+        for sample, bcs in called.items():
+            open(os.path.join(outs, sample, "sample_filtered_barcodes.csv"), "w").write(
+                "".join(f"gex_reference_version,{b}\n" for b in bcs))
+        crm = os.path.join(self.run, "results", "cellrangermulti")
+        for name, expected, found, removed in (("rat_1", 20802, 42322, 0.016), ("rat_2", 19581, 38944, 0.021),
+                                               ("RatPBMC_pool", 2521, 9617, 0.244)):
+            cb = os.path.join(crm, name, "cellbender_removebackground")
+            os.makedirs(cb)
+            open(os.path.join(cb, f"{name}_metrics.csv"), "w").write(
+                f"fraction_counts_removed_from_cells,{removed}\nexpected_cells,{expected}.000\nfound_cells,{found}.000\n"
+                "fraction_of_analyzed_droplets_that_are_nonempty,0.918\n")
+        open(os.path.join(crm, "RatPBMC_pool", "cellbender_removebackground", "RatPBMC_pool_cell_barcodes.csv"), "w").write(
+            "AAA-1\nCCA-1\nCCC-1\nGGG-1\n")
 
     def tearDown(self):
         shutil.rmtree(self.run)
@@ -159,6 +174,15 @@ class CellRangerMultiSummary(unittest.TestCase):
         self.assertIn("| RatPBMC_pool | OB2 | rat_2 | 629 | 763 |", text)
         self.assertNotIn("| RatPBMC_pool | RatPBMC_pool |", text)  # the per-FASTQ group is not a barcode
         self.assertIn("| RatPBMC_pool_S1_L001_R2_001.fastq.gz | RatPBMC_pool | 10,000 | 30.4 | 47 |", text)
+
+    def test_cellbender_library_run_split_by_sample(self):
+        text = "\n\n".join(cr.scrnaseq(self.run, os.path.join(self.run, "results")))
+        self.assertIn("| rat_1 | sample | 20,802 | 42,322 | 3 | 1.6 | 91.8 |", text)
+        self.assertIn("| RatPBMC_pool | library | 2,521 | 9,617 | 5 | 24.4 | 91.8 |", text)
+        self.assertIn("| RatPBMC_pool | rat_1 | 3 | 1 |", text)
+        self.assertIn("| RatPBMC_pool | rat_2 | 2 | 2 |", text)
+        self.assertIn("| RatPBMC_pool | no sample (cells Cell Ranger did not call) | 0 | 1 |", text)
+        self.assertIn("per-sample CellBender runs", text)
 
 
 if __name__ == "__main__":

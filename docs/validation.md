@@ -465,6 +465,23 @@ chromosome 6 reference.
 | Operator under failure | after the apptainer failure it tried to add a `docker` profile; the gate refused it, and the operator stopped and reported |
 | `geth stop` during the run, 4 jobs queued | stopped in 2 s; the pipeline's driver cancelled its 4 jobs; no process left; `geth run` resumed it |
 
+**The user's own delivery, rerun with version 1.9** (`10x_multi_chicken2`, planned and approved by the user):
+
+- The plan matched the README exactly (two libraries, OB1–OB4 to eight samples), with chemistry detected
+  by Cell Ranger as GEM-X 3' v4 OCM. The run succeeded in 1 attempt, with CellBender on the GPU.
+- Compared with the user's own analysis of the same data:
+  - Cell Ranger metrics agree: UMIs per barcode within 0.2%, cells and medians of the good samples within a
+    few percent. Only the near-empty samples' cell calls differ (cell calling is unstable there).
+  - nf-core runs CellBender on each library and on each sample. The library runs, split by Cell Ranger's
+    sample assignment, match the user's CellBender counts to within 1% (for example 4,497 vs 4,516 cells, and
+    2 vs 2 for a failed sample).
+  - The per-sample runs kept about 40,000 "cells" per good sample against about 4,500: a sample's raw
+    matrix lacks the library's empty droplets, so CellBender cannot learn the background.
+- Since version 1.9.1 the report shows the CellBender runs and the library runs split by sample, and says
+  that the per-sample runs are not valid. The plan check refuses them as input of a single-cell follow-up.
+- Two report-check numbers were flagged as untraced (164, 218): a parsing bug on ranges ("990-1,218"),
+  fixed in 1.9.1 (the report traces 96/96).
+
 Only the plan check has been tested for CellPlex and Flex (unit tests); no full runs.
 
 ## Not yet tested

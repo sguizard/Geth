@@ -216,6 +216,12 @@ CellTypist container:
    that cites a diagnostic (`SC_DIAGNOSTIC_TERMS`).
 3. The input matrix, normalisation, marker panel and annotation model stay frozen.
 
+**CellBender after Cell Ranger multi.** nf-core runs CellBender on each library's raw matrix and on each
+sample's. Only the library runs are valid: a sample's raw matrix lacks the library's empty droplets, so
+CellBender keeps empty droplets as cells. `collect_results.py` tabulates every run from its `*_metrics.csv`
+and splits each library run's `*_cell_barcodes.csv` by Cell Ranger's `sample_filtered_barcodes.csv`. The
+plan check refuses a sample's own `*_cellbender_filter_matrix.h5ad` as toolbox input.
+
 The toolbox prints **FLAGS**:
 
 - fewer than 85% of cells kept
