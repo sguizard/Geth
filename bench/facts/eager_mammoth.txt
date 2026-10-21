@@ -1,0 +1,6 @@
+Ancient DNA from two woolly mammoth (Mammuthus primigenius) specimens, JK2782 and JK2802: one double-stranded
+library per specimen.
+- JK2782: no UDG treatment; paired-end, HiSeq 4000 (four-colour chemistry), lane 8.
+- JK2802: full UDG treatment; single-end, NextSeq 500 (two-colour chemistry), lane 8.
+Reference: the mammoth mitochondrial genome (Krause et al. 2006). I want mapping statistics, deduplication and
+DNA damage profiles.

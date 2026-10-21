@@ -2,6 +2,8 @@
 # Geth: plan, approve and run nf-core analyses with LLM agents.
 #
 #   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
+#             [--answers <file>]                 (Rannoch planner: it asks you its questions in the terminal, or
+#                                                 a stand-in answers them from what this file says)
 #   geth plan --from <run> "<question>" <name> follow-up analysis of a finished run (DE, single-cell downstream)
 #   geth show <name>                           print the plan (and its automatic check)
 #   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
@@ -21,7 +23,7 @@ checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
 self=$(readlink -f "${BASH_SOURCE[0]}")  # nf() changes folder: call this script back by its full path
-usage() { sed -n '2,15p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,17p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
     local commit; commit=$(git -C "$GETH_HOME" rev-parse --short HEAD 2>/dev/null || true)
     echo "Geth $(cat "$GETH_HOME/VERSION" 2>/dev/null || echo unknown)${commit:+ (commit $commit)}"
@@ -56,7 +58,9 @@ harness() {  # harness <run_dir> <stage> [args]: a stage on Geth's own agent loo
     acquire_slots "$d" "$stage" 0  # no Nextflow driver: no slot, but a pid file (geth list, geth stop)
     local ro=() prev=
     for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done
-    sandboxed "$d" "${ro[@]}" -- timeout "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
+    local fg=()  # questions in the terminal: the agent must stay in the terminal's foreground to read it
+    for a in "$@"; do [ "$a" = terminal ] && fg=(--foreground); done
+    sandboxed "$d" "${ro[@]}" -- timeout "${fg[@]}" "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
         python3 -m "harness.$stage" --run_dir "$d" "$@" > "$d/geth_$stage.log" 2>&1
     local rc=$?
     explain_timeout $rc "$stage" "$d/geth_$stage.log"
@@ -114,13 +118,24 @@ show() {
         column -s, -t < "$d/plan_barcodes.csv" | sed 's/^/  /'
     fi
     echo; echo "Parameters (plan_params.json):"; sed "s#$GETH_DATA_ROOT/##g" "$d/plan_params.json" | sed 's/^/  /'; echo
+    if [ -s "$d/plan_questions.md" ]; then
+        echo; echo "Questions and answers (plan_questions.md):"; grep -E '^\*\*|^- answer:' "$d/plan_questions.md" | sed 's/^\*\*\(.*\)\*\*$/  Q: \1/; s/^- answer: /     A: /'
+    fi
+    echo; echo "Command line Geth will run:"; python3 "$checks" command "$d" | sed "s#$GETH_DATA_ROOT/##g; s/^/  /"
     echo; check "$d" || true
 }
 
 cmd=${1:-}; shift || true
 case "$cmd" in
     plan)
-        upstream_args=()
+        upstream_args=() answers=
+        args=()  # --answers <file> may come anywhere
+        while [ $# -gt 0 ]; do
+            if [ "$1" = --answers ]; then answers=$(readlink -f "${2:-}"); shift 2 || usage
+            else args+=("$1"); shift; fi
+        done
+        set -- "${args[@]}"
+        [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
         if [ "${1:-}" = "--from" ]; then
             [ $# -eq 4 ] || usage
             up=$(run_dir_of "$2"); shift 2
@@ -146,8 +161,13 @@ case "$cmd" in
         [ -e "$d" ] && { echo "Run '$2' already exists: choose another name." >&2; exit 1; }
         mkdir -p "$d"
         echo "Planning in $d ..."
-        if [ "${GETH_PLANNER:-nextflow}" = harness ]; then  # Rannoch trial: the planner on Geth's own agent loop
+        if [ "${GETH_PLANNER:-nextflow}" = harness ]; then  # Rannoch: the planner on Geth's own agent loop
+            if [ -n "$answers" ]; then ask=file; cp "$answers" "$d/answers.txt"   # visible in the sandbox
+            elif [ -t 0 ] && [ -t 1 ]; then ask=terminal; echo "The planner may ask you a few questions here."
+            else ask=none; fi
+            ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
             harness "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
+                --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
                 || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
         else
             nf "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }

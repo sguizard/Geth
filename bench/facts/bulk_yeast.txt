@@ -1,0 +1,8 @@
+These are my yeast (Saccharomyces cerevisiae) RNA-seq samples. Library strandedness is not documented.
+Runs and samples:
+- SRR6357070 and SRR6357071: wild type, biological replicate 1. Same library sequenced twice (two runs).
+- SRR6357072: wild type, biological replicate 2.
+- SRR6357073: RAP1 uninduced, biological replicate 1 (single-end).
+- SRR6357074 and SRR6357075: RAP1 uninduced, biological replicate 2. Same library sequenced twice, single-end.
+- SRR6357076: RAP1 IAA 30 min, biological replicate 1.
+The others are paired-end. I want gene expression quantified to compare wild type with the RAP1 conditions.

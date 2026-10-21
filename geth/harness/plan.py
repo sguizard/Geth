@@ -1,9 +1,12 @@
 """Rannoch planner: the planner agent of geth/main.nf (--mode plan) on Geth's own agent loop.
 
     python3 -m harness.plan --run_dir <dir> --question <text> --data_dir <dir> [--upstream_run <dir>]
+                            [--ask terminal|file|none] [--answers <file>]
 
 Same instructions, tools and skills as the Nextflow planner; the plan is handed over through SUBMIT_PLAN (a tool
 call with a schema) instead of a structured final answer, so a plan that fails the check comes back to the agent.
+R3: the planner can also ask the scientist (ASK_USER: in the terminal, from an answers file, or nobody) and browse
+the pipeline's options (PIPELINE_OPTIONS). With --ask none and no questions it plans as in R2.
 """
 import argparse
 import json
@@ -11,8 +14,10 @@ import os
 import sys
 
 from .agent import Agent, load_skills
+from .ask import FileAnswerer, Nobody, TerminalAsker, ask_tool
 from .llm import Client, ModelError
-from .tools import GETH_HOME, check_plan, checks, list_files, list_references, read_text, submit_plan
+from .tools import (GETH_HOME, check_plan, checks, list_files, list_references, pipeline_options, read_text,
+                    submit_plan)
 
 INSTRUCTION = '''You are Geth, a bioinformatics analysis planner. You turn a scientist's request and a
 sequencing data folder into a run plan for exactly one nf-core pipeline. For new sequencing data:
@@ -41,6 +46,21 @@ barcodes sheet) and the analysis profile for differentialabundance (empty string
 fix every problem it reports, and repeat until it prints "PLAN CHECK: OK". Read every WARNING it
 prints too: fix the plan, or explain in the rationale why the warning does not apply.'''
 
+QUESTIONS = '''
+
+You can ask the scientist with ASK_USER, and browse the pipeline's options with PIPELINE_OPTIONS.
+1. First inspect the folder and read its text files. Never ask what they already say.
+2. Choose the pipeline and load its skill. Then ask, in one round when you can, what the data cannot tell you
+   and the plan needs: for example the library kit or protocol, strandedness, primers, which control goes with
+   which sample, sample groups and replicates, sequencing runs or batches, the organism or reference when
+   unclear, the question of interest.
+3. Look through PIPELINE_OPTIONS for the options that change this project's results (not run-time or reporting
+   details), and ask about those whose right value depends on the scientist's aims. Keep the pipeline's
+   defaults for everything else.
+Give every question 2 to 4 options, your recommended answer, and why it matters. When an answer is "use your
+recommendation", or nobody answers, use your recommendation. In the rationale, justify every parameter you set
+and say where its value comes from: the files, the scientist's answer, or your recommendation.'''
+
 PROMPT = '''Request: {question}
 Data folder: {data_dir}
 Upstream run: {upstream}
@@ -63,6 +83,9 @@ def main(argv=None):
     ap.add_argument("--data_dir", required=True)
     ap.add_argument("--upstream_run", default="")
     ap.add_argument("--max_turns", type=int, default=25)
+    ap.add_argument("--ask", choices=("terminal", "file", "none", "off"), default="off",
+                    help="who answers the planner's questions; off: no questions at all (the R2 planner)")
+    ap.add_argument("--answers", default="", help="answers file (--ask file): what the scientist knows, in plain words")
     a = ap.parse_args(argv)
     runs, data_root, references = (os.environ.get(v, "") for v in ("GETH_RUNS_DIR", "GETH_DATA_ROOT", "GETH_REFERENCES"))
     if not (runs and data_root and references):
@@ -82,9 +105,19 @@ def main(argv=None):
         sys.exit(f"Geth: {e}")
     tools = [list_files(data_root), read_text(data_root), list_references(references),
              check_plan(a.run_dir, a.upstream_run), submit_plan(a.run_dir, a.upstream_run)]
+    instruction, hint = INSTRUCTION, ""
+    if a.ask != "off":
+        transcript = os.path.join(a.run_dir, "plan_questions.md")
+        open(transcript, "w").close()
+        asker = {"terminal": TerminalAsker, "none": Nobody}.get(a.ask)
+        asker = FileAnswerer(a.answers, client) if a.ask == "file" else asker()
+        tools += [pipeline_options(), ask_tool(asker, transcript)]
+        instruction += QUESTIONS
+        hint = "If you cannot fix it from the data, ask the scientist with ASK_USER (for example which file to use)."
     skills = {k: v for k, v in load_skills(os.path.join(GETH_HOME, "geth", "skills")).items() if k != "sc-downstream"}
-    agent = Agent("planner", INSTRUCTION, tools, client, skills=skills, max_turns=a.max_turns,
-                  trace_path=os.path.join(a.run_dir, "harness_trace_plan.jsonl"), log=lambda m: print(m, flush=True))
+    agent = Agent("planner", instruction, tools, client, skills=skills, max_turns=a.max_turns,
+                  trace_path=os.path.join(a.run_dir, "harness_trace_plan.jsonl"), log=lambda m: print(m, flush=True),
+                  stuck_hint=hint)
     try:
         result = agent.run(PROMPT.format(question=a.question, data_dir=a.data_dir, upstream=upstream),
                            done=lambda name, out: out.startswith("PLAN CHECK: OK"))

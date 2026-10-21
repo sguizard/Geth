@@ -13,7 +13,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from harness.agent import Agent, Tool, load_skills, string_params  # noqa: E402
-from harness.tools import list_files, read_text  # noqa: E402
+from harness.ask import UNKNOWN, FileAnswerer, Nobody, ask_tool  # noqa: E402
+from harness.tools import list_files, pipeline_options, read_text  # noqa: E402
 
 
 def call(name, **args):
@@ -120,6 +121,66 @@ class FileTools(unittest.TestCase):
         self.assertIn("line7", gz)
         self.assertNotIn("line8", gz)
         self.assertTrue(tool(path="/etc/passwd").startswith("REFUSED"))
+
+
+class Questions(unittest.TestCase):
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.transcript = os.path.join(self.dir, "plan_questions.md")
+        open(self.transcript, "w").close()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def test_rounds_are_capped_and_kept_for_the_person_who_approves(self):
+        q = {"question": "Which primers?", "why": "ampliseq trims them", "options": ["515F/806R", "341F/785R"],
+             "recommended": "515F/806R"}
+        tool = ask_tool(Nobody(), self.transcript, max_rounds=2, max_questions=2).func
+        out = tool(questions=[q, q, q])
+        self.assertEqual(out.count("Q"), 2 + out.count("Q3"))  # at most 2 questions per round
+        self.assertIn("No one is available", out)
+        tool(questions=[q])
+        self.assertIn("REFUSED", tool(questions=[q]))
+        text = open(self.transcript).read()
+        self.assertIn("## Round 2 (answered by nobody)", text)
+        self.assertIn("- recommended: 515F/806R", text)
+
+    def test_file_answerer_answers_only_from_the_file(self):
+        facts = os.path.join(self.dir, "answers.txt")
+        open(facts, "w").write("Primers: 515F GTGYCAGCMGCCGCGGTAA and 806R GGACTACNVGGGTWTCTAAT.\n")
+        client = FakeClient({"content": 'Here: ["515F GTGYCAGCMGCCGCGGTAA, 806R GGACTACNVGGGTWTCTAAT", "' + UNKNOWN + '"]'})
+        answers = FileAnswerer(facts, client)([{"question": "Which primers?"}, {"question": "Which sequencer?"}])
+        self.assertEqual(answers[1], UNKNOWN)
+        self.assertIn("GTGYCAGCMGCCGCGGTAA", answers[0])
+        self.assertIn("Primers: 515F", client.seen[0][0]["content"])  # the facts go to the stand-in only
+        self.assertEqual(FileAnswerer(facts, FakeClient({"content": "no list"}))([{"question": "x"}]), [UNKNOWN])
+
+
+class Options(unittest.TestCase):
+
+    def test_sections_section_and_search(self):
+        tool = pipeline_options().func
+        self.assertIn("alignment_options", tool(pipeline="rnaseq"))
+        self.assertNotIn("institutional_config_options", tool(pipeline="rnaseq"))
+        self.assertIn("--aligner (string, default 'star_salmon'", tool(pipeline="rnaseq", section="alignment_options"))
+        self.assertIn("--primer_fwd", tool(pipeline="ampliseq", search="primer"))
+        self.assertNotIn("--outdir", tool(pipeline="rnaseq", section="input_output_options"))  # Geth sets it
+        self.assertIn("No parameter schema", tool(pipeline="nope"))
+
+
+class StuckGuard(unittest.TestCase):
+
+    def test_same_refusal_nudges_then_stops(self):
+        refusal = "PLAN CHECK: 1 problem(s)\n- db_path does not exist"
+        submit = Tool("SUBMIT", "final", string_params(answer="a"), lambda answer: refusal, final=True, check=True)
+        client = FakeClient(*[{"content": "", "tool_calls": [call("SUBMIT", answer="same")]}] * 10)
+        agent = Agent("t", "You test.", [submit], client, max_turns=20, log=lambda m: None, stuck_hint="Ask the scientist.")
+        self.assertIsNone(agent.run("go", done=lambda name, out: out.startswith("PLAN CHECK: OK")))
+        self.assertEqual(client.usage["requests"], 6)  # stopped after 6 identical refusals, not 20 turns
+        nudges = [m["content"] for m in client.seen[-1] if m["role"] == "user" and "refused the same" in m["content"]]
+        self.assertEqual(len(nudges), 1)
+        self.assertIn("Ask the scientist.", nudges[0])
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ import sys
 for _var in ("GETH_DATA_ROOT", "GETH_REFERENCES", "GETH_RUNS_DIR"):
     if not os.environ.get(_var):
         sys.exit(f"{_var} is not set: source env.sh first")
-ROOT = os.path.join(os.environ["GETH_DATA_ROOT"], "testdata")
+ROOT = os.path.join(os.environ["GETH_DATA_ROOT"], os.environ.get("GETH_BENCH_TESTDATA", "testdata"))  # R3: sparse
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "geth", "bin"))
 import geth_checks  # noqa: E402
 

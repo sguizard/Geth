@@ -105,7 +105,7 @@ def check_plan(run_dir, upstream):
                 "none) and the analysis profile (empty string if none). Prints PLAN CHECK: OK, or the problems.",
                 string_params(pipeline="pipeline name, e.g. rnaseq", samplesheet_csv="the samplesheet, CSV text",
                               params_json="the parameters", contrasts_csv="the second sheet, CSV text, or ''",
-                              profile="analysis profile, or ''"), run)
+                              profile="analysis profile, or ''"), run, check=True)
 
 
 def submit_plan(run_dir, upstream):
@@ -128,4 +128,62 @@ def submit_plan(run_dir, upstream):
                      "contrasts_lines": dict(array, description="the second sheet, CSV lines, header first; [] if none"),
                      "profile": {"type": "string", "description": "the analysis profile, or ''"},
                      "rationale": {"type": "string", "description": "the rationale of the plan"}}},
-                run, final=True)
+                run, final=True, check=True)
+
+
+def pipeline_options():
+    """Browse the pinned release's parameter schema: its sections, a section's options, or a search."""
+    import glob
+    import json as _json
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("geth_checks", CHECKS)
+    gc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gc)
+    skip_sections = {"institutional_config_options", "generic_options"}
+
+    def run(pipeline, section="", search=""):
+        pipeline = pipeline.replace("nf-core/", "").strip()
+        rev = gc.REGISTRY.get(pipeline, {}).get("revision")
+        path = os.path.join(GETH_HOME, "geth", "schemas", f"{pipeline}-{rev}.params.json")
+        if not rev or not os.path.isfile(path):
+            return f"No parameter schema for '{pipeline}'. Pipelines: {', '.join(sorted(k for k in gc.REGISTRY if not gc.REGISTRY[k].get('toolbox')))}"
+        schema = _json.load(open(path))
+        defs = schema.get("$defs") or schema.get("definitions") or {}
+
+        def visible(sec):
+            return {k: v for k, v in defs[sec].get("properties", {}).items()
+                    if not v.get("hidden") and k not in gc.OWNED}
+
+        def line(name, p):
+            bits = [p.get("type", "")]
+            if "default" in p:
+                bits.append(f"default {p['default']!r}")
+            if "enum" in p:
+                bits.append(f"one of {p['enum']}")
+            text = f"--{name} ({', '.join(b for b in bits if b)}): {p.get('description', '')}"
+            if p.get("help_text"):
+                text += f" | {' '.join(str(p['help_text']).split())[:240]}"
+            return text
+
+        if search:
+            term = search.lower()
+            hits = [line(k, v) + f"   [section {sec}]" for sec in defs if sec not in skip_sections
+                    for k, v in visible(sec).items()
+                    if term in k.lower() or term in str(v.get("description", "")).lower() or term in str(v.get("help_text", "")).lower()]
+            return "\n".join(hits[:40]) or f"No option of nf-core/{pipeline} {rev} matches '{search}'."
+        if section:
+            if section not in defs:
+                return f"No section '{section}'. Sections: {', '.join(s for s in defs if s not in skip_sections)}"
+            return f"nf-core/{pipeline} {rev}, {defs[section].get('title', section)}:\n" + "\n".join(
+                line(k, v) for k, v in visible(section).items())
+        return f"nf-core/{pipeline} {rev}: option sections (call again with section=... or search=...):\n" + "\n".join(
+            f"- {sec}: {d.get('title', '')} ({len(visible(sec))} options). {d.get('description', '')}"
+            for sec, d in defs.items() if sec not in skip_sections and visible(sec))
+
+    return Tool("PIPELINE_OPTIONS", "Browse the options of the pinned pipeline release (its parameter schema): call "
+                "it with only the pipeline to list the sections, with a section to list its options with their "
+                "defaults, or with search to find options by word (e.g. 'primer', 'strand', 'umi').",
+                {"type": "object", "required": ["pipeline"], "properties": {
+                    "pipeline": {"type": "string", "description": "pipeline name, e.g. rnaseq"},
+                    "section": {"type": "string", "description": "a section name from the list, or ''"},
+                    "search": {"type": "string", "description": "a word to search for, or ''"}}}, run)

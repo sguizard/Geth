@@ -7,6 +7,9 @@
 #   airway_index_test pbmc_index_test (bench/stage_index_tests.sh), sc_rat_ocm (multiplexed 10x)
 # Results: $GETH_BENCH_DIR/<tag>.jsonl (default $GETH_WORK_ROOT/bench)
 # GETH_PLANNER=harness benchmarks the Rannoch planner (geth/harness) instead of the Nextflow one.
+# Rannoch R3: GETH_BENCH_TESTDATA=testdata_sparse plans the sparse deliveries (bench/stage_sparse.sh);
+# GETH_BENCH_ANSWERS=yes lets a stand-in scientist answer the planner from bench/facts/<delivery>.txt;
+# GETH_PLANNER_ASK=off plans without questions.
 set -uo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
 
@@ -39,8 +42,10 @@ for delivery in "$@"; do
         name=${tag}_${delivery}_$i
         t0=$(date +%s)
         rss=$(mktemp)
-        /usr/bin/time -f "%M" -o "$rss" "$geth" plan "$GETH_DATA_ROOT/testdata/$delivery" "${question[$delivery]}" "$name" \
-            > /dev/null 2>&1 && status=ok || status=failed
+        answers=()
+        [ "${GETH_BENCH_ANSWERS:-no}" = yes ] && answers=(--answers "$GETH_HOME/bench/facts/$delivery.txt")
+        /usr/bin/time -f "%M" -o "$rss" "$geth" plan "$GETH_DATA_ROOT/${GETH_BENCH_TESTDATA:-testdata}/$delivery" \
+            "${question[$delivery]}" "$name" "${answers[@]}" < /dev/null > /dev/null 2>&1 && status=ok || status=failed
         t1=$(date +%s)
         python3 "$GETH_HOME/bench/eval_plan.py" "$GETH_RUNS_DIR/$name" "${dataset[$delivery]:-$delivery}" \
             | python3 -c 'import json, os, sys
@@ -54,6 +59,11 @@ log = os.path.join(run_dir, "geth_plan.log")
 usage = [l for l in open(log) if l.startswith("Model usage:")] if os.path.isfile(log) else []
 if usage:
     d["model_usage"] = json.loads(usage[-1].split(":", 1)[1])  # printed by the harness
+qa = os.path.join(run_dir, "plan_questions.md")
+if os.path.isfile(qa):
+    text = open(qa).read()
+    d.update(questions=text.count("\n**"), unknown_answers=text.count("know: use your recommendation"),
+             rounds=text.count("\n## Round"))
 print(json.dumps(d))' "$GETH_RUNS_DIR/$name" "$status" "$(( t1 - t0 ))" "$(tail -n 1 "$rss" 2>/dev/null)" 2>/dev/null \
             || echo "{\"run\": \"$name\", \"error\": \"scoring failed\", \"plan_status\": \"$status\"}"
         rm -f "$rss"

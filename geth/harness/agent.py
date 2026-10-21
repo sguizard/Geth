@@ -5,6 +5,8 @@ The loop is deliberately small. What makes an agent trustworthy stays outside it
 - A tool never kills the agent: any failure comes back to the model as text.
 - The agent ends when its final tool accepts the answer, or when its turns run out (one last turn is offered
   to call the final tool).
+- When a check refuses the same thing again and again, the agent is told to stop resubmitting and to ask or
+  explain instead; if it still insists, the loop ends (a stuck agent spent 25 turns resubmitting one plan).
 - Every request, answer and tool call goes to a JSON-lines trace (never the API key).
 """
 import json
@@ -14,8 +16,9 @@ import time
 
 
 class Tool:
-    def __init__(self, name, description, parameters, func, final=False):
-        self.name, self.description, self.parameters, self.func, self.final = name, description, parameters, func, final
+    def __init__(self, name, description, parameters, func, final=False, check=False):
+        self.name, self.description, self.parameters, self.func = name, description, parameters, func
+        self.final, self.check = final, check  # final: its acceptance ends the loop; check: a refusal counts
 
     def spec(self):
         return {"type": "function", "function": {"name": self.name, "description": self.description,
@@ -54,8 +57,10 @@ def skill_tool(skills):
 
 
 class Agent:
-    def __init__(self, name, instruction, tools, client, skills=None, max_turns=25, trace_path=None, log=print):
+    def __init__(self, name, instruction, tools, client, skills=None, max_turns=25, trace_path=None, log=print,
+                 nudge_after=3, give_up_after=6, stuck_hint=""):
         self.name, self.client, self.max_turns, self.log = name, client, max_turns, log
+        self.nudge_after, self.give_up_after, self.stuck_hint = nudge_after, give_up_after, stuck_hint
         self.tools = {t.name: t for t in tools}
         if skills:
             self.tools["activate_skill"] = skill_tool(skills)
@@ -90,6 +95,7 @@ class Agent:
     def run(self, prompt, done=lambda name, output: True):
         """Run until a final tool's output satisfies done(name, output); returns that output, or None."""
         messages = [{"role": "system", "content": self.instruction}, {"role": "user", "content": prompt}]
+        refused, streak = None, 0  # the last refusal of a check tool, and how many times in a row
         specs = [t.spec() for t in self.tools.values()]
         self.log(f"[agent {self.name}] model {self.client.model} · tools: {', '.join(self.tools)}")
         self.trace(event="start", model=self.client.model, tools=list(self.tools), prompt=prompt)
@@ -115,10 +121,27 @@ class Agent:
                 self.log(f"[agent {self.name}]   → {name}({', '.join(f'{k}={str(v)[:60]!r}' for k, v in args.items())})")
                 messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": output})
                 self.trace(event="tool", turn=turn, name=name, arguments=args, output=output)
-                if name in self.final and done(name, output):
+                passed = done(name, output)
+                if name in self.final and passed:
                     self.trace(event="end", turn=turn, usage=dict(self.client.usage))
                     self.log(f"[agent {self.name}] done in {turn} turn(s); usage: {self.client.usage}")
                     return output
+                tool = self.tools.get(name)
+                if tool is not None and tool.check:
+                    if passed:
+                        refused, streak = None, 0
+                    else:
+                        streak = streak + 1 if output == refused else 1
+                        refused = output
+                        if streak == self.nudge_after:
+                            messages.append({"role": "user", "content": f"The check has refused the same problems "
+                                             f"{streak} times. Do not submit the same thing again: fix exactly what it "
+                                             f"names. {self.stuck_hint}".strip()})
+                            self.trace(event="nudge", turn=turn, streak=streak)
+                        elif streak >= self.give_up_after:
+                            self.trace(event="end", turn=turn, usage=dict(self.client.usage), finished=False, stuck=True)
+                            self.log(f"[agent {self.name}] stopped: the check refused the same problems {streak} times")
+                            return None
         self.trace(event="end", turn=self.max_turns + 1, usage=dict(self.client.usage), finished=False)
         self.log(f"[agent {self.name}] stopped without a final answer after {self.max_turns} turns")
         return None

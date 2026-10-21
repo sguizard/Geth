@@ -1478,6 +1478,33 @@ def main(argv):
     if cmd == "keep-prelude":  # keep-prelude < flat config: a config restoring the site's beforeScript (see above)
         sys.stdout.write(keep_prelude(sys.stdin.read()))
         return 0
+    if cmd == "command":  # command <run_dir>: the nf-core command line of the plan, as Geth will launch it
+        run_dir = argv[2]
+        read = lambda f: read_text(os.path.join(run_dir, f)).strip()
+        pipeline = pipeline_name(read("plan_pipeline.txt"))
+        spec = REGISTRY.get(pipeline, {})
+        if spec.get("toolbox"):
+            print(f"(Geth's single-cell toolbox: the design in plan_params.json, run by sc_analyse.sh)")
+            return 0
+        try:
+            params = parse_params(read("plan_params.json"))
+        except ValueError as e:
+            print(f"(plan_params.json is not valid: {e})")
+            return 0
+        profiles = ",".join(p for p in (os.environ.get("GETH_NFCORE_PROFILE", ""), read("plan_profile.txt")) if p)
+        words = [f"nextflow run nf-core/{pipeline} -r {spec.get('revision', '?')}"]
+        if profiles:
+            words.append(f"-profile {profiles}")
+        words.append(f"--input {os.path.join(run_dir, 'plan_samplesheet.csv')}")
+        sheet2 = spec.get("second_sheet")
+        if sheet2 and read(sheet2["file"]):
+            words.append(f"--{sheet2['param']} {os.path.join(run_dir, sheet2['file'])}")
+        words.append(f"--outdir {os.path.join(run_dir, 'results')}")
+        for key, value in params.items():
+            value = json.dumps(value) if isinstance(value, (dict, list)) else str(value).lower() if isinstance(value, bool) else str(value)
+            words.append(f"--{key} {value if re.fullmatch(r'[\w./:,+=@-]+', value) else repr(value)}")
+        print(" \\\n    ".join(words))
+        return 0
     if cmd == "sheet2":  # sheet2 <pipeline>: "<nf-core parameter> <file name>" of the plan's second sheet, if any
         spec = REGISTRY.get(pipeline_name(argv[2]), {}).get("second_sheet")
         if spec:
