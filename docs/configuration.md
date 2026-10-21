@@ -82,6 +82,7 @@ that holds only deliveries (not the whole `GETH_WORK_ROOT`), and plan each analy
 |---|---|---|
 | `GETH_AGENT_SANDBOX` | `no` | `yes` runs every agent driver (`geth plan`, `geth run`, `geth lab`) inside apptainer on the machine Geth runs on. The driver keeps the network (its agents call the model service) and can submit scheduler jobs. It sees, read-write, only its run folder, Nextflow's home and `GETH_AGENT_SANDBOX_RW`; read-only, Geth, this run's data folder, the reference catalogue, Java, Nextflow and the scheduler's client. The API key reaches the agents through the environment, never a command line or a file. |
 | `GETH_AGENT_SANDBOX_RW` | none | `:`-separated folders the drivers may write, e.g. the image cache your Nextflow config uses. |
+| `GETH_AGENT_SANDBOX_RO` | none | `:`-separated folders the drivers may read, e.g. shared databases that reference catalogue entries point to (a Kraken2 database outside the catalogue). Without it, a plan using them fails the check inside the sandbox: "db_path does not exist". |
 | `GETH_AGENT_TIMEOUT` | `2h` | Time limit for a planning, design or review stage (`timeout` syntax: `30m`, `2h`). |
 | `GETH_ENGINEER_TIMEOUT` | `4h` | Time limit for a lab engineer stage. |
 | `GETH_RUN_TIMEOUT` | `72h` | Time limit for `geth run` (the whole pipeline run, retries included). |
