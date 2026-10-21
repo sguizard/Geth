@@ -125,7 +125,7 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <span class="eyebrow">Geth 2.0 · codename</span>
   <div class="title-row">
     <h1>Rannoch</h1>
-    <span class="pill run">trial running</span>
+    <span class="pill ok">trial passed</span>
   </div>
   <p class="lede">Geth on its own ground. The agents move from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly. Nextflow keeps doing what it is best at: running the pipelines. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
   <div class="meta">
@@ -198,17 +198,17 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
         <p>The planner ported with the same instructions, tools and skills, so only the harness differs. <code>GETH_PLANNER=harness geth plan …</code> runs it, sandboxed. Smoke test on the yeast RNA-seq delivery: 13/13 in 1 minute, 5 model calls, 27 MB of memory.</p>
       </div>
     </li>
-    <li class="step run">
+    <li class="step done">
       <div class="node"><span class="dot">R2</span></div>
       <div class="step-body">
-        <div class="step-head"><h3>Head-to-head planner benchmark</h3><span class="pill run">running</span></div>
-        <p>15 test deliveries, 3 plans each, for each planner: 90 plans scored against the known design. Compared on correctness, time, memory, model use and failures. Your call on R3 comes after these numbers.</p>
+        <div class="step-head"><h3>Head-to-head planner benchmark</h3><span class="pill ok">done</span></div>
+        <p>15 test deliveries, 3 plans each, for each planner: 90 plans scored against the known design. The harness planner was correct on all 45 and three times faster, with a fifteenth of the memory. It also exposed a sandbox bug in Geth 1.x: shared databases were not visible to the agents (fixed in v1.9.3).</p>
       </div>
     </li>
     <li class="step next">
       <div class="node"><span class="dot">R3</span></div>
       <div class="step-body">
-        <div class="step-head"><h3>A planner that asks you</h3><span class="pill next">next, if R2 holds up</span></div>
+        <div class="step-head"><h3>A planner that asks you</h3><span class="pill next">next</span></div>
         <ul>
           <li>First what the data cannot tell (kit, strandedness, design, organism), then the pipeline options that change results for your project. Everything else keeps its default, and the plan says why for each option it sets.</li>
           <li>A conversation in your terminal, a few questions at a time, each with a recommended answer. Detached runs and benchmarks answer from a file.</li>
@@ -238,22 +238,23 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <div class="section-head">
     <span class="eyebrow">Numbers</span>
     <h2 id="num-h">Planner benchmark, Nextflow agent vs Rannoch harness</h2>
-    <p>Same deliveries, same model, same skills and checks. Filled in when the 90 plans are scored.</p>
+    <p>Same 15 deliveries, same model, same skills and checks, 3 plans each. A plan counts as correct when every scored check passes and Geth's plan check accepts it.</p>
   </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Measure</th><th>Nextflow agent</th><th>Rannoch harness</th></tr></thead>
       <tbody>
-        <tr><td>Plans fully correct</td><td class="pending">running</td><td class="pending">running</td></tr>
-        <tr><td>Mean check score</td><td class="pending">running</td><td class="pending">running</td></tr>
-        <tr><td>Planning failures</td><td class="pending">running</td><td class="pending">running</td></tr>
-        <tr><td>Median minutes per plan</td><td class="pending">running</td><td class="pending">running</td></tr>
-        <tr><td>Peak memory on node1q01</td><td class="pending">running</td><td class="pending">running</td></tr>
-        <tr><td>Model calls and tokens per plan</td><td class="pending">not recorded</td><td class="pending">running</td></tr>
-        <tr><td>Smoke test, yeast bulk RNA-seq</td><td class="n">13/13 (v1.x benchmarks)</td><td class="n">13/13 · 1 min · 5 calls · 27 MB</td></tr>
+        <tr><td>Plans fully correct</td><td class="n">43/45</td><td class="n">45/45</td></tr>
+        <tr><td>Mean check score</td><td class="n">99.3%</td><td class="n">100%</td></tr>
+        <tr><td>Planning failures</td><td class="n">0</td><td class="n">0</td></tr>
+        <tr><td>Minutes per plan, median (max)</td><td class="n">7.1 (12.0)</td><td class="n">2.2 (4.1)</td></tr>
+        <tr><td>Peak memory on node1q01, median</td><td class="n">393 MB</td><td class="n">27 MB</td></tr>
+        <tr><td>Model use per plan, median</td><td class="pending">not recorded</td><td class="n">6 calls · 28k + 2k tokens · 2.1 min</td></tr>
+        <tr><td>The two misses</td><td>multiplexed 10x: CellBender left on for tiny test data; index reuse: the registered STAR index and its reference not used</td><td>none</td></tr>
       </tbody>
     </table>
   </div>
+  <p>Where the time goes: in the Nextflow version, the agent's own work took 1.6 minutes per plan (median). The feature then asked the model to write the whole plan again as a typed record, which took 4.2 minutes, two thirds of the planning. The harness takes the plan from the agent's last tool call instead, written once. Nextflow itself added only seconds. Every delivery was faster with the harness, from 1.6 times (multiplexed 10x) to 5.7 times (index reuse).</p>
 </section>
 
 <section aria-labelledby="dec-h">
@@ -265,6 +266,7 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li><time datetime="2026-10-21">2026-10-21</time><span>Simplify: run the agents on Geth's own harness, keep Nextflow for pipelines. Start with a measured trial of the planner.</span></li>
     <li><time datetime="2026-10-21">2026-10-21</time><span>Codename Rannoch. Geth 2.0 lives in the Geth repository on <code>feature/rannoch</code>; Geth 1.x stays on master until 2.0 beats it.</span></li>
     <li><time datetime="2026-10-21">2026-10-21</time><span>If the trial holds up, the planner asks questions: interactive in the terminal, with an answers file for detached runs and benchmarks. First what the data cannot tell, then the options that matter.</span></li>
+    <li><time datetime="2026-10-21">2026-10-21</time><span>Trial passed: 45/45 correct against 43/45, three times faster, a fifteenth of the memory. On to R3. The sandbox fix it uncovered goes to Geth 1.x as v1.9.3.</span></li>
   </ul>
 </section>
 
