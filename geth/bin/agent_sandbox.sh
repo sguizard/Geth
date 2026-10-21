@@ -5,7 +5,8 @@
 #   read-write : the run folder, Nextflow's home (plugins, pipeline assets), and GETH_AGENT_SANDBOX_RW
 #                (":"-separated: e.g. the container image cache the site's Nextflow config uses)
 #   read-only  : Geth, this run's data folder (the driver's --data_dir, or data_dir.txt), the reference
-#                catalogue, Java, Nextflow, the scheduler's client, the lab images, and folders given with --ro
+#                catalogue, GETH_AGENT_SANDBOX_RO (":"-separated: e.g. shared databases the catalogue points
+#                to), Java, Nextflow, the scheduler's client, the lab images, and folders given with --ro
 # Nothing else of the data area is visible: not the other runs, not the lab's scoring truth.
 # The API key reaches the agents through APPTAINERENV_ (never a command line or a file); every other variable is
 # passed explicitly (clean environment). Used when GETH_AGENT_SANDBOX=yes (site.env).
@@ -50,6 +51,8 @@ done
 
 IFS=: read -r -a rw_extra <<< "${GETH_AGENT_SANDBOX_RW:-}"
 for d in "${rw_extra[@]}"; do [ -n "$d" ] && [ -d "$d" ] && binds+=(-B "$(real "$d"):$d"); done
+IFS=: read -r -a ro_extra <<< "${GETH_AGENT_SANDBOX_RO:-}"  # e.g. a shared Kraken2 database the catalogue points to
+for d in "${ro_extra[@]}"; do [ -n "$d" ] && [ -d "$d" ] && binds+=(-B "$(real "$d"):$d:ro"); done
 data_dir=
 prev=
 for a in "$@"; do [ "$prev" = --data_dir ] && data_dir=$a; prev=$a; done
