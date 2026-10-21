@@ -2,6 +2,14 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 1.9.3 (2026-10-21)
+
+- **Agent sandbox: shared databases are visible.** A reference catalogue entry may point to a database
+  outside the catalogue (on Eddie, the shared Kraken2 database in the shared reference data). The sandbox
+  did not mount it, so every sandboxed taxprofiler plan failed the check ("db_path does not exist").
+  `GETH_AGENT_SANDBOX_RO` lists such folders; they are mounted read-only. Found by the Rannoch planner
+  benchmark.
+
 ## 1.9.2 (2026-10-20)
 
 - **`geth report <name>`:** the reporter writes the report of a finished run again from its results, in
