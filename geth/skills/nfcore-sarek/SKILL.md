@@ -8,6 +8,12 @@ description: How to plan germline or somatic (tumour/normal) variant calling fro
 Use this pipeline for **DNA** sequencing (whole genome, exome, targeted panels): germline small variants,
 structural variants, copy number, somatic tumour/normal calling. Not for RNA-seq.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- Germline or somatic; for somatic, which tumour goes with which normal sample of the same patient.
+- WGS, exome or panel (and the target regions file for exome and panel); which files are lanes of the same sample.
+- The variant callers and annotation wanted, and the sex of each individual if known.
+
 ## Samplesheet (CSV, header required)
 Columns for raw reads (`step=mapping`, the default): `patient,sex,status,sample,lane,fastq_1,fastq_2`
 - `patient`: the individual. `sample`: one biological sample of that patient (e.g. normal blood, tumour).

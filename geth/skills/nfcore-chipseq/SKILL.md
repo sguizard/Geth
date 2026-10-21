@@ -8,6 +8,12 @@ description: How to plan ChIP-seq peak calling with nf-core/chipseq 2.1.0 — sa
 Use this pipeline for **ChIP-seq** (transcription factors, histone marks): alignment, filtering, peak calling
 (MACS2), consensus peaks per antibody, QC. For ATAC-seq use nf-core/atacseq.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- For every library: the antibody (or input), the condition or time point and the replicate.
+- Which input control goes with which IP.
+- Narrow or broad marks; the read length (read it from a FASTQ with READ_TEXT before asking).
+
 ## Samplesheet (CSV, header required; these 7 columns, in this order)
 `sample,fastq_1,fastq_2,replicate,antibody,control,control_replicate`
 - One row per FASTQ (pair). **IP** rows: `antibody` = the antibody/mark (e.g. `H3K27ac`, `CTCF`),

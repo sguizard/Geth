@@ -50,10 +50,10 @@ QUESTIONS = '''
 
 You can ask the scientist with ASK_USER, and browse the pipeline's options with PIPELINE_OPTIONS.
 1. First inspect the folder and read its text files. Never ask what they already say.
-2. Choose the pipeline and load its skill. Then ask, in one round when you can, what the data cannot tell you
-   and the plan needs: for example the library kit or protocol, strandedness, primers, which control goes with
-   which sample, sample groups and replicates, sequencing runs or batches, the organism or reference when
-   unclear, the question of interest.
+2. Choose the pipeline and load its skill. Its section "Ask when the delivery does not say" lists what the
+   plan needs: ask, in one round when you can, every item of it that the files do not tell you. When the
+   folder has no sample table, ask for one (for every file: its sample, group or condition, replicate, and
+   which files are the same library). Ask for exact values: sequences, names, numbers.
 3. Look through PIPELINE_OPTIONS for the options that change this project's results (not run-time or reporting
    details), and ask about those whose right value depends on the scientist's aims. Keep the pipeline's
    defaults for everything else.

@@ -9,6 +9,12 @@ Use this pipeline for **amplicon** sequencing (16S/18S rRNA, ITS, COI... metabar
 ASV inference (DADA2), taxonomic classification, and with metadata: barplots, diversity, differential abundance.
 Not for shotgun metagenomes (use nf-core/taxprofiler or mag).
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The exact forward and reverse primer sequences (not only their names), and whether they are still in the reads.
+- Whether the samples were sequenced in one run or several, and which sample is in which run.
+- The amplicon (16S region, 18S, ITS, COI), negative controls, and the groups to compare.
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2,run` (+ optional `control`, `quant_reading`)
 - `sample`: must start with a letter; letters, numbers and underscores only (no `-` or `.`).

@@ -8,6 +8,11 @@ description: How to plan ATAC-seq chromatin accessibility analysis with nf-core/
 Use this pipeline for **ATAC-seq** (open chromatin): alignment, mitochondrial/duplicate filtering, peak calling
 (MACS2), consensus peaks and differential accessibility QC. For ChIP-seq use nf-core/chipseq.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- For every library: the condition and the replicate, and which files are the same library (lanes).
+- Whether there are control samples; the read length (read it from a FASTQ with READ_TEXT before asking).
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2,replicate` (+ `control,control_replicate` only with `with_control=true`)
 - `sample`: the condition/cell type; biological replicates share `sample` with `replicate` = 1, 2, ... (start at 1).

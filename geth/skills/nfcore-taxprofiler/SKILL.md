@@ -8,6 +8,11 @@ description: How to plan taxonomic classification and profiling of shotgun metag
 Use this pipeline to answer "which organisms are in these metagenomic samples, and how abundant" from
 shotgun reads (short or long). For assembling genomes from metagenomes use nf-core/mag instead.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The host organism whose reads should be removed, if any.
+- The profilers and databases wanted (and where the databases are), and which files are runs of the same sample.
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,run_accession,instrument_platform,fastq_1,fastq_2,fasta`
 - `sample`: the biological sample. `run_accession`: unique per file (pair); for one run per sample repeat the sample name.

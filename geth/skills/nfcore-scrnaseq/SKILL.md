@@ -11,6 +11,12 @@ Use this pipeline for **single-cell / single-nucleus** RNA-seq from droplet prot
 a barcode): read every README, sample table and delivery report (HTML too). If they are, skip to
 "Multiplexed libraries" below: the plain samplesheet would count all the samples of a library as one sample.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The 10x kit and chemistry version exactly (v2, v3/v3.1, GEM-X v4).
+- Whether several samples share a library (On-Chip Multiplexing, CellPlex/CMO, Flex) and, if so, which barcode is which sample.
+- Which libraries and lanes belong to which sample, and the expected number of cells.
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2,expected_cells`
 - `sample`: no spaces.

@@ -1,0 +1,6 @@
+ATAC-seq of budding yeast (Saccharomyces cerevisiae) before (0 min) and 15 min after osmotic stress.
+Two biological replicates per time point:
+- ATAC01: 0 min, replicate 1 (sequenced on two lanes, L001 and L002). ATAC02: 0 min, replicate 2.
+- ATAC03: 15 min, replicate 1. ATAC04: 15 min, replicate 2.
+Illumina paired-end, 50 bp reads. No input controls. Reference: S. cerevisiae R64 (Ensembl chromosome names,
+mitochondrial genome included). I want accessible regions for each condition and their differences.

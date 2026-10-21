@@ -7,6 +7,12 @@ description: How to plan a bulk RNA-seq run with nf-core/rnaseq 3.27.0 — sampl
 
 Use this pipeline for **bulk** RNA-seq (one library = one biological sample). Not for single-cell data.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The sample table: for every file, its sample, condition and biological replicate, and which files are the same library (re-sequenced runs or lanes get one sample name).
+- Strandedness, or the library kit (otherwise `auto`).
+- The organism and reference, when the folder holds none.
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2,strandedness`
 - `sample`: no spaces. Use condition + biological replicate, e.g. `WT_REP1`, `KO_REP2`.

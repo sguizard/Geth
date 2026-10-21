@@ -71,8 +71,9 @@ class FileAnswerer:
                             for i, q in enumerate(questions, 1))
         message = self.client.chat([
             {"role": "system", "content": "You are the scientist who owns this sequencing data. Answer the analyst's "
-             "questions using only what you know, written below. Answer each question in one short line, with the "
-             "facts only. When what you know does not answer a question, answer exactly: " + UNKNOWN +
+             "questions using only what you know, written below. Answer each question completely: give every detail you "
+             "know that concerns it, with names, values and sequences copied exactly; nothing else. When what you "
+             "know does not answer a question, answer exactly: " + UNKNOWN +
              "\n\nWhat you know:\n" + self.facts},
             {"role": "user", "content": listing + "\n\nReply with a JSON list of strings: one answer per question, in order."}])
         text = message.get("content") or ""
