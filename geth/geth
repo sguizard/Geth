@@ -50,6 +50,20 @@ nf() {  # nf <run_dir> <mode> [extra args]
     return $rc
 }
 
+harness() {  # harness <run_dir> <stage> [args]: a stage on Geth's own agent loop (Rannoch: geth/harness, no JVM)
+    local d=$1 stage=$2; shift 2
+    cd "$d"
+    acquire_slots "$d" "$stage" 0  # no Nextflow driver: no slot, but a pid file (geth list, geth stop)
+    local ro=() prev=
+    for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done
+    sandboxed "$d" "${ro[@]}" -- timeout "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
+        python3 -m "harness.$stage" --run_dir "$d" "$@" > "$d/geth_$stage.log" 2>&1
+    local rc=$?
+    explain_timeout $rc "$stage" "$d/geth_$stage.log"
+    rm -f "$d/.geth_$stage.pid"
+    return $rc
+}
+
 active() {  # active <run_dir> <mode>: is a Geth driver working on this run?
     driver_alive "$1/.geth_$2.pid"
 }
@@ -132,7 +146,12 @@ case "$cmd" in
         [ -e "$d" ] && { echo "Run '$2' already exists: choose another name." >&2; exit 1; }
         mkdir -p "$d"
         echo "Planning in $d ..."
-        nf "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
+        if [ "${GETH_PLANNER:-nextflow}" = harness ]; then  # Rannoch trial: the planner on Geth's own agent loop
+            harness "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
+                || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
+        else
+            nf "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
+        fi
         show "$d"
         echo; echo "Review the plan (edit the plan_* files if needed), then: geth approve $2"
         ;;

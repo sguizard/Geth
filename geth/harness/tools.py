@@ -1,0 +1,131 @@
+"""The planner's tools, as plain Python: the same behaviour and output as the Nextflow tools of geth/main.nf.
+
+They only read under GETH_DATA_ROOT (data, and finished runs for follow-ups) and the reference catalogue, and
+only write in the run folder.
+"""
+import gzip
+import os
+import subprocess
+
+from .agent import Tool, string_params
+
+GETH_HOME = os.environ.get("GETH_HOME", os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+CHECKS = os.path.join(GETH_HOME, "geth", "bin", "geth_checks.py")
+
+
+def under(path, root):
+    """Is path inside root (lexically, after normalisation: '..' cannot climb out)?"""
+    path = os.path.normpath(path or "")
+    return bool(root) and path.startswith(os.path.normpath(root) + "/")
+
+
+def list_files(data_root):
+    def run(dir):
+        if not under(dir, data_root):
+            return f"REFUSED: only folders under {data_root} can be listed"
+        # as `find <dir> -maxdepth 3 \( -type f -o -type l \)`: files and links, 3 levels, links not followed
+        found, base = [], os.path.normpath(dir)
+        if not os.path.isdir(base):
+            return f"NOT FOUND: {dir}"
+        for parent, dirs, files in os.walk(base):
+            level = 0 if parent == base else parent[len(base) + 1:].count("/") + 1
+            for name in files + [d for d in dirs if os.path.islink(os.path.join(parent, d))]:
+                p = os.path.join(parent, name)
+                try:
+                    found.append(f"{p}\t{os.lstat(p).st_size} bytes")
+                except OSError:
+                    pass
+            if level >= 2:
+                dirs[:] = []
+        return "\n".join(sorted(found)[:300]) or "(empty)"
+    return Tool("LIST_FILES", "List the files of a folder (3 levels deep) with their sizes. Only folders under the "
+                f"data area ({data_root}) can be listed.", string_params(dir="absolute path of the folder"), run)
+
+
+def read_text(data_root):
+    def run(path):
+        if not under(path, data_root):
+            return f"REFUSED: only files under {data_root} can be read"
+        if not os.path.isfile(path):
+            return f"NOT FOUND: {path}"
+        if path.endswith(".gz"):
+            with open(path, "rb") as fh:
+                magic = fh.read(2)
+            if magic != b"\x1f\x8b":
+                return f"(file type: not gzip-compressed although named .gz)\n"
+            try:
+                with gzip.open(path, "rt", errors="replace") as fh:
+                    lines = [next(fh, "") for _ in range(8)]
+            except (OSError, EOFError) as e:
+                return f"(file type: gzip compressed data; cannot be read: {e})"
+            return "(file type: gzip compressed data; first 8 lines, decompressed)\n" + "".join(lines)
+        with open(path, "rb") as fh:
+            return fh.read(8000).decode(errors="replace")
+    return Tool("READ_TEXT", "Read a text file (the first 8 kB), or the first 8 lines of a .gz file. Only files "
+                f"under the data area ({data_root}).", string_params(path="absolute path of the file"), run)
+
+
+def list_references(references):
+    def run(species=""):
+        out = []
+        for name in sorted(os.listdir(references)) if os.path.isdir(references) else []:
+            readme = os.path.join(references, name, "README.txt")
+            if os.path.isfile(readme):
+                out.append(f"== {os.path.join(references, name)}\n{open(readme).read()}")
+        return "\n".join(out) or "The reference catalogue is empty."
+    return Tool("LIST_REFERENCES", "List the reference catalogue: genomes, annotations and databases, with their "
+                "files and notes.", string_params(species="the species you are looking for"), run)
+
+
+def scratch(run_dir, **files):
+    folder = os.path.join(run_dir, ".harness")
+    os.makedirs(folder, exist_ok=True)
+    paths = {}
+    for name, text in files.items():
+        paths[name] = os.path.join(folder, name)
+        with open(paths[name], "w") as fh:
+            fh.write((text or "").strip() + "\n")
+    return paths
+
+
+def checks(*args):
+    result = subprocess.run(["python3", CHECKS, *args], capture_output=True, text=True, timeout=600)
+    return (result.stdout + result.stderr).strip()
+
+
+def check_plan(run_dir, upstream):
+    def run(pipeline, samplesheet_csv, params_json, contrasts_csv="", profile=""):
+        p = scratch(run_dir, **{"samplesheet.csv": samplesheet_csv, "params.json": params_json,
+                                "contrasts.csv": contrasts_csv})
+        return checks("check-plan", pipeline, p["samplesheet.csv"], p["params.json"], "--save-checked", run_dir,
+                      "--contrasts", p["contrasts.csv"], "--profile", profile.strip(),
+                      *(["--upstream", upstream] if upstream else []))
+    return Tool("CHECK_PLAN", "Check a plan against the pinned pipeline release: samplesheet, parameters (JSON object "
+                "or key=value lines), the second sheet (contrasts, or a multiplexed barcodes sheet; empty string if "
+                "none) and the analysis profile (empty string if none). Prints PLAN CHECK: OK, or the problems.",
+                string_params(pipeline="pipeline name, e.g. rnaseq", samplesheet_csv="the samplesheet, CSV text",
+                              params_json="the parameters", contrasts_csv="the second sheet, CSV text, or ''",
+                              profile="analysis profile, or ''"), run)
+
+
+def submit_plan(run_dir, upstream):
+    def run(pipeline, samplesheet_lines, params, contrasts_lines, profile, rationale):
+        lines = lambda v: "\n".join(v) if isinstance(v, list) else str(v)
+        p = scratch(run_dir, **{"final_samplesheet.csv": lines(samplesheet_lines), "final_params.txt": lines(params),
+                                "final_rationale.txt": rationale, "final_contrasts.csv": lines(contrasts_lines)})
+        return checks("save-plan", run_dir, pipeline, p["final_samplesheet.csv"], p["final_params.txt"],
+                      p["final_rationale.txt"], "--contrasts", p["final_contrasts.csv"], "--profile", profile.strip(),
+                      *(["--upstream", upstream] if upstream else []))
+    array = {"type": "array", "items": {"type": "string"}}
+    return Tool("SUBMIT_PLAN", "Submit your final plan: exactly the plan that passed CHECK_PLAN. Geth checks it "
+                "again and saves it for a person to review; if it reports problems, fix them and submit again.",
+                {"type": "object", "required": ["pipeline", "samplesheet_lines", "params", "contrasts_lines",
+                                                "profile", "rationale"],
+                 "properties": {
+                     "pipeline": {"type": "string", "description": "pipeline name, e.g. rnaseq"},
+                     "samplesheet_lines": dict(array, description="the samplesheet, one CSV line per item, header first"),
+                     "params": dict(array, description="one key=value entry per parameter"),
+                     "contrasts_lines": dict(array, description="the second sheet, CSV lines, header first; [] if none"),
+                     "profile": {"type": "string", "description": "the analysis profile, or ''"},
+                     "rationale": {"type": "string", "description": "the rationale of the plan"}}},
+                run, final=True)

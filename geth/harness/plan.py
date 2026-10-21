@@ -1,0 +1,118 @@
+"""Rannoch planner: the planner agent of geth/main.nf (--mode plan) on Geth's own agent loop.
+
+    python3 -m harness.plan --run_dir <dir> --question <text> --data_dir <dir> [--upstream_run <dir>]
+
+Same instructions, tools and skills as the Nextflow planner; the plan is handed over through SUBMIT_PLAN (a tool
+call with a schema) instead of a structured final answer, so a plan that fails the check comes back to the agent.
+"""
+import argparse
+import json
+import os
+import sys
+
+from .agent import Agent, load_skills
+from .llm import Client, ModelError
+from .tools import GETH_HOME, check_plan, checks, list_files, list_references, read_text, submit_plan
+
+INSTRUCTION = '''You are Geth, a bioinformatics analysis planner. You turn a scientist's request and a
+sequencing data folder into a run plan for exactly one nf-core pipeline. For new sequencing data:
+"rnaseq" (bulk RNA-seq), "scrnaseq" (droplet single-cell RNA-seq), "sarek" (DNA-seq variant calling:
+germline or tumour/normal, WGS/WES/panels), "isoseq" (PacBio Iso-Seq full-length transcripts),
+"taxprofiler" (taxonomic profiling of shotgun metagenomes), "mag" (metagenome assembly and binning),
+"ampliseq" (amplicon/metabarcoding: 16S, 18S, ITS, COI), "chipseq" (ChIP-seq peaks), "atacseq"
+(ATAC-seq accessibility), "nanoseq" (Oxford Nanopore DNA/cDNA/direct RNA), "eager" (ancient DNA) or
+"methylseq" (DNA methylation: WGBS, RRBS, EM-seq, TAPS).
+For a follow-up analysis: "differentialabundance" for differential expression on the results of a
+finished nf-core/rnaseq run (an upstream run). If none of these fits the data or the request, say so
+in the rationale instead of forcing a pipeline.
+Always inspect the folders first: list them, then read every README/metadata text file in them;
+for a follow-up analysis also read the upstream run's question.txt, plan_samplesheet.csv,
+plan_params.json and plan_rationale.txt, and list its results folder.
+Load the skill of the pipeline you choose and follow its rules exactly.
+Use absolute paths. Only use files that appear in the listing; never invent files.
+If the folder holds no reference genome and annotation, call LIST_REFERENCES and use the entry for the
+right species; if none matches, say so in the rationale instead of guessing.
+Multiplexed 10x single-cell data (on-chip multiplexing OCM, CellPlex/CMO, Flex/probe barcodes: several
+samples share one library) needs nf-core/scrnaseq with aligner cellrangermulti and a second sheet that
+maps each library's barcodes to its samples: read the nfcore-scrnaseq skill's multiplexed section.
+Before submitting, call CHECK_PLAN with your pipeline, samplesheet and parameters (as key=value lines),
+plus the second sheet in contrasts_csv (differentialabundance: the contrasts; multiplexed scrnaseq: the
+barcodes sheet) and the analysis profile for differentialabundance (empty strings otherwise),
+fix every problem it reports, and repeat until it prints "PLAN CHECK: OK". Read every WARNING it
+prints too: fix the plan, or explain in the rationale why the warning does not apply.'''
+
+PROMPT = '''Request: {question}
+Data folder: {data_dir}
+Upstream run: {upstream}
+
+When the plan has passed CHECK_PLAN, call SUBMIT_PLAN with exactly that plan: the pipeline name (e.g. "rnaseq",
+"sarek", "differentialabundance"); the samplesheet (for differentialabundance: the observations sheet) as a
+list of CSV lines, header line first; the pipeline parameters as a list of key=value entries, one per
+parameter (do not include "input", "outdir", "contrasts" or "cellranger_multi_barcodes"); in
+contrasts_lines the second sheet as a list of CSV lines, header line first (differentialabundance: the
+contrasts; multiplexed 10x scrnaseq: the barcodes sheet; otherwise an empty list); the analysis profile
+for differentialabundance (otherwise an empty string); and a short rationale that explains how files or
+samples were grouped, which were left out and why, the contrasts and their direction (or which samples
+each multiplexed library holds), and why each parameter is set.'''
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--run_dir", required=True)
+    ap.add_argument("--question", required=True)
+    ap.add_argument("--data_dir", required=True)
+    ap.add_argument("--upstream_run", default="")
+    ap.add_argument("--max_turns", type=int, default=25)
+    a = ap.parse_args(argv)
+    runs, data_root, references = (os.environ.get(v, "") for v in ("GETH_RUNS_DIR", "GETH_DATA_ROOT", "GETH_REFERENCES"))
+    if not (runs and data_root and references):
+        sys.exit("Geth's site settings are missing: source env.sh (it loads site/site.env) first")
+    if not a.run_dir.startswith(runs.rstrip("/") + "/"):
+        sys.exit(f"run_dir must be under {runs}/")
+    if a.upstream_run and not os.path.isfile(os.path.join(a.upstream_run, "APPROVED")):
+        sys.exit(f"Upstream run {a.upstream_run} has no approved plan")
+    os.makedirs(a.run_dir, exist_ok=True)
+    open(os.path.join(a.run_dir, "question.txt"), "w").write(a.question + "\n")
+    open(os.path.join(a.run_dir, "data_dir.txt"), "w").write(a.data_dir + "\n")
+    upstream = (f"{a.upstream_run} (nf-core/{open(os.path.join(a.upstream_run, 'plan_pipeline.txt')).read().strip()} "
+                f"results in {a.upstream_run}/results)" if a.upstream_run else "none (this is a new analysis of sequencing data)")
+    try:
+        client = Client()
+    except ModelError as e:
+        sys.exit(f"Geth: {e}")
+    tools = [list_files(data_root), read_text(data_root), list_references(references),
+             check_plan(a.run_dir, a.upstream_run), submit_plan(a.run_dir, a.upstream_run)]
+    skills = {k: v for k, v in load_skills(os.path.join(GETH_HOME, "geth", "skills")).items() if k != "sc-downstream"}
+    agent = Agent("planner", INSTRUCTION, tools, client, skills=skills, max_turns=a.max_turns,
+                  trace_path=os.path.join(a.run_dir, "harness_trace_plan.jsonl"), log=lambda m: print(m, flush=True))
+    try:
+        result = agent.run(PROMPT.format(question=a.question, data_dir=a.data_dir, upstream=upstream),
+                           done=lambda name, out: out.startswith("PLAN CHECK: OK"))
+    except ModelError as e:
+        print(f"Geth: {e}", flush=True)
+        result = None
+    if result is None:
+        # No accepted submission: fall back on the last plan that passed CHECK_PLAN, if any (as SAVE_PLAN does).
+        checked = os.path.join(a.run_dir, ".checked")
+        pipeline_file = os.path.join(checked, "plan_pipeline.txt")
+        if not os.path.isfile(pipeline_file):
+            print("Planning failed: no plan passed CHECK_PLAN.", flush=True)
+            return 1
+        rationale = os.path.join(a.run_dir, ".harness", "fallback_rationale.txt")
+        open(rationale, "w").write("The planner did not submit a final plan; the last version that passed "
+                                   "CHECK_PLAN during planning is used.\n")
+        pipeline = open(pipeline_file).read().strip()
+        second = next((os.path.join(checked, f) for f in ("plan_contrasts.csv", "plan_barcodes.csv")
+                       if os.path.isfile(os.path.join(checked, f))), "/dev/null")
+        profile = os.path.join(checked, "plan_profile.txt")
+        result = checks("save-plan", a.run_dir, pipeline, os.path.join(checked, "plan_samplesheet.csv"),
+                        os.path.join(checked, "plan_params.json"), rationale, "--contrasts", second,
+                        "--profile", open(profile).read().strip() if os.path.isfile(profile) else "",
+                        *(["--upstream", a.upstream_run] if a.upstream_run else []))
+    print(result, flush=True)
+    print(f"Model usage: {json.dumps({k: round(v, 1) for k, v in client.usage.items()})}", flush=True)
+    return 0 if os.path.isfile(os.path.join(a.run_dir, "plan_pipeline.txt")) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
