@@ -296,6 +296,22 @@ The annotation model must match your tissue and species. Available models are li
 | `Waiting for a free slot ...` | Other analyses are running; Geth starts by itself when one finishes. |
 | `... stopped after its time limit ...` | The stage ran longer than your site allows. If it was making progress, ask for a higher limit, then run the same command again: a run resumes. |
 
+## Trying the planner that asks (Rannoch, Geth 2.0 preview)
+
+On the `feature/rannoch` branch, a new planner runs without Nextflow's agent feature and asks you what your
+files do not say (for example the primers, which control goes with which sample, or whether a single-cell
+library holds several samples):
+
+```bash
+GETH_PLANNER=harness geth plan /path/to/my_data "Your question." my_analysis
+```
+
+- In a terminal, it asks a few questions at a time. Each has numbered options and a recommended answer:
+  press Enter to take it, type a number to pick an option, type your own answer, or `?` to see why it asks.
+- For a run in the background, write what you know in a text file and add `--answers notes.txt`: a stand-in
+  answers the planner from your notes, and says "I don't know" for anything they do not cover.
+- `geth show my_analysis` prints the questions with your answers, and the full command line Geth will run.
+
 ## Good to know
 
 - Geth **never modifies or deletes your data**. It reads your files and writes only in its own runs folder.

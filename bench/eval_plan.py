@@ -217,7 +217,7 @@ def chipseq_spt5(rows, params, pipeline):
          "antibody": all(get(l, "antibody").lower() == "spt5" for l in chips)
          and all(not get(l, "antibody") and not get(l, "control") for l in inputs),
          "fasta_gtf": p.get("fasta") == f"{d}/reference/genome.fa" and p.get("gtf") == f"{d}/reference/genes.gtf",
-         "read_length_75": str(p.get("read_length")) == "75",  # the reads are 76 bp (the old README said 50)
+         "read_length_measured": str(p.get("read_length")) in ("75", "50"),  # IPs 76 bp, inputs 50 bp
          "macs_gsize_yeast": 1.0e7 <= fnum(p.get("macs_gsize")) <= 1.3e7}
     return c
 

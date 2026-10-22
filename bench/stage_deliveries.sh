@@ -48,7 +48,8 @@ ChIP-seq of the transcription elongation factor Spt5 in budding yeast (Saccharom
 at two time points: 0 min and 15 min. Two independent cultures (biological replicates 1 and 2) per time
 point. From each culture we also sequenced the input DNA (no antibody), which is the control for that
 culture's ChIP samples. See samples.tsv.
-Illumina paired-end sequencing, 76 bp reads (subsampled to a few thousand read pairs for this test).
+Illumina paired-end sequencing, 76 bp reads for the ChIP libraries, 50 bp for the inputs (subsampled
+to a few thousand read pairs for this test).
 Reference genome (S. cerevisiae R64, Ensembl chromosome names) and gene annotation are in reference/.
 EOF
     tr '|' '\t' > "$d/samples.tsv" <<'EOF'
