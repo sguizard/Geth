@@ -166,10 +166,12 @@ case "$cmd" in
             elif [ -t 0 ] && [ -t 1 ]; then ask=terminal; echo "The planner may ask you a few questions here."
             else ask=none; fi
             ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
+            echo "Planner: Rannoch (Geth's own agent loop; questions: $ask)"
             harness "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
                 --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
                 || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
         else
+            echo "Planner: Nextflow agent (for the planner that asks you questions: export GETH_PLANNER=harness)"
             nf "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
         fi
         show "$d"
