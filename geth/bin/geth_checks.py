@@ -346,10 +346,31 @@ def check_star_index(pipeline, params):
     return problems
 
 
+# Pipelines that cannot run without a reference: what they accept instead of fasta+gtf (a planner once left
+# rnaseq without any reference, judging the delivery's test genome too small: the run would fail at launch).
+NEEDS_REFERENCE = {"rnaseq": ("fasta", "gtf"), "scrnaseq": ("fasta", "gtf"), "chipseq": ("fasta",),
+                   "atacseq": ("fasta",), "methylseq": ("fasta",), "sarek": ("fasta",)}
+
+
+def mate_of(name):
+    """The expected second-read file name of a first-read file, for the usual naming patterns (else None)."""
+    for one, two in (("_R1_", "_R2_"), ("_R1.", "_R2."), ("_1.f", "_2.f"), (".R1.", ".R2."), ("_r1.", "_r2.")):
+        if one in name:
+            i = name.rindex(one)
+            return name[:i] + two + name[i + len(one):]
+    return None
+
+
 def check_fastq_sheet(pipeline, sheet_text, params):
     problems = []
     if pipeline in ("rnaseq", "scrnaseq") and "genome" in params and ("fasta" in params or "gtf" in params):
         problems.append("set either 'genome' or 'fasta'/'gtf', not both")
+    needed = NEEDS_REFERENCE.get(pipeline)
+    if needed and not params.get("genome") and not all(params.get(k) for k in needed) \
+            and not any(k.endswith("_index") and params.get(k) for k in params):
+        problems.append(f"nf-core/{pipeline} needs a reference: set 'genome', or {' and '.join(repr(k) for k in needed)} "
+                        "(from the delivery or the reference catalogue). If none fits, say so in the rationale and "
+                        "ask the scientist")
 
     schema = load_schema(pipeline, "input")["items"]
     props, required = schema["properties"], schema.get("required", [])
@@ -362,6 +383,12 @@ def check_fastq_sheet(pipeline, sheet_text, params):
             problems.append(f"samplesheet: column '{col}' is not used by nf-core/{pipeline}")
     if not rows:
         problems.append("samplesheet has no rows")
+    for i, row in enumerate(rows, start=2):
+        f1, f2 = os.path.basename(row.get("fastq_1") or ""), os.path.basename(row.get("fastq_2") or "")
+        mate = mate_of(f1) if f1 and f2 else None
+        if mate and f2 != mate:
+            problems.append(f"samplesheet line {i}: fastq_2 '{f2}' is not the mate of fastq_1 '{f1}' "
+                            f"(expected '{mate}'): a pair must come from the same library and lane")
     seen = {}
     for i, row in enumerate(rows, start=2):
         for col, spec in props.items():

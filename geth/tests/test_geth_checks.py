@@ -864,5 +864,26 @@ class DataChecks(unittest.TestCase):
         self.assertTrue(any("read_length=100" in w for w in gc.data_warnings("chipseq", chip, {"read_length": 100})))
 
 
+class ComparisonFences(unittest.TestCase):
+    """Plans the GPT-6 comparison (2026-10-22) showed the check must refuse."""
+
+    def test_a_pair_must_be_mates(self):
+        # r5lunafull_atacseq_osmotic_1: lane 1's first reads with lane 2's second reads
+        self.assertEqual(gc.mate_of("ATAC01_S1_L001_R1_001.fastq.gz"), "ATAC01_S1_L001_R2_001.fastq.gz")
+        self.assertEqual(gc.mate_of("SRR6357070_1.fastq.gz"), "SRR6357070_2.fastq.gz")
+        self.assertIsNone(gc.mate_of("reads.fastq.gz"))
+        sheet = MISTRAL_SHEET.replace("SRR6357070_2.fastq.gz", "SRR6357071_2.fastq.gz", 1)
+        problems = gc.check_fastq_sheet("rnaseq", sheet, json.loads(MISTRAL_PARAMS))
+        self.assertTrue(any("is not the mate of fastq_1 'SRR6357070_1.fastq.gz'" in p for p in problems), problems)
+        self.assertFalse(any("is not the mate" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, json.loads(MISTRAL_PARAMS))))
+
+    def test_a_reference_is_required(self):
+        # r5solfull_bulk_yeast_1: only aligner=star_salmon, "rather than invented"
+        no_ref = {"aligner": "star_salmon"}
+        self.assertTrue(any("needs a reference" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, no_ref)))
+        self.assertFalse(any("needs a reference" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, json.loads(MISTRAL_PARAMS))))
+        self.assertFalse(any("needs a reference" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, {"genome": "R64-1-1"})))
+
+
 if __name__ == "__main__":
     unittest.main()
