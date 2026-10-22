@@ -2,8 +2,9 @@
 # Geth: plan, approve and run nf-core analyses with LLM agents.
 #
 #   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
-#             [--answers <file>]                 (Rannoch planner: it asks you its questions in the terminal, or
-#                                                 a stand-in answers them from what this file says)
+#             [--answers <file>] [--model <name>] (Rannoch planner: it asks you its questions in the terminal, or
+#                                                 a stand-in answers them from what this file says; --model: a paid
+#                                                 planner model from the site settings, e.g. sol, within its budget)
 #   geth plan --from <run> "<question>" <name> follow-up analysis of a finished run (DE, single-cell downstream)
 #   geth show <name>                           print the plan (and its automatic check)
 #   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
@@ -106,6 +107,7 @@ show() {
     local d=$1
     echo "Question : $(cat "$d/question.txt")"
     echo "Pipeline : nf-core/$(cat "$d/plan_pipeline.txt")"
+    [ -f "$d/plan_model.txt" ] && echo "Planned by: $(cat "$d/plan_model.txt")"
     [ -f "$d/plan_upstream.txt" ] && echo "Upstream : $(cat "$d/plan_upstream.txt")"
     [ -f "$d/plan_profile.txt" ] && echo "Profile  : $(cat "$d/plan_profile.txt")"
     echo; echo "Rationale:"; sed 's/^/  /' "$d/plan_rationale.txt"
@@ -129,12 +131,25 @@ show() {
 cmd=${1:-}; shift || true
 case "$cmd" in
     plan)
-        upstream_args=() answers=
-        args=()  # --answers <file> may come anywhere
+        upstream_args=() answers= model=
+        args=()  # --answers <file> and --model <name> may come anywhere
         while [ $# -gt 0 ]; do
             if [ "$1" = --answers ]; then answers=$(readlink -f "${2:-}"); shift 2 || usage
+            elif [ "$1" = --model ]; then model=${2:-}; shift 2 || usage
             else args+=("$1"); shift; fi
         done
+        if [ -n "$model" ]; then  # a paid planner model, opt-in per plan: GETH_PLANNER_<NAME>_* in the site settings
+            [[ "$model" =~ ^[A-Za-z0-9_]+$ ]] || { echo "Model names use letters, digits and '_' (got '$model')." >&2; exit 1; }
+            up=${model^^}
+            for k in MODEL PRICES BUDGET_USD API REASONING BASE_URL API_KEY_VAR; do
+                v=GETH_PLANNER_${up}_$k
+                [ -n "${!v:-}" ] && export "GETH_PLANNER_$k=${!v}"
+            done
+            [ -n "${GETH_PLANNER_MODEL:-}" ] || { echo "No planner model '$model' in the site settings (GETH_PLANNER_${up}_MODEL)." >&2; exit 1; }
+            export GETH_PLANNER_BASE_URL=${GETH_PLANNER_BASE_URL:-$GETH_LLM_BASE_URL}
+            export GETH_PLANNER_API_KEY_VAR=${GETH_PLANNER_API_KEY_VAR:-$GETH_LLM_API_KEY_VAR}
+            GETH_PLANNER=harness
+        fi
         set -- "${args[@]}"
         [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
         if [ "${1:-}" = "--from" ]; then
@@ -168,6 +183,7 @@ case "$cmd" in
             else ask=none; fi
             ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
             echo "Planner: Rannoch (Geth's own agent loop; questions: $ask)"
+            [ -n "${GETH_PLANNER_MODEL:-}" ] && echo "Planner model: $GETH_PLANNER_MODEL (paid: at most \$${GETH_PLANNER_BUDGET_USD:-?} for this plan)"
             harness "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
                 --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
                 || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }

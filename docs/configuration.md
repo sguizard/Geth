@@ -86,6 +86,7 @@ that holds only deliveries (not the whole `GETH_WORK_ROOT`), and plan each analy
 | `GETH_AGENT_TIMEOUT` | `2h` | Time limit for a planning, design or review stage (`timeout` syntax: `30m`, `2h`). |
 | `GETH_ENGINEER_TIMEOUT` | `4h` | Time limit for a lab engineer stage. |
 | `GETH_RUN_TIMEOUT` | `72h` | Time limit for `geth run` (the whole pipeline run, retries included). |
+| `GETH_PLANNER_<NAME>_MODEL` | none | A paid planner model, used only for `geth plan ... --model <name>` (Rannoch planner). With it: `_PRICES` ("input,cached input,output", USD per million tokens), `_BUDGET_USD` (the most one plan may spend; the plan stops there), and optionally `_API` (`responses` for OpenAI GPT-6 models, which need it for tools with reasoning), `_REASONING`, `_BASE_URL` and `_API_KEY_VAR` (default: the site's model service and key). |
 | `GETH_STOP_GRACE` | `120` | Seconds `geth stop` gives the Nextflow drivers to cancel their scheduler jobs before it ends them. |
 | `GETH_AGENT_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_agent_54cf9ab304820814.sif` | The image the drivers run in: Python 3.12 and the usual command-line tools (`oras://community.wave.seqera.io/library/python_findutils_coreutils_gawk_pruned:54cf9ab304820814`). |
 

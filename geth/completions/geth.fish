@@ -72,6 +72,8 @@ complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a lab -d
 # geth plan <data_dir> "<question>" <name>   |   geth plan --from <run> "<question>" <name>
 complete -c geth -n '__geth_at plan 0' -a '(__fish_complete_directories (commandline -ct) "data folder")'
 complete -c geth -n '__geth_at plan 0' -l from -d 'Follow-up analysis of a finished run'
+complete -c geth -n '__fish_seen_subcommand_from plan' -l model -d 'Paid planner model from the site settings (e.g. sol)' -x
+complete -c geth -n '__fish_seen_subcommand_from plan' -l answers -d 'Answers file for the planner' -r
 complete -c geth -n __geth_plan_from -a '(__geth_runs succeeded)'
 
 complete -c geth -n '__geth_at show 0' -a '(__geth_runs planned)'

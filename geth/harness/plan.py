@@ -112,6 +112,8 @@ def main(argv=None):
         sys.exit(f"Geth: {e}")
     if client is not site:
         print(f"Planner model: {client.model} (budget ${client.budget:.4g} per plan); stand-in: {site.model}", flush=True)
+    open(os.path.join(a.run_dir, "plan_model.txt"), "w").write(
+        f"{client.model}" + (f" (paid, at most ${client.budget:.4g})" if client is not site else "") + "\n")
     tools = [list_files(data_root), read_text(data_root), list_references(references),
              check_plan(a.run_dir, a.upstream_run), submit_plan(a.run_dir, a.upstream_run)]
     instruction, hint, progress = INSTRUCTION, "", None
@@ -137,6 +139,9 @@ def main(argv=None):
         result = None
     if progress:
         progress.close()
+    if client.usage.get("usd"):
+        with open(os.path.join(a.run_dir, "plan_model.txt"), "a") as fh:
+            fh.write(f"cost of this plan: ${client.usage['usd']:.3f} ({client.usage['requests']} requests)\n")
     print(f"Model usage: {json.dumps(dict({k: round(v, 4 if k == 'usd' else 1) for k, v in client.usage.items()}, model=client.model))}", flush=True)
     if client is not site:
         print(f"Stand-in usage: {json.dumps({k: round(v, 1) for k, v in site.usage.items()})}", flush=True)
