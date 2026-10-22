@@ -10,6 +10,7 @@ Every question and answer is kept in the run folder (plan_questions.md), for the
 import json
 import os
 import re
+import time
 
 from .agent import Tool
 
@@ -57,6 +58,61 @@ class TerminalAsker:
                 answers.append(answer)
             say("  Thanks: planning goes on.\n")
         return answers
+
+
+class TerminalProgress:
+    """What the planner is doing, one line per step, for the person at the terminal (the log has the details)."""
+
+    def __init__(self, tty="/dev/tty"):
+        self.out, self.t0, self.waiting = open(tty, "w"), time.time(), False
+
+    def _line(self, text, end="\n"):
+        s = int(time.time() - self.t0)
+        self.out.write(f"\r\033[K  [{s // 60}:{s % 60:02d}] {text}{end}")
+        self.out.flush()
+        self.waiting = end != "\n"
+
+    def thinking(self):
+        self._line("thinking…", end="")
+
+    def before(self, name, raw):
+        try:
+            args = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except json.JSONDecodeError:
+            args = {}
+        base = lambda k: os.path.basename(str(args.get(k, "")).rstrip("/")) or str(args.get(k, ""))
+        text = {"LIST_FILES": lambda: f"Listing {base('dir')}/",
+                "READ_TEXT": lambda: f"Reading {base('path')}",
+                "INSPECT_READS": lambda: f"Measuring the reads of {base('path')}",
+                "LIST_REFERENCES": lambda: "Looking up the reference catalogue",
+                "activate_skill": lambda: f"Loading the {args.get('skill_name', '')} guide",
+                "PIPELINE_OPTIONS": lambda: f"Browsing the options of nf-core/{args.get('pipeline', '')}"
+                                            + (f": {args['section']}" if args.get("section") else "")
+                                            + (f" ('{args['search']}')" if args.get("search") else ""),
+                "CHECK_PLAN": lambda: "Checking the plan",
+                "SUBMIT_PLAN": lambda: "Submitting the plan",
+                "ASK_USER": lambda: "Asking you"}.get(name, lambda: name)()
+        self.pending = text
+        if name in ("CHECK_PLAN", "SUBMIT_PLAN"):
+            self._line(text + " …", end="")  # completed by after()
+        else:
+            self._line(text)
+
+    def after(self, name, output):
+        if name not in ("CHECK_PLAN", "SUBMIT_PLAN"):
+            return
+        first = output.splitlines()[0] if output else ""
+        if first.startswith("PLAN CHECK: OK"):
+            verdict = "OK" if name == "CHECK_PLAN" else "OK, plan saved"
+        else:
+            problems = [l[2:] for l in output.splitlines() if l.startswith("- ")]
+            verdict = f"{first.replace('PLAN CHECK: ', '')}" + (f": {problems[0][:90]}" if problems else "")
+        self._line(f"{self.pending} → {verdict}")
+
+    def close(self):
+        if self.waiting:
+            self.out.write("\r\033[K")
+            self.out.flush()
 
 
 class FileAnswerer:

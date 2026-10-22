@@ -98,7 +98,8 @@ plan_parts() {  # extra plan parts for geth_checks.py (downstream analyses)
 check() {
     local d=$1
     mapfile -t parts < <(plan_parts "$d")
-    python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" "${parts[@]}"
+    python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" "${parts[@]}" \
+        --run-dir "$d"
 }
 
 show() {

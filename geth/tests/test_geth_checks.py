@@ -755,6 +755,21 @@ class Multiplexed10x(unittest.TestCase):
         self.assertIn("the plan has 2 sample(s)", warnings)
         self.assertIn("GEM-X 3' is 10XV4", warnings)
 
+    def test_answer_contradicting_the_delivery_is_flagged(self):
+        # 10x_multi_chicken8: the scientist took the planner's recommended "v3/v3.1" for OCM libraries
+        run = tempfile.mkdtemp(prefix="geth_answers_")
+        try:
+            open(os.path.join(run, "plan_questions.md"), "w").write(
+                "# Questions to the scientist\n\n**Which 10x chemistry?**\n- answer: v3/v3.1 (Chromium Next GEM 3')\n")
+            warnings = gc.plan_warnings("scrnaseq", MULTI_SHEET, MULTI_PARAMS, BARCODES, run)
+            self.assertTrue(any("exists only with GEM-X Universal 3' v4" in w for w in warnings), warnings)
+            open(os.path.join(run, "plan_questions.md"), "w").write("**Which 10x chemistry?**\n- answer: GEM-X v4\n")
+            self.assertFalse(any("GEM-X Universal" in w for w in gc.plan_warnings("scrnaseq", MULTI_SHEET, MULTI_PARAMS, BARCODES, run)))
+            self.assertIn("multiplexed chemistries cannot be named",
+                          "\n".join(self.problems(MULTI_SHEET, dict(MULTI_PARAMS, protocol="10XV3"), BARCODES)))
+        finally:
+            shutil.rmtree(run)
+
     def test_plan_files_and_gate_keep_the_barcodes(self):
         run = Run("scrnaseq", MULTI_SHEET, json.dumps(MULTI_PARAMS))
         try:

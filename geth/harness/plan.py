@@ -14,7 +14,7 @@ import os
 import sys
 
 from .agent import Agent, load_skills
-from .ask import FileAnswerer, Nobody, TerminalAsker, ask_tool
+from .ask import FileAnswerer, Nobody, TerminalAsker, TerminalProgress, ask_tool
 from .llm import Client, ModelError
 from .tools import (GETH_HOME, check_plan, checks, inspect_reads, list_files, list_references, pipeline_options,
                     read_text, submit_plan)
@@ -57,9 +57,13 @@ You can ask the scientist with ASK_USER, and browse the pipeline's options with 
 3. Look through PIPELINE_OPTIONS for the options that change this project's results (not run-time or reporting
    details), and ask about those whose right value depends on the scientist's aims. Keep the pipeline's
    defaults for everything else.
-Give every question 2 to 4 options, your recommended answer, and why it matters. When an answer is "use your
-recommendation", or nobody answers, use your recommendation. In the rationale, justify every parameter you set
-and say where its value comes from: the files, the scientist's answer, or your recommendation.'''
+Give every question 2 to 4 options, your recommended answer, and why it matters. Your recommended answer must
+agree with the files: never recommend a value they rule out. Do not ask a question whose answer cannot change
+the plan, and do not ask to confirm what the files already say. When an answer is "use your recommendation", or
+nobody answers, use your recommendation. In the rationale, justify every parameter you set and say where its
+value comes from: the files, the scientist's answer, or your recommendation. When a check or a skill makes you
+set something other than what the scientist answered, or an answer contradicts the files, say so plainly in the
+rationale, with the reason. Never write facts about the data that neither the files nor the answers give.'''
 
 PROMPT = '''Request: {question}
 Data folder: {data_dir}
@@ -105,25 +109,29 @@ def main(argv=None):
         sys.exit(f"Geth: {e}")
     tools = [list_files(data_root), read_text(data_root), list_references(references),
              check_plan(a.run_dir, a.upstream_run), submit_plan(a.run_dir, a.upstream_run)]
-    instruction, hint = INSTRUCTION, ""
+    instruction, hint, progress = INSTRUCTION, "", None
     if a.ask != "off":
         transcript = os.path.join(a.run_dir, "plan_questions.md")
         open(transcript, "w").close()
         asker = {"terminal": TerminalAsker, "none": Nobody}.get(a.ask)
         asker = FileAnswerer(a.answers, client) if a.ask == "file" else asker()
+        if a.ask == "terminal":
+            progress = TerminalProgress()
         tools += [pipeline_options(), ask_tool(asker, transcript), inspect_reads(data_root)]
         instruction += QUESTIONS
         hint = "If you cannot fix it from the data, ask the scientist with ASK_USER (for example which file to use)."
     skills = {k: v for k, v in load_skills(os.path.join(GETH_HOME, "geth", "skills")).items() if k != "sc-downstream"}
     agent = Agent("planner", instruction, tools, client, skills=skills, max_turns=a.max_turns,
                   trace_path=os.path.join(a.run_dir, "harness_trace_plan.jsonl"), log=lambda m: print(m, flush=True),
-                  stuck_hint=hint)
+                  stuck_hint=hint, progress=progress)
     try:
         result = agent.run(PROMPT.format(question=a.question, data_dir=a.data_dir, upstream=upstream),
                            done=lambda name, out: out.startswith("PLAN CHECK: OK"))
     except ModelError as e:
         print(f"Geth: {e}", flush=True)
         result = None
+    if progress:
+        progress.close()
     if result is None:
         # No accepted submission: fall back on the last plan that passed CHECK_PLAN, if any (as SAVE_PLAN does).
         checked = os.path.join(a.run_dir, ".checked")

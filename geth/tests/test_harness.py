@@ -13,7 +13,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from harness.agent import Agent, Tool, load_skills, string_params  # noqa: E402
-from harness.ask import UNKNOWN, FileAnswerer, Nobody, ask_tool  # noqa: E402
+from harness.ask import UNKNOWN, FileAnswerer, Nobody, TerminalProgress, ask_tool  # noqa: E402
 from harness.tools import list_files, pipeline_options, read_text  # noqa: E402
 
 
@@ -181,6 +181,55 @@ class StuckGuard(unittest.TestCase):
         nudges = [m["content"] for m in client.seen[-1] if m["role"] == "user" and "refused the same" in m["content"]]
         self.assertEqual(len(nudges), 1)
         self.assertIn("Ask the scientist.", nudges[0])
+
+
+class Progress(unittest.TestCase):
+
+    def test_one_line_per_step_for_the_person_watching(self):
+        out = tempfile.NamedTemporaryFile("w", delete=False)
+        out.close()
+        try:
+            p = TerminalProgress(tty=out.name)
+            p.thinking()
+            p.before("READ_TEXT", json.dumps({"path": "/data/delivery/README.txt"}))
+            p.before("activate_skill", {"skill_name": "nfcore-rnaseq"})
+            p.thinking()
+            p.before("CHECK_PLAN", "{}")
+            p.after("CHECK_PLAN", "PLAN CHECK: 1 problem(s)\n- samplesheet line 2: 'fastq_1' is empty")
+            p.before("SUBMIT_PLAN", "{}")
+            p.after("SUBMIT_PLAN", "PLAN CHECK: OK")
+            p.close()
+            text = open(out.name).read()
+            for expected in ("thinking…", "Reading README.txt", "Loading the nfcore-rnaseq guide",
+                             "Checking the plan → 1 problem(s): samplesheet line 2: 'fastq_1' is empty",
+                             "Submitting the plan → OK, plan saved"):
+                self.assertIn(expected, text)
+        finally:
+            os.remove(out.name)
+
+
+class Progress(unittest.TestCase):
+
+    def test_one_line_per_step_for_the_person_watching(self):
+        out = tempfile.NamedTemporaryFile("w", delete=False)
+        out.close()
+        try:
+            p = TerminalProgress(tty=out.name)
+            p.thinking()
+            p.before("READ_TEXT", json.dumps({"path": "/data/delivery/README.txt"}))
+            p.before("activate_skill", {"skill_name": "nfcore-rnaseq"})
+            p.before("CHECK_PLAN", "{}")
+            p.after("CHECK_PLAN", "PLAN CHECK: 1 problem(s)\n- samplesheet line 2: 'fastq_1' is empty")
+            p.before("SUBMIT_PLAN", "{}")
+            p.after("SUBMIT_PLAN", "PLAN CHECK: OK")
+            p.close()
+            text = open(out.name).read()
+            for expected in ("thinking…", "Reading README.txt", "Loading the nfcore-rnaseq guide",
+                             "Checking the plan → 1 problem(s): samplesheet line 2: 'fastq_1' is empty",
+                             "Submitting the plan → OK, plan saved"):
+                self.assertIn(expected, text)
+        finally:
+            os.remove(out.name)
 
 
 if __name__ == "__main__":

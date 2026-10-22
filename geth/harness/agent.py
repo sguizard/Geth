@@ -58,8 +58,9 @@ def skill_tool(skills):
 
 class Agent:
     def __init__(self, name, instruction, tools, client, skills=None, max_turns=25, trace_path=None, log=print,
-                 nudge_after=3, give_up_after=6, stuck_hint=""):
+                 nudge_after=3, give_up_after=6, stuck_hint="", progress=None):
         self.name, self.client, self.max_turns, self.log = name, client, max_turns, log
+        self.progress = progress  # optional: thinking(), before(name, args), after(name, output) for a person watching
         self.nudge_after, self.give_up_after, self.stuck_hint = nudge_after, give_up_after, stuck_hint
         self.tools = {t.name: t for t in tools}
         if skills:
@@ -103,6 +104,8 @@ class Agent:
             if turn == self.max_turns + 1:
                 messages.append({"role": "user", "content": f"You have used your {self.max_turns} turns. Call "
                                  f"{' or '.join(self.final)} now with your best answer."})
+            if self.progress:
+                self.progress.thinking()
             message = self.client.chat(messages, specs)
             calls = message.get("tool_calls") or []
             text = message.get("content") or ""
@@ -117,7 +120,11 @@ class Agent:
                                  f"ready and checked, call {' or '.join(self.final)}."})
                 continue
             for call in calls:
+                if self.progress:
+                    self.progress.before(call.get("function", {}).get("name", ""), call.get("function", {}).get("arguments"))
                 name, args, output = self.call_tool(call)
+                if self.progress:
+                    self.progress.after(name, output)
                 self.log(f"[agent {self.name}]   → {name}({', '.join(f'{k}={str(v)[:60]!r}' for k, v in args.items())})")
                 messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": output})
                 self.trace(event="tool", turn=turn, name=name, arguments=args, output=output)

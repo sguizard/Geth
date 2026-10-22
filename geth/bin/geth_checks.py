@@ -1031,7 +1031,10 @@ def check_multiplexing(sheet_text, params, barcodes_text):
         problems.append("no VDJ data: set skip_cellrangermulti_vdjref=true (the pipeline would build a VDJ reference "
                         "it does not need, which fails for most species)")
     if params.get("protocol", "auto") != "auto":
-        problems.append("Cell Ranger detects the 10x chemistry itself: set protocol=auto")
+        problems.append("set protocol=auto: with Cell Ranger multi, protocol is passed to Cell Ranger as a fixed "
+                        "chemistry, and the multiplexed chemistries cannot be named that way (On-Chip Multiplexing "
+                        "is detected as \"Single Cell 3' v4 OCM\"; 10XV3 would force v3). Cell Ranger detects the "
+                        "chemistry itself. If the scientist named a kit, say in the rationale why it is not set")
     if evidence and not barcodes_text:
         problems.append("the delivery describes multiplexed libraries (" + "; ".join(evidence) + "): list each "
                         "library's samples in the second sheet (contrasts_lines)")
@@ -1099,7 +1102,15 @@ def sample_entries(texts):
     return list(dict.fromkeys(entries))
 
 
-def plan_warnings(pipeline, sheet_text, params, sheet2_text=""):
+def scientist_answers(run_dir):
+    """The scientist's answers to the planner (plan_questions.md), as one text."""
+    path = os.path.join(run_dir or "", "plan_questions.md")
+    if not run_dir or not os.path.isfile(path):
+        return ""
+    return "\n".join(l[len("- answer:"):].strip() for l in open(path) if l.startswith("- answer:"))
+
+
+def plan_warnings(pipeline, sheet_text, params, sheet2_text="", run_dir=""):
     """Things a person should check before approving; they do not block the plan."""
     if REGISTRY.get(pipeline, {}).get("downstream") or REGISTRY.get(pipeline, {}).get("toolbox"):
         return []
@@ -1130,6 +1141,15 @@ def plan_warnings(pipeline, sheet_text, params, sheet2_text=""):
                             "it (GEM-X kits are 10XV4), or use Cell Ranger, which detects it (protocol=auto)")
         elif protocol.upper() == "10XV3" and GEMX.search(said):
             warnings.append("the delivery mentions GEM-X chemistry, but the plan sets protocol=10XV3: GEM-X 3' is 10XV4")
+    # An answer of the scientist that the delivery itself rules out (10x_multi_chicken8: "v3/v3.1" for OCM data)
+    answers = scientist_answers(run_dir)
+    if pipeline == "scrnaseq" and answers and (sheet2_text or "").strip():
+        _, brows = parse_sheet(sheet2_text)
+        if any(b.get("ocm_ids") for b in brows) and re.search(r"\bv3(\.1)?\b|next ?gem", answers, re.I) \
+                and not re.search(r"gem-?x|\bv4\b", answers, re.I):
+            warnings.append("an answer gives a v3/v3.1 chemistry, but On-Chip Multiplexing (OB1-OB4) exists only with "
+                            "GEM-X Universal 3' v4: check the kit. The plan is not affected: Cell Ranger multi "
+                            "detects the chemistry (protocol=auto)")
     return warnings
 
 
@@ -1377,7 +1397,7 @@ def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_t
         write(sheet2_file(pipeline), contrasts_text)
     result = "PLAN CHECK: OK" if not problems else f"PLAN CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems)
     if not problems and isinstance(params, dict):
-        result += "".join(f"\nWARNING: {w}" for w in plan_warnings(pipeline, sheet_text, params, contrasts_text))
+        result += "".join(f"\nWARNING: {w}" for w in plan_warnings(pipeline, sheet_text, params, contrasts_text, run_dir))
     write("plan_check.txt", result + ("\n(checked version used)" if note else ""))
     return result + ("\n(checked version used)" if note else "")
 
@@ -1459,6 +1479,7 @@ def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "check-plan":
         save_dir, argv = take(argv, "--save-checked")
+        run_dir, argv = take(argv, "--run-dir")  # for the warnings that read the scientist's answers
         extra, argv = parts(argv)
         pipeline = pipeline_name(argv[2])
         sheet_text = open(argv[3]).read()
@@ -1472,7 +1493,7 @@ def main(argv):
         if save_dir:
             save_checked(save_dir, pipeline, sheet_text, params, extra["contrasts_text"], extra["profile"])
         print("PLAN CHECK: OK")
-        for w in plan_warnings(pipeline, sheet_text, params, extra["contrasts_text"]):
+        for w in plan_warnings(pipeline, sheet_text, params, extra["contrasts_text"], save_dir or run_dir or ""):
             print(f"WARNING: {w}")
         return 0
     if cmd == "keep-prelude":  # keep-prelude < flat config: a config restoring the site's beforeScript (see above)
