@@ -187,3 +187,37 @@ def pipeline_options():
                     "pipeline": {"type": "string", "description": "pipeline name, e.g. rnaseq"},
                     "section": {"type": "string", "description": "a section name from the list, or ''"},
                     "search": {"type": "string", "description": "a word to search for, or ''"}}}, run)
+
+
+def inspect_reads(data_root):
+    """What a FASTQ says about itself: read lengths, from its first reads (a model cannot count 76 letters)."""
+    def run(path, n=2000):
+        if not under(path, data_root):
+            return f"REFUSED: only files under {data_root} can be read"
+        if not os.path.isfile(path):
+            return f"NOT FOUND: {path}"
+        opener = gzip.open if path.endswith(".gz") else open
+        lengths, names = [], []
+        try:
+            with opener(path, "rt", errors="replace") as fh:
+                for i, line in enumerate(fh):
+                    if i % 4 == 0:
+                        if not line.startswith("@"):
+                            return f"{path}: not a FASTQ file (line {i + 1} does not start with @)"
+                        if len(names) < 2:
+                            names.append(line.strip()[:80])
+                    elif i % 4 == 1:
+                        lengths.append(len(line.strip()))
+                        if len(lengths) >= int(n):
+                            break
+        except (OSError, EOFError) as e:
+            return f"{path}: cannot be read ({e})"
+        if not lengths:
+            return f"{path}: no reads"
+        lengths.sort()
+        common = max(set(lengths), key=lengths.count)
+        return (f"{os.path.basename(path)}: first {len(lengths)} reads; length min {lengths[0]}, median "
+                f"{lengths[len(lengths) // 2]}, max {lengths[-1]}; most common {common} bp "
+                f"({100 * lengths.count(common) // len(lengths)}% of reads). First read names: {'; '.join(names)}")
+    return Tool("INSPECT_READS", "Read lengths of a FASTQ file (.fastq or .fastq.gz), from its first reads: use it "
+                "for the read length instead of counting letters.", string_params(path="absolute path of the FASTQ"), run)

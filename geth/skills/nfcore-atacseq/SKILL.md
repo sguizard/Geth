@@ -11,7 +11,7 @@ Use this pipeline for **ATAC-seq** (open chromatin): alignment, mitochondrial/du
 ## Ask when the delivery does not say
 If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
 - For every library: the condition and the replicate, and which files are the same library (lanes).
-- Whether there are control samples; the read length (read it from a FASTQ with READ_TEXT before asking).
+- Whether there are control samples; the read length (measure it with INSPECT_READS when you have it, rather than asking).
 
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2,replicate` (+ `control,control_replicate` only with `with_control=true`)

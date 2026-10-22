@@ -4,4 +4,4 @@ Two independent cultures (biological replicates 1 and 2) per time point.
 - CHIP03: Spt5, 15 min, culture 1. CHIP04: Spt5, 15 min, culture 2.
 - INPUT01: input DNA (no antibody) of culture 1, the control for CHIP01 and CHIP03.
 - INPUT02: input DNA of culture 2, the control for CHIP02 and CHIP04.
-Illumina paired-end, 50 bp reads. Reference: S. cerevisiae R64 (Ensembl chromosome names).
+Illumina paired-end, 76 bp reads. Reference: S. cerevisiae R64 (Ensembl chromosome names).

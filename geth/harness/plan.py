@@ -16,8 +16,8 @@ import sys
 from .agent import Agent, load_skills
 from .ask import FileAnswerer, Nobody, TerminalAsker, ask_tool
 from .llm import Client, ModelError
-from .tools import (GETH_HOME, check_plan, checks, list_files, list_references, pipeline_options, read_text,
-                    submit_plan)
+from .tools import (GETH_HOME, check_plan, checks, inspect_reads, list_files, list_references, pipeline_options,
+                    read_text, submit_plan)
 
 INSTRUCTION = '''You are Geth, a bioinformatics analysis planner. You turn a scientist's request and a
 sequencing data folder into a run plan for exactly one nf-core pipeline. For new sequencing data:
@@ -111,7 +111,7 @@ def main(argv=None):
         open(transcript, "w").close()
         asker = {"terminal": TerminalAsker, "none": Nobody}.get(a.ask)
         asker = FileAnswerer(a.answers, client) if a.ask == "file" else asker()
-        tools += [pipeline_options(), ask_tool(asker, transcript)]
+        tools += [pipeline_options(), ask_tool(asker, transcript), inspect_reads(data_root)]
         instruction += QUESTIONS
         hint = "If you cannot fix it from the data, ask the scientist with ASK_USER (for example which file to use)."
     skills = {k: v for k, v in load_skills(os.path.join(GETH_HOME, "geth", "skills")).items() if k != "sc-downstream"}

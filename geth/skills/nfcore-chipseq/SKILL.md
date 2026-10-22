@@ -12,7 +12,7 @@ Use this pipeline for **ChIP-seq** (transcription factors, histone marks): align
 If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
 - For every library: the antibody (or input), the condition or time point and the replicate.
 - Which input control goes with which IP.
-- Narrow or broad marks; the read length (read it from a FASTQ with READ_TEXT before asking).
+- Narrow or broad marks; the read length (measure it with INSPECT_READS when you have it, rather than asking).
 
 ## Samplesheet (CSV, header required; these 7 columns, in this order)
 `sample,fastq_1,fastq_2,replicate,antibody,control,control_replicate`
