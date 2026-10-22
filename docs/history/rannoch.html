@@ -279,6 +279,27 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <p>Left to fix: one 16S plan did not ask about separate sequencing runs; two single-cell plans kept CellBender on for tiny test data; one Nanopore plan grouped replicates differently. The benchmark also exposed two errors in my own test data: the ChIP and ATAC READMEs claimed 50 bp reads, but the reads are 76 bp (ChIP inputs 50 bp).</p>
 </section>
 
+<section aria-labelledby="cmp-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="cmp-h">Three planner models, same harness</h2>
+    <p>Same planner, checks, skills and stand-in scientist (Qwen, thinking off); only the planner's model differs. GPT-6 through ELM's Responses API. 9 deliveries: 3 plans each sparse, 2 each with the full README.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Measure</th><th>Qwen 3.5 397B</th><th>GPT-6 Luna</th><th>GPT-6.1 Sol</th></tr></thead>
+      <tbody>
+        <tr><td>Sparse deliveries, fully correct</td><td class="n">19/27</td><td class="n">23/27</td><td class="n">26/27</td></tr>
+        <tr><td>Full READMEs, fully correct</td><td class="n">17/18</td><td class="n">16/18</td><td class="n">17/18</td></tr>
+        <tr><td>Minutes per plan, median (sparse · full)</td><td class="n">3.5 · 3.0</td><td class="n">3.0 · 2.0</td><td class="n">1.2 · 0.9</td></tr>
+        <tr><td>Cost, 45 plans (with cached-input discount)</td><td class="n">free</td><td class="n">$0.35</td><td class="n">$2.00</td></tr>
+        <tr><td>Asked about separate 16S sequencing runs</td><td class="n">0/3</td><td class="n">3/3</td><td class="n">3/3</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Sol's only real slip was planning yeast RNA-seq without any reference (it judged the test genome too small); Luna once paired reads from two different lanes. Both passed the plan check, which now refuses them. Some misses were the stand-in's: with thinking off it once gave a wrong replicate grouping, which the planner followed.</p>
+</section>
+
 <section aria-labelledby="dec-h">
   <div class="section-head">
     <span class="eyebrow">Decisions</span>
@@ -293,6 +314,7 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li><time datetime="2026-10-22">2026-10-22</time><span>R3 done: asking lifts sparse deliveries from 3/18 to 15/18 fully correct, and costs nothing when the README is complete. Next is your call: R4 (the other agents) or trying the planner on your own data first.</span></li>
     <li><time datetime="2026-10-22">2026-10-22</time><span>Your first real use (chicken OCM): the planner recommended an impossible chemistry and overrode your answer silently. Fixed: recommendations must agree with the files, overrides are explained, contradicting answers are flagged, and progress lines show what it is doing.</span></li>
     <li><time datetime="2026-10-22">2026-10-22</time><span>The reads now check the plan: amplicon primers, 10x barcode read length, read length, RRBS motif. On past plans they flag only real errors.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>Comparison through ELM (your runs, hard budgets): Sol 26/27 sparse and fastest for $2 per 45 plans; Luna 23/27 for $0.35; Qwen 19/27, free. The comparison also exposed two plan-check gaps, now closed.</span></li>
     <li><time datetime="2026-10-22">2026-10-22</time><span>Estimate for a frontier comparison with GPT-6 Astra (third-party prices, $10 / $50 per million tokens): about $60 for the R3 benchmark without caching, $30–35 with it, a $10–15 pilot first. Only with you, with a hard budget cap in the harness.</span></li>
   </ul>
 </section>
