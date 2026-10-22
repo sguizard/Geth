@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from harness.agent import Agent, Tool, load_skills, string_params  # noqa: E402
 from harness.ask import UNKNOWN, FileAnswerer, Nobody, TerminalProgress, ask_tool  # noqa: E402
+from harness.llm import from_output, to_input  # noqa: E402
 from harness.tools import list_files, pipeline_options, read_text  # noqa: E402
 
 
@@ -230,6 +231,32 @@ class Progress(unittest.TestCase):
                 self.assertIn(expected, text)
         finally:
             os.remove(out.name)
+
+
+class ResponsesApi(unittest.TestCase):
+    """OpenAI's Responses API (GPT-6 refuses tools with reasoning in chat completions: the pilots of 2026-10-22)."""
+
+    def test_answers_become_chat_messages_and_go_back_with_their_reasoning(self):
+        output = [{"type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "SECRET"},
+                  {"type": "function_call", "call_id": "call_1", "name": "READ_TEXT", "arguments": '{"path": "/d/README.txt"}',
+                   "status": "completed", "id": "fc_1"},
+                  {"type": "reasoning", "id": "rs_2", "summary": []}]  # no encrypted content: cannot go back
+        message, keep = from_output(output)
+        self.assertEqual(message["tool_calls"][0]["id"], "call_1")
+        self.assertEqual(message["tool_calls"][0]["function"]["name"], "READ_TEXT")
+        self.assertEqual([k.get("type") for k in keep], ["reasoning", "function_call"])
+        self.assertNotIn("status", keep[1])
+        messages = [{"role": "system", "content": "You plan."}, {"role": "user", "content": "go"},
+                    {"role": "assistant", "content": "", "tool_calls": message["tool_calls"]},
+                    {"role": "tool", "tool_call_id": "call_1", "content": "Two samples."},
+                    {"role": "assistant", "content": "Done."}]  # an answer the client did not keep: rebuilt
+        items = to_input(messages, [keep])
+        self.assertEqual(items[2]["encrypted_content"], "SECRET")
+        self.assertEqual(items[3]["type"], "function_call")
+        self.assertEqual(items[4], {"type": "function_call_output", "call_id": "call_1", "output": "Two samples."})
+        self.assertEqual(items[5], {"role": "assistant", "content": "Done."})
+        text, _ = from_output([{"type": "message", "content": [{"type": "output_text", "text": "Plan ready."}]}])
+        self.assertEqual(text, {"content": "Plan ready."})
 
 
 if __name__ == "__main__":
