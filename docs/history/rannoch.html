@@ -125,7 +125,7 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <span class="eyebrow">Geth 2.0 · codename</span>
   <div class="title-row">
     <h1>Rannoch</h1>
-    <span class="pill ok">trial passed</span>
+    <span class="pill ok">R3 done</span>
   </div>
   <p class="lede">Geth on its own ground. The agents move from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly. Nextflow keeps doing what it is best at: running the pipelines. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
   <div class="meta">
@@ -205,15 +205,16 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
         <p>15 test deliveries, 3 plans each, for each planner: 90 plans scored against the known design. The harness planner was correct on all 45 and three times faster, with a fifteenth of the memory. It also exposed a sandbox bug in Geth 1.x: shared databases were not visible to the agents (fixed in v1.9.3).</p>
       </div>
     </li>
-    <li class="step next">
+    <li class="step done">
       <div class="node"><span class="dot">R3</span></div>
       <div class="step-body">
-        <div class="step-head"><h3>A planner that asks you</h3><span class="pill next">next</span></div>
+        <div class="step-head"><h3>A planner that asks you</h3><span class="pill ok">done</span></div>
         <ul>
-          <li>First what the data cannot tell (kit, strandedness, design, organism), then the pipeline options that change results for your project. Everything else keeps its default, and the plan says why for each option it sets.</li>
-          <li>A conversation in your terminal, a few questions at a time, each with a recommended answer. Detached runs and benchmarks answer from a file.</li>
-          <li>The pipeline's own parameter schema becomes a tool, so the planner can find the options that matter. The result is a complete command line.</li>
-          <li>Scored with a simulated user who knows each test delivery's facts.</li>
+          <li><code>ASK_USER</code>: in your terminal, a few questions at a time, each with options and a recommended answer that Enter takes. With <code>geth plan … --answers file</code>, a stand-in answers from what the file says. At most 2 rounds of 5 questions. The questions and answers are kept with the plan, and <code>geth show</code> prints them.</li>
+          <li><code>PIPELINE_OPTIONS</code>: the pinned release's parameter schema, by section or by word, so the planner finds the options that matter. <code>geth show</code> now prints the full command line Geth will run.</li>
+          <li>When the check refuses the same plan three times, the planner is told to ask you rather than resubmit; it stops at six.</li>
+          <li>Every pipeline skill lists what to ask when the delivery does not say, and <code>INSPECT_READS</code> measures read lengths instead of guessing them.</li>
+          <li>Result: on sparse deliveries 15/18 plans fully correct with questions against 3/18 without; on held-out deliveries 8/9 against 6/9. With full READMEs it asks nothing (median) and stays at 18/18. Try it with <code>GETH_PLANNER=harness geth plan …</code>.</li>
         </ul>
       </div>
     </li>
@@ -257,6 +258,27 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <p>Where the time goes: in the Nextflow version, the agent's own work took 1.6 minutes per plan (median). The feature then asked the model to write the whole plan again as a typed record, which took 4.2 minutes, two thirds of the planning. The harness takes the plan from the agent's last tool call instead, written once. Nextflow itself added only seconds. Every delivery was faster with the harness, from 1.6 times (multiplexed 10x) to 5.7 times (index reuse).</p>
 </section>
 
+<section aria-labelledby="r3-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="r3-h">Planner that asks: plans fully correct</h2>
+    <p>Sparse deliveries keep only a one-line README; what it no longer says is known to a stand-in scientist who answers from notes. Held-out deliveries were not used to tune the planner. 3 plans per delivery, 2 for the full-README runs.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Deliveries</th><th>No questions</th><th>Asks, first version</th><th>Asks, final</th></tr></thead>
+      <tbody>
+        <tr><td>6 sparse (tuned on)</td><td class="n">3/18</td><td class="n">11/18</td><td class="n">15/18</td></tr>
+        <tr><td>3 sparse (held out)</td><td class="n">6/9</td><td class="n">–</td><td class="n">8/9</td></tr>
+        <tr><td>Full READMEs</td><td class="n">–</td><td class="n">18/18</td><td class="n">18/18 · 4/4</td></tr>
+        <tr><td>Questions per plan, median</td><td class="n">0</td><td class="n">3</td><td class="n">3 sparse · 0 full</td></tr>
+        <tr><td>Minutes per plan, median</td><td class="n">2.8</td><td class="n">6.8</td><td class="n">5.3 sparse · 2.5 full</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Left to fix: one 16S plan did not ask about separate sequencing runs; two single-cell plans kept CellBender on for tiny test data; one Nanopore plan grouped replicates differently. The benchmark also exposed two errors in my own test data: the ChIP and ATAC READMEs claimed 50 bp reads, but the reads are 76 bp (ChIP inputs 50 bp).</p>
+</section>
+
 <section aria-labelledby="dec-h">
   <div class="section-head">
     <span class="eyebrow">Decisions</span>
@@ -267,6 +289,8 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li><time datetime="2026-10-21">2026-10-21</time><span>Codename Rannoch. Geth 2.0 lives in the Geth repository on <code>feature/rannoch</code>; Geth 1.x stays on master until 2.0 beats it.</span></li>
     <li><time datetime="2026-10-21">2026-10-21</time><span>If the trial holds up, the planner asks questions: interactive in the terminal, with an answers file for detached runs and benchmarks. First what the data cannot tell, then the options that matter.</span></li>
     <li><time datetime="2026-10-21">2026-10-21</time><span>Trial passed: 45/45 correct against 43/45, three times faster, a fifteenth of the memory. On to R3. The sandbox fix it uncovered goes to Geth 1.x as v1.9.3.</span></li>
+    <li><time datetime="2026-10-21">2026-10-21</time><span>R3 approved, with the two additions: stop resubmitting a refused plan and ask instead; browse the pipeline's options through its schema.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>R3 done: asking lifts sparse deliveries from 3/18 to 15/18 fully correct, and costs nothing when the README is complete. Next is your call: R4 (the other agents) or trying the planner on your own data first.</span></li>
   </ul>
 </section>
 
