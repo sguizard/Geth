@@ -55,8 +55,9 @@ class Client:
         self.usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0,
                       "reasoning_tokens": 0, "seconds": 0.0, "usd": 0.0}
 
-    def chat(self, messages, tools=None):
-        """One answer of the model: returns an assistant message (content, tool_calls), whatever the API."""
+    def chat(self, messages, tools=None, extra=None):
+        """One answer of the model: returns an assistant message (content, tool_calls), whatever the API.
+        extra: more request fields (chat completions only), e.g. turning a model's thinking off."""
         if self.budget is not None and self.usage["usd"] >= self.budget:
             raise ModelError(f"budget reached: this plan has spent ${self.usage['usd']:.4f} of its "
                              f"${self.budget:.4f} on {self.model}")
@@ -67,6 +68,7 @@ class Client:
             body.update(tools=tools, tool_choice="auto")
         if self.budget is not None:
             body["max_completion_tokens"] = 32000  # one answer, reasoning included, cannot run away
+        body.update(extra or {})
         reply, seconds = self._post("chat/completions", body)
         usage = reply.get("usage") or {}
         self._count(usage.get("prompt_tokens") or 0, usage.get("completion_tokens") or 0,

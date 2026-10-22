@@ -27,10 +27,11 @@ class FakeClient:
     model = "fake"
 
     def __init__(self, *replies):
-        self.replies, self.seen, self.usage = list(replies), [], {"requests": 0}
+        self.replies, self.seen, self.extras, self.usage = list(replies), [], [], {"requests": 0}
 
-    def chat(self, messages, tools=None):
+    def chat(self, messages, tools=None, extra=None):
         self.seen.append([dict(m) for m in messages])
+        self.extras.append(extra)
         self.usage["requests"] += 1
         return self.replies.pop(0) if self.replies else {"content": "nothing more to say"}
 
@@ -155,6 +156,7 @@ class Questions(unittest.TestCase):
         self.assertEqual(answers[1], UNKNOWN)
         self.assertIn("GTGYCAGCMGCCGCGGTAA", answers[0])
         self.assertIn("Primers: 515F", client.seen[0][0]["content"])  # the facts go to the stand-in only
+        self.assertEqual(client.extras[0], {"chat_template_kwargs": {"enable_thinking": False}})  # a lookup: no thinking
         self.assertEqual(FileAnswerer(facts, FakeClient({"content": "no list"}))([{"question": "x"}]), [UNKNOWN])
 
 

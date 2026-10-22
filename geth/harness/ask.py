@@ -116,22 +116,31 @@ class TerminalProgress:
 
 
 class FileAnswerer:
-    """A stand-in for the scientist: answers only from what the answers file says."""
+    """A stand-in for the scientist: answers only from what the answers file says. It looks facts up, so the model's
+    thinking is turned off (Qwen on ELM: 4 s instead of 83 s for the same answer), where the service allows it."""
     who = "the answers file"
+    NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
 
     def __init__(self, path, client):
-        self.facts, self.client = open(path).read(), client
+        self.facts, self.client, self.extra = open(path).read(), client, self.NO_THINKING
 
     def __call__(self, questions):
         listing = "\n".join(f"{i}. {q.get('question', '')} (options: {', '.join(map(str, q.get('options') or [])) or 'free answer'})"
                             for i, q in enumerate(questions, 1))
-        message = self.client.chat([
+        request = [
             {"role": "system", "content": "You are the scientist who owns this sequencing data. Answer the analyst's "
              "questions using only what you know, written below. Answer each question completely: give every detail you "
              "know that concerns it, with names, values and sequences copied exactly; nothing else. When what you "
              "know does not answer a question, answer exactly: " + UNKNOWN +
              "\n\nWhat you know:\n" + self.facts},
-            {"role": "user", "content": listing + "\n\nReply with a JSON list of strings: one answer per question, in order."}])
+            {"role": "user", "content": listing + "\n\nReply with a JSON list of strings: one answer per question, in order."}]
+        try:
+            message = self.client.chat(request, extra=self.extra)
+        except Exception as e:  # a service that does not know the setting: ask again without it
+            if not self.extra or "400" not in str(e):
+                raise
+            self.extra = None
+            message = self.client.chat(request)
         text = message.get("content") or ""
         m = re.search(r"\[.*\]", text, re.S)
         try:
