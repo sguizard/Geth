@@ -51,6 +51,8 @@ for line in open(sys.argv[1]) if __import__("os").path.isfile(sys.argv[1]) else 
         pass
 print(f"{total:.4f}")' "$out"
 }
+{  # Ctrl-C: the planner runs in its own process group (the time limit's), so stop the current plan explicitly
+trap 'echo "Interrupted: stopping ${name:-the current plan} ..." >&2; [ -n "${name:-}" ] && "$geth" stop "$name" >&2; exit 130' INT TERM
 for delivery in "$@"; do
     [ -n "${question[$delivery]:-}" ] || { echo "unknown delivery: $delivery" >&2; continue; }
     for i in $(seq 1 "$repeats"); do
@@ -87,4 +89,5 @@ print(json.dumps(d))' "$GETH_RUNS_DIR/$name" "$status" "$(( t1 - t0 ))" "$(tail 
             || echo "{\"run\": \"$name\", \"error\": \"scoring failed\", \"plan_status\": \"$status\"}"
         rm -f "$rss"
     done
-done | tee -a "$out"
+done
+} | tee -a "$out"
