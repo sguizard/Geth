@@ -814,5 +814,55 @@ class SitePrelude(unittest.TestCase):
         self.assertEqual(gc.keep_prelude("process.beforeScript = 'module load apptainer'\n"), "")
 
 
+class DataChecks(unittest.TestCase):
+    """Plan values the reads themselves can confirm or refute (warnings, not refusals)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="geth_reads_")
+        gc._HEADS.clear()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def fastq(self, name, seqs):
+        path = os.path.join(self.dir, name)
+        with gzip.open(path, "wt") as fh:
+            for i, s in enumerate(seqs):
+                fh.write(f"@r{i}\n{s}\n+\n{'I' * len(s)}\n")
+        return path
+
+    def test_amplicon_primers_are_found_in_the_reads(self):
+        fwd, rev = "GTGYCAGCMGCCGCGGTAA", "GGACTACNVGGGTWTCTAAT"
+        r1 = self.fastq("s_R1.fastq.gz", ["GTGCCAGCAGCCGCGGTAA" + "ACGT" * 20] * 90 + ["T" * 99] * 10)
+        r2 = self.fastq("s_R2.fastq.gz", ["GGACTACAAGGGTATCTAAT" + "ACGT" * 20] * 100)
+        rows = [{"sample": "s", "fastq_1": r1, "fastq_2": r2}]
+        self.assertEqual(gc.data_warnings("ampliseq", rows, {"primer_fwd": fwd, "primer_rev": rev}), [])
+        wrong = gc.data_warnings("ampliseq", rows, {"primer_fwd": "AGAGTTTGATCMTGGCTCAG", "primer_rev": rev})
+        self.assertTrue(any("forward 0% of first reads" in w for w in wrong), wrong)
+        swapped = gc.data_warnings("ampliseq", [{"sample": "s", "fastq_1": r2, "fastq_2": r1}],
+                                   {"primer_fwd": fwd, "primer_rev": rev})
+        self.assertTrue(any("look swapped" in w for w in swapped), swapped)
+        skipped = gc.data_warnings("ampliseq", rows, {"primer_fwd": fwd, "primer_rev": rev, "skip_cutadapt": True})
+        self.assertTrue(any("still in the reads" in w for w in skipped), skipped)
+
+    def test_10x_chemistry_from_the_barcode_read_length(self):
+        rows = [{"sample": "s", "fastq_1": self.fastq("x_R1.fastq.gz", ["A" * 26] * 50)}]
+        self.assertTrue(any("as in v2" in w for w in gc.data_warnings("scrnaseq", rows, {"protocol": "10XV3", "aligner": "star"})))
+        self.assertEqual(gc.data_warnings("scrnaseq", rows, {"protocol": "10XV2", "aligner": "star"}), [])
+        self.assertEqual(gc.data_warnings("scrnaseq", rows, {"protocol": "auto", "aligner": "cellrangermulti"}), [])
+        long = [{"sample": "s", "fastq_1": self.fastq("y_R1.fastq.gz", ["A" * 150] * 50)}]  # 10x_multi_chicken: 150 bp
+        self.assertEqual(gc.data_warnings("scrnaseq", long, {"protocol": "10XV3", "aligner": "star"}), [])
+
+    def test_rrbs_motif_and_read_length(self):
+        rrbs = [{"sample": "m", "fastq_1": self.fastq("m_R1.fastq.gz", ["CGG" + "TTA" * 30, "TGG" + "TAT" * 30] * 40)}]
+        self.assertTrue(any("as in RRBS" in w for w in gc.data_warnings("methylseq", rrbs, {})))
+        self.assertEqual(gc.data_warnings("methylseq", rrbs, {"rrbs": True}), [])
+        chip = [{"sample": "ip", "fastq_1": self.fastq("ip_R1.fastq.gz", ["A" * 76] * 20)},
+                {"sample": "input", "fastq_1": self.fastq("in_R1.fastq.gz", ["A" * 50] * 20)}]
+        self.assertEqual(gc.data_warnings("chipseq", chip, {"read_length": 75}), [])
+        self.assertEqual(gc.data_warnings("chipseq", chip, {"read_length": 50}), [])  # inputs are 50 bp
+        self.assertTrue(any("read_length=100" in w for w in gc.data_warnings("chipseq", chip, {"read_length": 100})))
+
+
 if __name__ == "__main__":
     unittest.main()

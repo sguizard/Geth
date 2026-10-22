@@ -311,6 +311,9 @@ GETH_PLANNER=harness geth plan /path/to/my_data "Your question." my_analysis
 - For a run in the background, write what you know in a text file and add `--answers notes.txt`: a stand-in
   answers the planner from your notes, and says "I don't know" for anything they do not cover.
 - `geth show my_analysis` prints the questions with your answers, and the full command line Geth will run.
+- Where the reads can tell, Geth checks your answers and the plan against them and warns about a mismatch:
+  amplicon primers that do not start the reads, a 10x chemistry that does not match the barcode read length
+  (v2: 26 bp; v3 and GEM-X v4: 28 bp), a read length that does not match the reads, an RRBS motif.
 
 ## Good to know
 

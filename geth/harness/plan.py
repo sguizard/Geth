@@ -63,7 +63,9 @@ the plan, and do not ask to confirm what the files already say. When an answer i
 nobody answers, use your recommendation. In the rationale, justify every parameter you set and say where its
 value comes from: the files, the scientist's answer, or your recommendation. When a check or a skill makes you
 set something other than what the scientist answered, or an answer contradicts the files, say so plainly in the
-rationale, with the reason. Never write facts about the data that neither the files nor the answers give.'''
+rationale, with the reason. Never write facts about the data that neither the files nor the answers give.
+CHECK_PLAN also compares the plan with the reads (primers, barcode read length, read length, RRBS): when such a
+WARNING contradicts an answer, ask the scientist about it (ASK_USER) instead of choosing silently.'''
 
 PROMPT = '''Request: {question}
 Data folder: {data_dir}

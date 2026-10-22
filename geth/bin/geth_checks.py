@@ -1102,6 +1102,100 @@ def sample_entries(texts):
     return list(dict.fromkeys(entries))
 
 
+# ---------------------------------------------------------------- what the reads say
+
+IUPAC = {"A": "A", "C": "C", "G": "G", "T": "T", "U": "T", "R": "[AG]", "Y": "[CT]", "S": "[CG]", "W": "[AT]",
+         "K": "[GT]", "M": "[AC]", "B": "[CGT]", "D": "[AGT]", "H": "[ACT]", "V": "[ACG]", "N": "[ACGT]"}
+_HEADS = {}
+
+
+def fastq_head(path, n=2000):
+    """The sequences of a FASTQ's first reads (cached: a plan is checked many times while planning)."""
+    if path not in _HEADS:
+        seqs = []
+        try:
+            opener = gzip.open if path.endswith(".gz") else open
+            with opener(path, "rt", errors="replace") as fh:
+                for i, line in enumerate(fh):
+                    if i % 4 == 1:
+                        seqs.append(line.strip().upper())
+                        if len(seqs) >= n:
+                            break
+        except (OSError, EOFError):
+            pass
+        _HEADS[path] = seqs
+    return _HEADS[path]
+
+
+def share(seqs, test):
+    return sum(1 for x in seqs if test(x)) / len(seqs) if seqs else None
+
+
+def data_warnings(pipeline, rows, params):
+    """When the reads themselves can say whether a plan value (often the scientist's answer) is right."""
+    warnings = []
+    def fq(key, most=8):  # the first file of each sample (mixed libraries differ: ChIP inputs vs IPs)
+        firsts = {}
+        for r in rows:
+            path = r.get(key) or ""
+            sample = r.get("sample") or r.get("Sample_Name") or path
+            if path.startswith("/") and sample not in firsts and os.path.isfile(path):
+                firsts[sample] = path
+        return list(firsts.values())[:most]
+    median_len = lambda path: (sorted(map(len, fastq_head(path))) or [0])[len(fastq_head(path)) // 2]
+    if pipeline == "ampliseq" and params.get("primer_fwd") and params.get("primer_rev"):
+        try:
+            fwd = re.compile("^" + "".join(IUPAC[c] for c in str(params["primer_fwd"]).upper()))
+            rev = re.compile("^" + "".join(IUPAC[c] for c in str(params["primer_rev"]).upper()))
+        except KeyError:
+            fwd = rev = None
+        r1, r2 = fq("fastq_1"), fq("fastq_2")
+        if fwd and r1:
+            at_fwd = min(share(fastq_head(f), fwd.match) for f in r1)
+            at_rev = min(share(fastq_head(f), rev.match) for f in r2) if r2 else None
+            swapped = r2 and share(fastq_head(r2[0]), fwd.match) > 0.3
+            if params.get("skip_cutadapt") in (True, "true"):
+                if at_fwd > 0.5:
+                    warnings.append(f"cutadapt is skipped, but the forward primer starts {at_fwd:.0%} of the reads: "
+                                    "the primers are still in the reads")
+            elif swapped:
+                warnings.append("the forward primer starts the second reads (fastq_2): primer_fwd and primer_rev, or "
+                                "fastq_1 and fastq_2, look swapped")
+            elif at_fwd < 0.3 or (at_rev is not None and at_rev < 0.3):
+                warnings.append(f"the primers start few reads (forward {at_fwd:.0%} of first reads"
+                                + (f", reverse {at_rev:.0%} of second reads" if at_rev is not None else "")
+                                + "; correct primers usually start most of them): check the sequences, or whether "
+                                "the primers were already removed (skip_cutadapt)")
+    if pipeline == "scrnaseq" and params.get("aligner", "simpleaf") not in ("cellranger", "cellrangermulti"):
+        protocol, r1 = str(params.get("protocol", "")).upper(), fq("fastq_1")
+        if r1 and protocol in ("10XV2", "10XV3", "10XV4"):
+            length = median_len(r1[0])
+            if protocol == "10XV2" and length == 28:
+                warnings.append("protocol=10XV2, but the barcode reads (fastq_1) are 28 bp, as in v3/v3.1 and "
+                                "GEM-X v4 (v2: 26 bp): check the chemistry")
+            elif protocol in ("10XV3", "10XV4") and length == 26:
+                warnings.append(f"protocol={protocol}, but the barcode reads (fastq_1) are 26 bp, as in v2 (v3 and "
+                                "GEM-X v4: 28 bp): check the chemistry")
+    if pipeline == "methylseq":
+        r1 = fq("fastq_1")
+        if r1:
+            rrbs_like = share(fastq_head(r1[0]), lambda x: x[:3] in ("CGG", "TGG"))
+            if params.get("rrbs") in (True, "true") and rrbs_like < 0.3:
+                warnings.append(f"rrbs=true, but only {rrbs_like:.0%} of the reads start with CGG/TGG (an RRBS "
+                                "library's MspI site): check the protocol")
+            elif params.get("rrbs") not in (True, "true") and rrbs_like > 0.6:
+                warnings.append(f"{rrbs_like:.0%} of the reads start with CGG/TGG, as in RRBS libraries, but rrbs "
+                                "is not set: check the protocol")
+    if pipeline in ("chipseq", "atacseq") and params.get("read_length"):
+        allowed = (50, 75, 100, 150, 200)
+        lengths = sorted({median_len(f) for f in fq("fastq_1")} - {0})
+        nearest = {min(allowed, key=lambda a: abs(a - L)) for L in lengths}
+        if nearest and int(float(params["read_length"])) not in nearest:
+            warnings.append(f"read_length={params['read_length']}, but the reads are {', '.join(f'{L} bp' for L in lengths)} "
+                            f"(nearest allowed: {', '.join(map(str, sorted(nearest)))})")
+    return warnings
+
+
 def scientist_answers(run_dir):
     """The scientist's answers to the planner (plan_questions.md), as one text."""
     path = os.path.join(run_dir or "", "plan_questions.md")
@@ -1141,6 +1235,7 @@ def plan_warnings(pipeline, sheet_text, params, sheet2_text="", run_dir=""):
                             "it (GEM-X kits are 10XV4), or use Cell Ranger, which detects it (protocol=auto)")
         elif protocol.upper() == "10XV3" and GEMX.search(said):
             warnings.append("the delivery mentions GEM-X chemistry, but the plan sets protocol=10XV3: GEM-X 3' is 10XV4")
+    warnings += data_warnings(pipeline, rows, params)
     # An answer of the scientist that the delivery itself rules out (10x_multi_chicken8: "v3/v3.1" for OCM data)
     answers = scientist_answers(run_dir)
     if pipeline == "scrnaseq" and answers and (sheet2_text or "").strip():
