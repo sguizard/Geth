@@ -10,6 +10,8 @@
 # Rannoch R3: GETH_BENCH_TESTDATA=testdata_sparse plans the sparse deliveries (bench/stage_sparse.sh);
 # GETH_BENCH_ANSWERS=yes lets a stand-in scientist answer the planner from bench/facts/<delivery>.txt;
 # GETH_PLANNER_ASK=off plans without questions.
+# A paid planner model (GETH_PLANNER_MODEL, see geth/harness/llm.py) needs GETH_BENCH_BUDGET_USD: no plan starts
+# once the plans of this tag have spent it (each plan is also capped by GETH_PLANNER_BUDGET_USD).
 set -uo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
 
@@ -36,9 +38,26 @@ declare -A question=(
     [sc_rat_ocm]="Process these single-cell RNA-seq data into count matrices and give me a QC overview of the cells." )
 declare -A dataset=( [bulk_yeast]=bulk [sc_mouse_chr19]=sc )
 
+if [ -n "${GETH_PLANNER_MODEL:-}" ] && [ -z "${GETH_BENCH_BUDGET_USD:-}" ]; then
+    echo "GETH_PLANNER_MODEL is set: set GETH_BENCH_BUDGET_USD too (the most this benchmark may spend)" >&2; exit 1
+fi
+spent() {  # USD spent so far by the plans of this tag (from their recorded model usage)
+    python3 -c 'import json, sys
+total = 0.0
+for line in open(sys.argv[1]) if __import__("os").path.isfile(sys.argv[1]) else []:
+    try:
+        total += (json.loads(line).get("model_usage") or {}).get("usd", 0)
+    except ValueError:
+        pass
+print(f"{total:.4f}")' "$out"
+}
 for delivery in "$@"; do
     [ -n "${question[$delivery]:-}" ] || { echo "unknown delivery: $delivery" >&2; continue; }
     for i in $(seq 1 "$repeats"); do
+        if [ -n "${GETH_BENCH_BUDGET_USD:-}" ] && python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' "$(spent)" "$GETH_BENCH_BUDGET_USD"; then
+            echo "Budget reached: \$$(spent) spent of \$$GETH_BENCH_BUDGET_USD; no further plan started." >&2
+            break 2
+        fi
         name=${tag}_${delivery}_$i
         t0=$(date +%s)
         rss=$(mktemp)

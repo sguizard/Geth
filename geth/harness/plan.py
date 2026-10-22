@@ -106,9 +106,12 @@ def main(argv=None):
     upstream = (f"{a.upstream_run} (nf-core/{open(os.path.join(a.upstream_run, 'plan_pipeline.txt')).read().strip()} "
                 f"results in {a.upstream_run}/results)" if a.upstream_run else "none (this is a new analysis of sequencing data)")
     try:
-        client = Client()
+        site = Client()  # the site's model: the stand-in scientist always uses it
+        client = Client("GETH_PLANNER") if os.environ.get("GETH_PLANNER_MODEL") else site
     except ModelError as e:
         sys.exit(f"Geth: {e}")
+    if client is not site:
+        print(f"Planner model: {client.model} (budget ${client.budget:.4g} per plan); stand-in: {site.model}", flush=True)
     tools = [list_files(data_root), read_text(data_root), list_references(references),
              check_plan(a.run_dir, a.upstream_run), submit_plan(a.run_dir, a.upstream_run)]
     instruction, hint, progress = INSTRUCTION, "", None
@@ -116,7 +119,7 @@ def main(argv=None):
         transcript = os.path.join(a.run_dir, "plan_questions.md")
         open(transcript, "w").close()
         asker = {"terminal": TerminalAsker, "none": Nobody}.get(a.ask)
-        asker = FileAnswerer(a.answers, client) if a.ask == "file" else asker()
+        asker = FileAnswerer(a.answers, site) if a.ask == "file" else asker()
         if a.ask == "terminal":
             progress = TerminalProgress()
         tools += [pipeline_options(), ask_tool(asker, transcript), inspect_reads(data_root)]
@@ -134,6 +137,9 @@ def main(argv=None):
         result = None
     if progress:
         progress.close()
+    print(f"Model usage: {json.dumps(dict({k: round(v, 4 if k == 'usd' else 1) for k, v in client.usage.items()}, model=client.model))}", flush=True)
+    if client is not site:
+        print(f"Stand-in usage: {json.dumps({k: round(v, 1) for k, v in site.usage.items()})}", flush=True)
     if result is None:
         # No accepted submission: fall back on the last plan that passed CHECK_PLAN, if any (as SAVE_PLAN does).
         checked = os.path.join(a.run_dir, ".checked")
@@ -153,7 +159,6 @@ def main(argv=None):
                         "--profile", open(profile).read().strip() if os.path.isfile(profile) else "",
                         *(["--upstream", a.upstream_run] if a.upstream_run else []))
     print(result, flush=True)
-    print(f"Model usage: {json.dumps({k: round(v, 1) for k, v in client.usage.items()})}", flush=True)
     return 0 if os.path.isfile(os.path.join(a.run_dir, "plan_pipeline.txt")) else 1
 
 

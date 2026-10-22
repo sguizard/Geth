@@ -67,6 +67,7 @@ execd=$(getent services sge_execd 2>/dev/null | awk '{split($2, p, "/"); print p
 
 # Settings passed in through a file only you can read (never the key itself: that goes through APPTAINERENV_).
 key_var=${GETH_LLM_API_KEY_VAR:-GETH_LLM_API_KEY}
+key_var2=${GETH_PLANNER_API_KEY_VAR:-}  # Rannoch: a second model for the planner only (a person's comparison)
 env_file=$(real "$run_dir")/.agent_home/sandbox.env
 umask 077
 sq() { local v=${1//\'/\'\\\'\'}; printf "'%s'" "$v"; }   # apptainer's env file reads single quotes, not \ escapes
@@ -75,7 +76,7 @@ sq() { local v=${1//\'/\'\\\'\'}; printf "'%s'" "$v"; }   # apptainer's env file
     echo "JAVA_HOME=$(sq "$java_home")"
     echo "PATH=$(sq "$java_home/bin:$(dirname "$launcher"):${SGE_ROOT:+$SGE_ROOT/bin/lx-amd64:}/opt/conda/bin:/usr/local/bin:/usr/bin:/bin")"
     for v in $(compgen -e | grep -E '^(GETH_|NXF_|SGE_)'); do
-        [ "$v" = "$key_var" ] || echo "$v=$(sq "${!v}")"
+        [ "$v" = "$key_var" ] || [ "$v" = "$key_var2" ] || echo "$v=$(sq "${!v}")"
     done
     [ -n "$qmaster" ] && echo "SGE_QMASTER_PORT=$qmaster"
     [ -n "$execd" ] && echo "SGE_EXECD_PORT=$execd"
@@ -83,6 +84,7 @@ sq() { local v=${1//\'/\'\\\'\'}; printf "'%s'" "$v"; }   # apptainer's env file
     echo "GETH_IN_AGENT_SANDBOX=yes"
 } > "$env_file"
 export "APPTAINERENV_$key_var=${!key_var:-}"
+[ -n "$key_var2" ] && export "APPTAINERENV_$key_var2=${!key_var2:-}"
 
 # The site's task prelude (e.g. ". /etc/profile.d/modules.sh; module load apptainer") also runs before the
 # driver's local tools, inside the sandbox: a stub makes it a no-op there. Scheduler jobs run outside, as usual.
