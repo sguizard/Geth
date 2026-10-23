@@ -125,7 +125,7 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <span class="eyebrow">Geth 2.0 · codename</span>
   <div class="title-row">
     <h1>Rannoch</h1>
-    <span class="pill ok">Geth 2.0.0 released</span>
+    <span class="pill ok">R5 built</span>
   </div>
   <p class="lede">Geth on its own ground. The agents moved from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly; since Geth 2.0 it is the only one. Nextflow keeps doing what it is best at: running the pipelines and the tools' jobs. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
   <div class="meta">
@@ -231,11 +231,16 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
         </ul>
       </div>
     </li>
-    <li class="step idea">
+    <li class="step done">
       <div class="node"><span class="dot">R5</span></div>
       <div class="step-body">
-        <div class="step-head"><h3>The legion</h3><span class="pill idea">proposed</span></div>
-        <p>A coordinator agent that works out what the data needs and starts specialists as it goes: planner, engineer, reviewer. Geth's checks decide at every step. Budgets live in the harness, which also makes the paid frontier-model comparison easy to cap.</p>
+        <div class="step-head"><h3>The legion: projects</h3><span class="pill ok">built</span></div>
+        <ul>
+          <li><code>geth project new / approve / run</code>: a coordinator agent turns a question into steps. A step is a pipeline, a follow-up, an Ensembl genome download, a gap, or (with <code>--lab</code>) the lab. Each pipeline step is an ordinary run: you approve its plan as before.</li>
+          <li>The coordinator plans, reviews each finished step (continue, stop, or propose new steps for you to approve) and writes the project report, number-checked against every step. It never runs anything itself, and <code>--overrule</code> lets you go on when it stops.</li>
+          <li>Gaps are named, never improvised: the nf-core catalogue (145 pipelines) tells which one would do it, e.g. nf-core/smrnaseq for microRNAs.</li>
+          <li><code>--model</code> and <code>--budget</code> for the lab, so you can try Sol there with a hard cap: a request that would cross the budget is not sent.</li>
+        </ul>
       </div>
     </li>
   </ol>
@@ -338,6 +343,42 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   </ul>
 </section>
 
+<section aria-labelledby="r5-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="r5-h">Projects: the coordinator's plans, and projects run end to end</h2>
+    <p>Plans: 7 deliveries with a known right list of steps, 3 projects each, scored step by step (the right specialists, in the right order, on the right folders, nothing extra). The first series ran while I fixed what it found; the second ran on the final code.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Scenario</th><th>Right steps</th><th>First series</th><th>Final</th></tr></thead>
+      <tbody>
+        <tr><td>PBMC reads, cell types</td><td>scrnaseq → single-cell toolbox</td><td class="n">3/3</td><td class="n">3/3</td></tr>
+        <tr><td>Airway reads, dexamethasone response</td><td>rnaseq → DE (treated vs untreated)</td><td class="n">3/3</td><td class="n">3/3</td></tr>
+        <tr><td>Yeast RNA-seq + ATAC-seq in one delivery</td><td>rnaseq on RNA/, atacseq on ATAC/, independent</td><td class="n">0/3</td><td class="n">3/3</td></tr>
+        <tr><td>Yeast RNA-seq, no reference</td><td>Ensembl genome → rnaseq</td><td class="n">2/3</td><td class="n">3/3</td></tr>
+        <tr><td>Human microRNA reads</td><td>a gap naming nf-core/smrnaseq</td><td class="n">3/3</td><td class="n">3/3</td></tr>
+        <tr><td>A count matrix, DE per cell type</td><td>a gap (no pipeline takes an .h5ad)</td><td class="n">2/3</td><td class="n">3/3</td></tr>
+        <tr><td>The same, with <code>--lab</code></td><td>one lab step</td><td class="n">3/3</td><td class="n">3/3</td></tr>
+        <tr><td><strong>All</strong></td><td>median 1.1 min per project plan</td><td class="n">16/21</td><td class="n">21/21</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The misses became check rules, which hold whatever the model does: no download when the delivery brings its genome; one folder per pipeline, keeping its README and sample table; a pipeline needs reads. One became an instruction: no follow-up the question does not ask for.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Project, end to end</th><th>What happened</th></tr></thead>
+      <tbody>
+        <tr><td>Yeast without reference: genome → counts → DE (wild type vs uninduced RAP1)</td><td>The genome downloaded on Eddie's staging queue (checksums verified) and catalogued; the count step used it. The DE step cannot work on these test reads (141 genes reach 10 counts): it failed and the report says so (19/19 numbers traced).</td></tr>
+        <tr><td>PBMC subset: counts → cell types</td><td>The coordinator stopped after counting: the 300,000-read subset is too thin for real cell types. With <code>--overrule</code> the cell types ran; report 65/65 traced.</td></tr>
+        <tr><td>Kang 2018 count matrix, <code>--lab</code>: DE per cell type</td><td>The lab designed, built and ran it: 10 cell types, pseudobulk DESeq2, the interferon response found (up) in 9 of 10, monocytes included; QC kept only 46% of cells. Report 23/23 traced.</td></tr>
+        <tr><td>Airway (8 human samples, 24 GB): counts → DE</td><td>Planned right (DE paired by donor). The count step stopped after 68 minutes: the scratch quota was full (2,060 of 2,048 GB), partly from my own benchmark runs. The coordinator called it an infrastructure problem and the report says so; not rerun until there is room.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Found on the way, and fixed: a follow-up's <code>geth run</code> could not see its upstream run in the agent sandbox (released as 2.0.1); the operator could not change an option the error named only by its own name (DESeq2's "nsub"), and guessed parameter names (it now browses the pipeline's options); the coordinator could not see the lab's runs.</p>
+</section>
+
 <section aria-labelledby="dec-h">
   <div class="section-head">
     <span class="eyebrow">Decisions</span>
@@ -359,6 +400,7 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li><time datetime="2026-10-23">2026-10-23</time><span>R4 started: the planner is good enough to generalise the harness to the other agents.</span></li>
     <li><time datetime="2026-10-23">2026-10-23</time><span>R4 done: operator, reporter, analyst and lab agents run on Rannoch. 8/8 runs honest, 31/31 reports fully traced, both lab builds delivered. Geth no longer needs Nextflow's agent feature; Nextflow only runs the pipelines and jobs.</span></li>
     <li><time datetime="2026-10-23">2026-10-23</time><span>Rannoch becomes the only Geth: the Nextflow agents are removed ("dead weight now"), released as Geth 2.0.0 on master. Runs planned with 1.x still run and report.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>R5 (projects): you approve every step's plan; gaps are reported, the lab only with <code>--lab</code>; command <code>geth project</code>. Sol for the lab: you run it, with a hard budget per command.</span></li>
   </ul>
 </section>
 
