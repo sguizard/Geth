@@ -45,7 +45,7 @@ class RunHarness(unittest.TestCase):
             open(os.path.join(self.d, name), "w").write(text)
         open(os.path.join(self.bin, "run_nfcore.sh"), "w").write(FAKE_LAUNCHER)
         open(os.path.join(self.bin, "collect_results.py"), "w").write("print('| sample | reads |\\n| A | 1234 |')\n")
-        self.saved = run.BIN, run.Client, run.check_report.check, os.environ.get("GETH_RUNS_DIR")
+        self.saved = run.BIN, run.model_client, run.check_report.check, os.environ.get("GETH_RUNS_DIR")
         run.BIN = self.bin
         os.environ["GETH_RUNS_DIR"] = self.runs
         # The report check, as check_report.check: numbers in the report other than 1234 are not traced.
@@ -54,14 +54,14 @@ class RunHarness(unittest.TestCase):
             else ("REPORT CHECK: 1/1 numbers traced to the results", [], []))
 
     def tearDown(self):
-        run.BIN, run.Client, run.check_report.check, runs = self.saved
+        run.BIN, run.model_client, run.check_report.check, runs = self.saved
         os.environ.pop("GETH_RUNS_DIR") if runs is None else os.environ.update(GETH_RUNS_DIR=runs)
         shutil.rmtree(self.runs)
         shutil.rmtree(self.bin)
 
     def go(self, *replies, report_only=False):
         client = FakeClient(*replies)
-        run.Client = lambda *a, **k: client
+        run.model_client = lambda *a, **k: client
         rc = run.main(["--run_dir", self.d] + (["--report_only"] if report_only else []))
         return rc, client
 
