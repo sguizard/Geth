@@ -126,6 +126,8 @@ holds tagged releases. Before opening a pull request, run the tests:
 python3 geth/tests/test_geth_checks.py
 python3 geth/tests/test_collect_results.py
 python3 geth/tests/test_lab_build.py
+python3 geth/tests/test_harness.py
+python3 geth/tests/test_harness_run.py
 nextflow lint geth/main.nf geth/lab/main.nf
 ```
 

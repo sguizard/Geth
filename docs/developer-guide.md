@@ -397,6 +397,8 @@ are often read-only in jobs.
 python3 geth/tests/test_geth_checks.py -v      # the gates: 40 tests, under a second, no site needed
 python3 geth/tests/test_collect_results.py -v  # result summaries and the report check
 python3 geth/tests/test_lab_build.py -v        # the lab's bookkeeping (arms B and C) and the shell quoting
+python3 geth/tests/test_harness.py -v          # Rannoch's agent loop and planner tools, with a scripted model
+python3 geth/tests/test_harness_run.py -v      # Rannoch's operator and reporter: outcome and report fences
 nextflow lint geth/main.nf geth/lab/main.nf
 for f in geth/geth geth/lab/lab.sh geth/bin/*.sh geth/lab/bin/*.sh bench/*.sh bench/lab/*.sh; do bash -n "$f"; done
 geth doctor                                    # with a site: also probes the agent sandbox

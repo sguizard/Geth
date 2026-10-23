@@ -319,6 +319,12 @@ GETH_PLANNER=harness geth plan /path/to/my_data "Your question." my_analysis
   amplicon primers that do not start the reads, a 10x chemistry that does not match the barcode read length
   (v2: 26 bp; v3 and GEM-X v4: 28 bp), a read length that does not match the reads, an RRBS motif.
 
+The operator and reporter can run on the same loop (`GETH_RUNNER=harness geth run my_analysis`, and
+`geth report` likewise). The pipeline still runs as before; what changes is who drives it, and two checks:
+Geth refuses an outcome that the pipeline's log contradicts (a run claimed to have succeeded, or failed), and a
+report with numbers it cannot trace goes back to the reporter once, to correct, before it is saved. Follow
+the run in `geth_run.log`. Single-cell downstream analyses (`sc_downstream`) still run on the Nextflow agents.
+
 ## Good to know
 
 - Geth **never modifies or deletes your data**. It reads your files and writes only in its own runs folder.

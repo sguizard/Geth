@@ -84,6 +84,11 @@ def main():
     m = re.search(r"(\d+)/(\d+) numbers traced", check)
     outcome = open(os.path.join(run_dir, "outcome.txt")).read() if os.path.isfile(os.path.join(run_dir, "outcome.txt")) else ""
     claimed = "succeeded: true" in outcome
+    # Time in the pipeline itself (gate passed -> launch log closed), the rest is the agents' and Geth's.
+    pipeline_s = sum(os.path.getmtime(os.path.join(a, "nextflow.log")) - os.path.getmtime(os.path.join(a, "gate.txt"))
+                     for a in launched if os.path.isfile(os.path.join(a, "gate.txt")))
+    log = os.path.join(run_dir, "geth_run.log")
+    usage = [l for l in open(log, errors="replace") if l.startswith("Model usage:")] if os.path.isfile(log) else []
     print(json.dumps({
         "run": os.path.basename(run_dir), "dataset": kind,
         "plan_score": plan["score"], "plan_failed": plan["failed"],
@@ -93,6 +98,9 @@ def main():
         "report_numbers": f"{m.group(1)}/{m.group(2)}" if m else "n/a",
         "report_untraced": check.split("not traced: ")[1].split(";")[0] if "not traced:" in check else "",
         "plan_min": round(plan_s / 60, 1), "run_min": round(run_s / 60, 1),
+        "pipeline_min": round(pipeline_s / 60, 1), "agents_min": round((run_s - pipeline_s) / 60, 1) if run_s else None,
+        "runner": os.environ.get("GETH_RUNNER", "nextflow"),
+        **({"model_usage": json.loads(usage[-1].split(":", 1)[1])} if usage else {}),
         **index, **(biology(run_dir) if kind == "airway_de" else {}),
     }))
 
