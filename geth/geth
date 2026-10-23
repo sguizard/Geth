@@ -139,9 +139,11 @@ them; each pipeline step is an ordinary Geth run, named <project>-<step> (geth s
   geth project show <name>            the steps, where each stands, the coordinator's rationale
   geth project approve <name> [--yes] approve the steps (or the coordinator's revised steps)
   geth project approve <name> --lab <step> [--yes]   approve a lab step's design (geth lab show it first)
-  geth project run <name> [--answers <file>] [--detach]
+  geth project run <name> [--answers <file>] [--detach] [--overrule]
                                       run the next steps; it stops when a step's plan needs your approval
-                                      (geth show / geth approve <name>-<step>): run it again to continue
+                                      (geth show / geth approve <name>-<step>): run it again to continue.
+                                      --overrule: go on with the approved steps although the coordinator
+                                      stopped the project (or proposed other steps)
   geth project list                   all projects and where they stand
   geth project stop <name>            stop the project and its running step
 USAGE
@@ -222,6 +224,7 @@ project() {  # project <subcommand> ...: see project_usage
                     --detach) detach=yes; shift ;;
                     --answers) extra+=(--answers "$(readlink -f "${2:-}")"); shift 2 || project_usage ;;
                     --yes) extra+=(--auto-approve); shift ;;  # benchmarks only: approve each step's plan as planned
+                    --overrule) extra+=(--overrule "$(whoami)"); shift ;;  # you overrule the coordinator's stop
                     *) project_usage ;;
                 esac
             done

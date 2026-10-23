@@ -13,7 +13,7 @@ and run with the usual commands. Nothing here talks to a model.
   geth_project.py list <projects folder>
   geth_project.py approve <project_dir> <who>
   geth_project.py approve-lab <project_dir> <step id> <who>   a lab step's design
-  geth_project.py run <project_dir> [--answers <file>] [--auto-approve]
+  geth_project.py run <project_dir> [--answers <file>] [--auto-approve] [--overrule <who>]
 
 A project folder, $GETH_RUNS_DIR/projects/<name>/:
   question.txt, data_dir.txt, options.json   the request, the delivery, {"lab": true|false}
@@ -487,6 +487,22 @@ def review(pdir, step):
     return decision.get("action", "continue")
 
 
+def overrule(pdir, who):
+    """A person overrules the coordinator: its stops become continues, a proposed revision is dropped."""
+    reviews = load(os.path.join(pdir, "reviews.json"), {}) or {}
+    for sid, r in reviews.items():
+        if r.get("action") in ("stop", "revise"):
+            log(pdir, f"{who} overruled the coordinator's {r['action']} after {sid}: the approved steps go on")
+            reviews[sid] = {"action": "continue", "reason": f"overruled by {who} ({r['action']}: {r.get('reason', '')})"}
+    save(os.path.join(pdir, "reviews.json"), reviews)
+    proposed = os.path.join(pdir, "steps.proposed.json")
+    if os.path.isfile(proposed):
+        os.replace(proposed, proposed + ".overruled")
+    for f in ("report.md", "report_check.txt"):  # the report of a stopped project is written again at the end
+        if os.path.isfile(os.path.join(pdir, f)):
+            os.replace(os.path.join(pdir, f), os.path.join(pdir, f + ".before-overrule"))
+
+
 def run(pdir, answers="", auto=False):
     doc = approved_doc(pdir)
     name, question = os.path.basename(pdir), read(os.path.join(pdir, "question.txt")).strip()
@@ -661,6 +677,9 @@ def main(argv):
     elif cmd == "run":
         answers = args[args.index("--answers") + 1] if "--answers" in args else ""
         try:
+            if "--overrule" in args:
+                approved_doc(args[0])
+                overrule(args[0], args[args.index("--overrule") + 1])
             return run(args[0], answers, "--auto-approve" in args)
         except ValueError as e:
             print(f"Geth: {e}", file=sys.stderr)

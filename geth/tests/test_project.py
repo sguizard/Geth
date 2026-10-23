@@ -183,6 +183,10 @@ class Project(unittest.TestCase):
         os.remove(os.path.join(self.p, "reviews.json"))
         self.start(COUNT, CELLS, decisions={"count": "revise"})
         self.assertEqual(gp.run(self.p, auto=True), 3)
+        gp.overrule(self.p, "tester")  # the person keeps the approved steps
+        self.assertEqual(gp.run(self.p, auto=True), 0)
+        self.assertEqual(gp.status(self.p, CELLS), "done")
+        self.assertIn("tester overruled the coordinator's revise after count", gp.read(os.path.join(self.p, "log.md")))
 
 
     def test_a_lab_step_starts_from_the_count_matrix_and_waits_for_its_design_approval(self):
