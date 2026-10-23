@@ -1,0 +1,315 @@
+<title>Geth Proving Ground</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an explainer read top to bottom. The two layers of tests, then the anatomy of one benchmark result,
+   the sparse deliveries with their stand-in scientist, model comparisons, and what the tests cannot tell.
+   Same type family as the Geth logs; a teal accent for testing. */
+:root {
+  --bg: #f1f4f3;
+  --panel: #ffffff;
+  --ink: #17211f;
+  --muted: #5d6b68;
+  --line: #d4dedb;
+  --accent: #0f7a6c;
+  --accent-soft: #dff0ec;
+  --pass: #2b7a4b;
+  --pass-soft: #e3f2e9;
+  --fail: #b23a28;
+  --fail-soft: #f8e4e0;
+  --note: #8a5a12;
+  --note-soft: #f6ecd8;
+  --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111716; --panel: #182120; --ink: #e2ebe8; --muted: #93a6a1; --line: #2a3735;
+    --accent: #4fc7b4; --accent-soft: #163631; --pass: #6fcf97; --pass-soft: #173426;
+    --fail: #f08a76; --fail-soft: #3d1e19; --note: #e5b45c; --note-soft: #3a2d14;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111716; --panel: #182120; --ink: #e2ebe8; --muted: #93a6a1; --line: #2a3735;
+  --accent: #4fc7b4; --accent-soft: #163631; --pass: #6fcf97; --pass-soft: #173426;
+  --fail: #f08a76; --fail-soft: #3d1e19; --note: #e5b45c; --note-soft: #3a2d14;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 920px; margin: 0 auto; display: grid; gap: 48px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.2rem); font-weight: 600; letter-spacing: 0.02em; }
+h2 { font-size: 1.4rem; font-weight: 600; }
+h3 { font-size: 1.02rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+ul, ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 68ch; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--accent-soft); padding: 0.05em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+section { display: grid; gap: 16px; min-width: 0; }
+.section-head { display: grid; gap: 6px; }
+.lede { font-size: 1.08rem; }
+
+/* the two layers */
+.layers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.layer { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.layer .tag { justify-self: start; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; padding: 0.2em 0.6em; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; font-size: 0.9rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* pipeline of one benchmark result */
+.flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; max-width: none; }
+.flow li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; }
+.flow .num { display: grid; justify-items: center; grid-template-rows: auto 1fr; }
+.flow .num span { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-mono); font-size: 0.8rem; background: var(--accent); color: var(--panel); }
+.flow .num::after { content: ""; width: 2px; background: var(--line); margin-block: 4px; }
+.flow li:last-child .num::after { display: none; }
+.flow .body { padding-bottom: 20px; display: grid; gap: 6px; min-width: 0; }
+
+/* code-like panels */
+pre.sample { margin: 0; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.55; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; white-space: pre; }
+.k { color: var(--muted); }
+.ok { color: var(--pass); font-weight: 500; }
+.bad { color: var(--fail); font-weight: 500; }
+
+/* checks as chips */
+.checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 0.76rem; padding: 0.25em 0.6em; border-radius: 6px; background: var(--pass-soft); color: var(--pass); }
+.chip.miss { background: var(--fail-soft); color: var(--fail); }
+
+/* Q&A */
+.qa { display: grid; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.qa p { font-size: 0.92rem; }
+.qa .q::before { content: "Planner asks: "; font-weight: 600; }
+.qa .a::before { content: "Stand-in answers: "; font-weight: 600; }
+.qa .a { color: var(--muted); }
+
+.note { background: var(--note-soft); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; }
+.note strong { color: var(--note); }
+
+.limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.limit { border-top: 2px solid var(--line); padding-top: 10px; display: grid; gap: 6px; min-width: 0; }
+
+footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+@media (max-width: 680px) {
+  .layers, .limits { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+
+<div class="wrap">
+
+<header style="display: grid; gap: 14px;">
+  <span class="eyebrow">How Geth is tested</span>
+  <h1>Proving Ground</h1>
+  <p class="lede">Geth is tested in two layers. Unit tests check Geth's own code, in seconds, with no model at all. Benchmarks give real test deliveries to the agents, then score their plans against the known right answer. Every number on the Rannoch page comes from the second layer.</p>
+</header>
+
+<section aria-labelledby="layers-h">
+  <div class="section-head">
+    <span class="eyebrow">The two layers</span>
+    <h2 id="layers-h">Is Geth's code right? Are the agents right?</h2>
+  </div>
+  <div class="layers">
+    <div class="layer">
+      <span class="tag">unit tests</span>
+      <h3>Geth's code, without a model</h3>
+      <p>Each test feeds a known input to one piece of Geth and checks the output exactly: the plan check, the run-time check against the approved plan, the report check, the agent loop. Most replay a real failure, so it cannot come back.</p>
+      <dl class="facts">
+        <dt>How many</dt><dd>88, in 4 files under <code>geth/tests/</code></dd>
+        <dt>How long</dt><dd>under a second</dd>
+        <dt>Needs</dt><dd>nothing: no data, no model, no site settings</dd>
+      </dl>
+    </div>
+    <div class="layer">
+      <span class="tag">benchmarks</span>
+      <h3>The agents, on real test deliveries</h3>
+      <p>The planner gets a test delivery and a question, exactly as you would give them. Its plan is then scored, check by check, against the right answer for that delivery. Models make different mistakes from one run to the next, so each delivery is planned several times.</p>
+      <dl class="facts">
+        <dt>How many</dt><dd>15 deliveries, plus 9 sparse versions</dd>
+        <dt>How long</dt><dd>1 to 7 minutes per plan</dd>
+        <dt>Needs</dt><dd>the model service, the staged test data</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="unit-h">
+  <div class="section-head">
+    <span class="eyebrow">Layer 1</span>
+    <h2 id="unit-h">Unit tests: every failure becomes a test</h2>
+    <p>When something goes wrong in a real run or a benchmark, the fix comes with a test built from the real case: the same file names, the same wrong plan, the same error text. If a later change brings the failure back, the test says so.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Tests</th><th>What it covers</th><th>A real case it replays</th></tr></thead>
+      <tbody>
+        <tr><td><code>test_geth_checks.py</code></td><td class="n">56</td><td>The plan check, warnings, the reads checks, approval and the run-time check against the approved plan</td><td>An operator agent split technical replicates into two samples to get past an error: refused</td></tr>
+        <tr><td><code>test_harness.py</code></td><td class="n">12</td><td>Rannoch's agent loop with a scripted fake model: tools, questions, the stand-in, budgets, progress lines, the Responses API</td><td>An agent resubmitted one refused plan for 25 turns: now told to ask after 3, stopped at 6</td></tr>
+        <tr><td><code>test_collect_results.py</code></td><td class="n">7</td><td>The result tables given to the reporter, and the check of every number in the report</td><td>"990-1,218" was read as 990 and 218, so two correct numbers were flagged</td></tr>
+        <tr><td><code>test_lab_build.py</code></td><td class="n">13</td><td>The experimental lab's bookkeeping</td><td>A gene list given as Ensembl IDs where the contract asked for symbols</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <pre class="sample"><span class="k"># all four, from the repository folder</span>
+python3 geth/tests/test_geth_checks.py -v
+python3 geth/tests/test_harness.py -v
+python3 geth/tests/test_collect_results.py -v
+python3 geth/tests/test_lab_build.py -v</pre>
+</section>
+
+<section aria-labelledby="bench-h">
+  <div class="section-head">
+    <span class="eyebrow">Layer 2</span>
+    <h2 id="bench-h">One benchmark result, from delivery to score</h2>
+    <p>The worked example is the 16S amplicon delivery: four soil samples, two control plots and two warmed plots, sequenced in two separate MiSeq runs.</p>
+  </div>
+  <ol class="flow">
+    <li><div class="num"><span>1</span></div><div class="body">
+      <h3>A test delivery that looks real</h3>
+      <p>Small public test data from nf-core, renamed the way a sequencing facility delivers it (<code>1_S103_L001_R1_001.fastq.gz</code>), with a README and a sample table written as a scientist would. The staging scripts in <code>bench/</code> build them under <code>testdata/</code>; nothing about the right answer is in the folder.</p>
+    </div></li>
+    <li><div class="num"><span>2</span></div><div class="body">
+      <h3>The planner plans, as for you</h3>
+      <p><code>bench/bench_plan.sh</code> runs the normal <code>geth plan</code> with a fixed question, here "Which bacteria are in these soil samples? Compare the control and the warmed plots." Same skills, same tools, same plan check as a real analysis.</p>
+    </div></li>
+    <li><div class="num"><span>3</span></div><div class="body">
+      <h3>The plan is scored against the truth</h3>
+      <p><code>bench/eval_plan.py</code> knows the right design of each delivery and checks the plan files one point at a time. For 16S, 10 checks:</p>
+      <div class="checks">
+        <span class="chip">pipeline is ampliseq</span><span class="chip">4 rows</span><span class="chip">all samples</span><span class="chip">valid names</span><span class="chip">distinct names</span><span class="chip">R1/R2 pairs</span><span class="chip miss">runs</span><span class="chip">primers</span><span class="chip">16S taxonomy</span><span class="chip">no unknown options</span>
+      </div>
+      <p>Qwen's plan <code>r5qwen_ampliseq_16s_1</code> scored 9/10: it gave all four samples the same sequencing run, so the error model would be learnt across two runs. In red: the one that failed.</p>
+    </div></li>
+    <li><div class="num"><span>4</span></div><div class="body">
+      <h3>One line per plan</h3>
+      <p>Each plan adds one line to <code>$GETH_WORK_ROOT/geth/bench/&lt;tag&gt;.jsonl</code>. A plan counts as <strong>fully correct</strong> only if every check passes, Geth's own plan check accepts it, and planning did not fail. Below, Sol's line for the same delivery, which asked about the runs and scored 10/10.</p>
+    </div></li>
+  </ol>
+  <pre class="sample">{<span class="k">"run":</span> "r5sol_ampliseq_16s_1",
+ <span class="k">"score":</span> <span class="ok">"10/10"</span>, <span class="k">"failed":</span> [],             <span class="k">← the scorer's checks</span>
+ <span class="k">"plan_status":</span> "ok", <span class="k">"plan_check":</span> <span class="ok">"PLAN CHECK: OK"</span>,  <span class="k">← Geth's own check</span>
+ <span class="k">"plan_min":</span> 1.2, <span class="k">"peak_rss_mb":</span> 27,                <span class="k">← time, memory on node1q01</span>
+ <span class="k">"model_usage":</span> {<span class="k">"requests":</span> 8, <span class="k">"prompt_tokens":</span> 58363, <span class="k">"cached_tokens":</span> 49412,
+                 <span class="k">"completion_tokens":</span> 2645, <span class="k">"usd":</span> 0.14, <span class="k">"model":</span> "gpt-6.1-sol"},
+ <span class="k">"questions":</span> 5, <span class="k">"unknown_answers":</span> 0, <span class="k">"rounds":</span> 1}  <span class="k">← what it asked</span></pre>
+</section>
+
+<section aria-labelledby="sparse-h">
+  <div class="section-head">
+    <span class="eyebrow">Testing a planner that asks</span>
+    <h2 id="sparse-h">Sparse deliveries and a stand-in scientist</h2>
+    <p>A planner that asks questions needs someone to answer them, and nobody can sit through 90 plans. So each sparse delivery comes with a stand-in.</p>
+  </div>
+  <ul>
+    <li><strong>A sparse delivery</strong> keeps the same reads and reference, but its README is one line, for example "16S rRNA amplicon sequencing of soil samples, Illumina MiSeq paired-end." The files are hard links, so they take no extra space and are visible inside the agent sandbox.</li>
+    <li><strong>The facts it no longer says</strong> move to <code>bench/facts/&lt;delivery&gt;.txt</code>, written as the scientist would know them: primers, plots, runs, controls.</li>
+    <li><strong>The stand-in</strong> is a separate model call (Qwen) that answers only from that file, copying exact values, and answers "I don't know: use your recommendation" otherwise. It never sees the scorer's truth.</li>
+  </ul>
+  <div class="qa">
+    <p class="q">What are the forward and reverse primer sequences used for the 16S rRNA amplification?</p>
+    <p class="a">515F (GTGYCAGCMGCCGCGGTAA) and 806R (GGACTACNVGGGTWTCTAAT).</p>
+    <p class="q">Are there any negative controls included in this run that should be marked for decontamination?</p>
+    <p class="a">I don't know: use your recommendation.</p>
+  </div>
+  <p>Each sparse delivery is then planned three ways: without questions, asking the stand-in, and with the full README. The difference between the first two is what asking is worth (3/18 against 15/18 fully correct in R3). The third shows that a planner which asks does not get worse when the README is complete.</p>
+  <div class="note">
+    <strong>Tuned and held out</strong>
+    <p>After the first round, the skills were improved using 6 sparse deliveries. To check that this was not just fitting the test, 3 more sparse deliveries were held out and never used for tuning: Nanopore barcodes, ATAC-seq and Iso-Seq. Their scores (8/9 against 6/9 without questions) are the honest measure.</p>
+  </div>
+</section>
+
+<section aria-labelledby="cmp-h">
+  <div class="section-head">
+    <span class="eyebrow">Comparing models</span>
+    <h2 id="cmp-h">Only the model may differ</h2>
+    <p>For Qwen, GPT-6 Luna and GPT-6.1 Sol, everything else was held the same, so differences in the scores belong to the planner's model.</p>
+  </div>
+  <ul>
+    <li>Same deliveries, question, skills, tools and plan check; same number of plans (27 sparse, 18 full).</li>
+    <li>Same stand-in for all: always Qwen, whatever model plans. A better stand-in for one model would flatter it.</li>
+    <li>Same code: the Qwen side was rerun with the day's planner, not taken from older runs.</li>
+    <li>Paid models only within hard budgets: each plan stops at its cap, and the benchmark starts no plan once its total is spent. Both were tested on Qwen with made-up prices before any paid call.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="scan-h">
+  <div class="section-head">
+    <span class="eyebrow">Before a new check goes in</span>
+    <h2 id="scan-h">Replay it on every past plan</h2>
+    <p>A new check or warning is first run over all the plans in the runs folder, 477 by now. It must flag only plans that really were wrong. A check that fires on good plans would teach you to ignore it.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>New check</th><th>Flagged on past plans</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>16S primers must start the reads</td><td>2 plans with a guessed primer (0% and 10% of reads)</td><td>real errors</td></tr>
+        <tr><td>Read length must match the reads</td><td>the plans that trusted a test README saying 50 bp (the reads are 76 bp)</td><td>real errors, in my test data</td></tr>
+        <tr><td>A read pair must be mates</td><td>1 plan pairing lane 1 with lane 2</td><td>real error</td></tr>
+        <tr><td>Samples in the README missing from the plan</td><td>first version: ChIP and ATAC plans whose replicates are grouped</td><td>false alarms: rewritten before it went in</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="lim-h">
+  <div class="section-head">
+    <span class="eyebrow">Limits</span>
+    <h2 id="lim-h">What the tests cannot tell you</h2>
+  </div>
+  <div class="limits">
+    <div class="limit"><h3>Small numbers</h3><p>3 plans per delivery shows a trend, not a precise rate. A difference of one or two plans (43/45 against 45/45) is within noise.</p></div>
+    <div class="limit"><h3>The truth can be wrong</h3><p>The scorer trusts what I wrote about each delivery. Twice it was wrong: two READMEs claimed 50 bp reads that are 76 bp, and the planner that measured the reads was marked wrong.</p></div>
+    <div class="limit"><h3>The stand-in makes mistakes</h3><p>With its thinking off it once gave a wrong replicate grouping, and the planner followed it. Such misses belong to the stand-in, not the planner.</p></div>
+    <div class="limit"><h3>Real deliveries find more</h3><p>No benchmark had multiplexed 10x data until your chicken delivery. The next step records what you change in a plan before approving it, so each real use can become a test.</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="cmd-h">
+  <div class="section-head">
+    <span class="eyebrow">Commands</span>
+    <h2 id="cmd-h">Running a benchmark yourself</h2>
+  </div>
+  <pre class="sample"><span class="k"># stage the test deliveries (once)</span>
+bash bench/stage_deliveries.sh          <span class="k"># ChIP, ATAC, 16S, Nanopore, ancient DNA, Iso-Seq, ...</span>
+bash bench/stage_sparse.sh              <span class="k"># their sparse versions</span>
+
+<span class="k"># 3 plans of 2 deliveries, Rannoch planner, scored as they finish</span>
+GETH_PLANNER=harness bash bench/bench_plan.sh mytag 3 bulk_yeast ampliseq_16s
+
+<span class="k"># sparse versions, with the stand-in answering from bench/facts/</span>
+GETH_PLANNER=harness GETH_BENCH_TESTDATA=testdata_sparse GETH_BENCH_ANSWERS=yes \
+    bash bench/bench_plan.sh mytag_sparse 3 ampliseq_16s
+
+<span class="k"># results: one JSON line per plan</span>
+cat $GETH_WORK_ROOT/geth/bench/mytag.jsonl</pre>
+  <p>Full runs, where an approved plan is run through the pipeline and its report checked, use <code>bench/bench_run.sh</code> and <code>bench/eval_run.py</code> the same way.</p>
+</section>
+
+<footer>
+  <span>Progress: <a href="https://claude.ai/artifact/RA8kf8MuAowGrPSq1nKQKP">Geth Rannoch</a> · <a href="https://claude.ai/artifact/T3ApkP9kZzudYe7X1vFAnH">Geth Progress</a> (1.x).</span>
+  <span>Source: <code>docs/history/testing.html</code>; tests in <code>geth/tests/</code>, benchmarks in <code>bench/</code>.</span>
+</footer>
+
+</div>
