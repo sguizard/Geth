@@ -55,6 +55,7 @@ geth/
     plan.py, tools.py, ask.py   the planner, its tools, and its questions (ASK_USER, the stand-in)
     run.py, report.py      the operator, the single-cell analyst and the reporter (geth run, geth report)
     lab.py                 the lab's designer, judge, engineers and reviewers
+    project.py             the project coordinator: plan the steps, review after each, write the project report
   jobs.nf                  the tools' scheduler jobs: the single-cell toolbox (SC_INSPECT, SC_ANALYSE)
   nextflow.config          settings of those jobs, read from the environment (folders)
   bin/                     the gates and launchers (on the jobs' PATH: Nextflow adds jobs.nf's bin/)
@@ -63,6 +64,7 @@ geth/
     sc_downstream.py       the single-cell toolbox (inspect / run), executed in the CellTypist container
     sc_analyse.sh          SC_ANALYSE tool: one gated toolbox analysis per call
     sc_job.sh              starts one toolbox job (inspect or analyse) through jobs.nf
+    geth_project.py        projects: the step check, approval, state, Ensembl lookup, and the runner
     collect_results.py     ready-to-copy result tables for the reporter
     check_report.py        traces every number and link of the report to the facts
     geth_doctor.sh         installation checks (geth doctor)
@@ -72,7 +74,8 @@ geth/
     env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
   completions/geth.fish    fish tab completion (loaded by env.fish)
   conf/                    configs added to nf-core runs: resource caps, legacy singularity engine
-  schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release
+  schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release;
+                           nfcore_catalogue.tsv: every nf-core pipeline (name, release, description), for gaps
   skills/                  planner skills: one SKILL.md per pipeline, plus sc-downstream
   references/              scripts that add entries to the reference catalogue
   tests/                   unit tests of the gates, the agents (with a scripted model) and the lab (self-contained)
@@ -316,6 +319,7 @@ Keep skills short (30 to 50 lines) and factual. The plan check, not the skill, i
 | `input_format` | `tsv`: the samplesheet is converted before launch (eager) |
 | `legacy_limits` | pass `--max_cpus/--max_memory/--max_time` (pre-`resourceLimits` templates) |
 | `design_params` | parameters that describe the data, frozen by the gate like the design columns |
+| `follows` | a follow-up: the pipeline whose finished run it builds on (projects check that order) |
 | `second_sheet` | a second plan sheet: its file (`plan_contrasts.csv`, `plan_barcodes.csv`), the nf-core parameter `run_nfcore.sh` passes it as, and its name in messages. Internally it travels as "contrasts" (`--contrasts`, `contrasts_lines`) |
 
 **Data-dependent memory.** `geth_checks.py resources` writes an extra config for jobs whose memory depends on
@@ -430,6 +434,7 @@ python3 geth/tests/test_lab_build.py -v        # the lab's bookkeeping (arms B a
 python3 geth/tests/test_harness.py -v          # the agent loop and the planner's tools, with a scripted model
 python3 geth/tests/test_harness_run.py -v      # operator, analyst and reporter: outcome and report fences
 python3 geth/tests/test_harness_lab.py -v      # the lab's agents: design check, notes and review
+python3 geth/tests/test_project.py -v          # projects: the step check, approval, the runner (stand-in commands)
 nextflow lint geth/jobs.nf geth/lab/jobs.nf
 for f in geth/geth geth/lab/lab.sh geth/bin/*.sh geth/lab/bin/*.sh bench/*.sh bench/lab/*.sh; do bash -n "$f"; done
 geth doctor                                    # with a site: also probes the agent sandbox
@@ -469,6 +474,41 @@ launch.
 
 Results are appended as JSON lines to `$GETH_BENCH_DIR/<tag>.jsonl`. Benchmarks approve plans
 automatically: use public data only.
+
+## Projects (geth project)
+
+A project is a list of steps towards one question, in `$GETH_RUNS_DIR/projects/<name>/`. Geth's agents never
+run a step themselves: `geth_project.py` (no model) checks and runs them, and the coordinator
+(`harness/project.py`) only decides, at three points.
+
+1. **Plan** (`geth project new`): the coordinator reads the delivery with the planner's read-only tools, plus
+   `LIST_CAPABILITIES` (generated from the registry and the skills), `SEARCH_NFCORE` and `FIND_GENOME`
+   (Ensembl's REST API). It ends with `SUBMIT_STEPS`. Each step has an `id`, a `kind`, its own `question` and
+   `after` (the ids of earlier steps it builds on):
+   - `pipeline`: a registry pipeline. A follow-up (`follows` in the registry) must come after exactly one step
+     of that pipeline; a pipeline on sequencing data builds on no analysis step, and its `data` is a folder of
+     the delivery (a relative path is inside it).
+   - `reference`: `species`, `assembly`, `release`, verified against Ensembl's FTP (genome FASTA and GTF, with
+     their sizes), refused when the catalogue already has the entry.
+   - `gap`: a `suggestion`, and `nfcore` if a real nf-core pipeline would do it (refused if Geth runs it).
+   - `lab`: only when the project was created with `--lab`, from one scrnaseq or sc_downstream step's count
+     matrix, or from a delivery that is one `.h5ad`.
+   At most 8 steps. `steps_check.txt` holds the result; `APPROVED` the approver and the SHA-256 of `steps.json`.
+2. **Run** (`geth project run`, `geth_project.py run`): the steps in order. A pipeline step is planned with
+   `geth plan` (or `--from` its upstream step's run) into `<project>-<step>`; the runner stops (exit 2) until a
+   person approves that plan; then `geth run`. A reference step runs `stage_ensembl.sh` through
+   `GETH_DOWNLOAD_SUBMIT`. A lab step links the count matrix and a README into `lab_<step>/`, adds it to
+   `GETH_LAB_DATA` for that step, runs `geth lab design`, waits for `approve-lab`, then `geth lab build`. A step
+   whose `after` did not finish is not started. Everything is derived from the folders, so a stopped project
+   resumes where it was.
+3. **Review**, after each finished (or failed) step: `DECIDE` continue, stop, or revise. A revision must keep
+   the steps that have started exactly as they were; it goes to `steps.proposed.json` and needs approval (exit 3).
+4. **Summary**: `SUBMIT_REPORT` writes `report.md`, checked by `check_report.check_against` against the facts of
+   every finished step's run, what the steps' reports quoted, and a lab step's result tables.
+
+The coordinator runs as an agent stage (sandboxed, no driver slot), with the step runs mounted read-only
+(`--step_run`). `geth_project_<mode>.log` and `harness_trace_<mode>.jsonl` record each decision; `log.md`
+records the run in plain words.
 
 ## The lab (experimental, phase 11)
 
