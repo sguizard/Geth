@@ -202,13 +202,14 @@ def parse_params(text):
     text = text.strip()
     if not text:
         return {}
-    if text.startswith("{"):
-        params = json.loads(text)
+    params, rest = {}, text
+    if text.startswith("{"):  # a JSON object, possibly followed by key=value lines (e.g. justification=...)
+        params, end = json.JSONDecoder().raw_decode(text)
         if not isinstance(params, dict):
             raise ValueError("params must be a JSON object")
-    else:
-        params = {}
-        for line in text.splitlines():
+        rest = text[end:]
+    if rest.strip():
+        for line in rest.splitlines():
             line = line.strip().rstrip(",")
             if not line:
                 continue
@@ -891,10 +892,17 @@ def sc_value(key, value):
         elif kind == "bool":
             v = value if isinstance(value, bool) else str(value).strip().lower() in ("true", "yes", "1")
             return v, None
-        elif kind == "list_float":
-            v = [float(x) for x in (value if isinstance(value, list) else str(value).split(",")) if str(x).strip()]
-        elif kind == "list_str":
-            v = [str(x).strip() for x in (value if isinstance(value, list) else str(value).split(",")) if str(x).strip()]
+        elif kind in ("list_float", "list_str"):
+            items = value
+            if not isinstance(value, list):  # "0.4,0.8" or "[0.4, 0.8]" (a key=value line holding a JSON list)
+                text = str(value).strip()
+                try:
+                    items = json.loads(text) if text.startswith("[") else text.split(",")
+                except ValueError:
+                    items = text.strip("[]").split(",")
+                items = items if isinstance(items, list) else [items]
+            items = [str(x).strip().strip("'\"") for x in items if str(x).strip()]
+            v = [float(x) for x in items] if kind == "list_float" else items
         else:
             v = str(value).strip()
     except (TypeError, ValueError):
@@ -1486,6 +1494,20 @@ def sc_gate(plan, params_text_or_dict, state):
     return out
 
 
+def sc_merge(run_dir, submitted_text):
+    """A revision of the single-cell design may name only the keys it changes (and justification=...): it is
+    applied to the approved design. A whole design, or text that does not parse (the gate says why), is kept."""
+    try:
+        submitted = parse_params(submitted_text)
+    except ValueError:
+        return submitted_text
+    required = {k for k, (_, _, _, req) in SC_MENU.items() if req}
+    if required <= set(submitted):
+        return submitted_text
+    approved = parse_params(read_text(os.path.join(run_dir, "plan_params.json")))
+    return json.dumps({**approved, **submitted}, indent=2)
+
+
 def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_text="", profile="", upstream=""):
     """Write the planner's proposal as plan_* files. If it fails the plan check but an earlier version
     passed CHECK_PLAN during planning, keep that checked version instead (and say so)."""
@@ -1663,6 +1685,9 @@ def main(argv):
         return 0
     if cmd == "approve":
         return approve(argv[2], argv[3] if len(argv) > 3 else getpass.getuser())
+    if cmd == "sc-merge":  # sc-merge <run_dir> <submitted design> <out>: a partial revision on the approved design
+        open(argv[4], "w").write(sc_merge(argv[2], open(argv[3]).read()))
+        return 0
     if cmd == "gate":
         extra, argv = parts(argv)
         problems = gate(argv[2], pipeline_name(argv[3]), open(argv[4]).read(), open(argv[5]).read(),

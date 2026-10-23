@@ -885,5 +885,33 @@ class ComparisonFences(unittest.TestCase):
         self.assertFalse(any("needs a reference" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, {"genome": "R64-1-1"})))
 
 
+
+class ScRevision(unittest.TestCase):
+    """The analyst's revisions of r4b_sc_1 (2026-10-23), all refused on format before: a partial key=value
+    revision, a JSON design followed by justification=..., and a JSON list in a key=value line."""
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp()
+        self.approved = {"qc.min_genes": 200, "qc.max_pct_mt": 17.2, "doublets.method": "scrublet",
+                         "leiden.resolutions": [0.4, 0.8, 1.2], "leiden.chosen": 0.8, "markers.panel": ["CD3E", "MS4A1"]}
+        open(os.path.join(self.run, "plan_params.json"), "w").write(json.dumps(self.approved))
+
+    def tearDown(self):
+        shutil.rmtree(self.run)
+
+    def test_partial_revision_is_applied_to_the_approved_design(self):
+        merged = json.loads(gc.sc_merge(self.run, "qc.min_genes=150\njustification=Cells kept 81.0% < 85%"))
+        self.assertEqual(merged["qc.min_genes"], 150)
+        self.assertEqual(merged["leiden.resolutions"], [0.4, 0.8, 1.2])
+        self.assertEqual(merged["justification"], "Cells kept 81.0% < 85%")
+
+    def test_json_then_justification_and_json_lists_in_lines(self):
+        params = gc.parse_params(json.dumps(self.approved) + "\njustification=cells kept 81%")
+        self.assertEqual(params["justification"], "cells kept 81%")
+        self.assertEqual(gc.sc_value("leiden.resolutions", "[0.4, 0.8, 1.2]"), ([0.4, 0.8, 1.2], None))
+        self.assertEqual(gc.sc_value("markers.panel", '["CD3E", "CD4"]'), (["CD3E", "CD4"], None))
+        self.assertEqual(gc.sc_value("leiden.resolutions", "0.4,0.8"), ([0.4, 0.8], None))
+
+
 if __name__ == "__main__":
     unittest.main()

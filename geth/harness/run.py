@@ -141,15 +141,11 @@ def completed(attempt):
     return bool(attempt) and "Pipeline completed successfully" in read(attempt, "nextflow.log")
 
 
-def last_analysis(run_dir):
+def succeeded_analyses(run_dir):
+    """The single-cell toolbox's analyses that succeeded (sc_analyse.sh leaves SUCCEEDED), in order. A revision
+    the gate refused, or that failed, leaves a folder too, but does not undo an earlier analysis."""
     analyses = sorted(glob.glob(os.path.join(run_dir, "analysis_*")), key=lambda p: int(p.rsplit("_", 1)[1]))
-    return analyses[-1] if analyses else None
-
-
-def analysed(run_dir):
-    """Did the last analysis of the single-cell toolbox succeed (sc_analyse.sh leaves SUCCEEDED)?"""
-    last = last_analysis(run_dir)
-    return bool(last) and os.path.isfile(os.path.join(last, "SUCCEEDED"))
+    return [a for a in analyses if os.path.isfile(os.path.join(a, "SUCCEEDED"))]
 
 
 def sc_analyse_tool(run_dir, calls):
@@ -188,13 +184,23 @@ def submit_outcome_tool(run_dir, outcome, calls, analyst=False):
     saw, not the model's count."""
     def run(succeeded, outdir, changes_to_plan, last_error, annotations=None):
         ok = str(succeeded).lower() in ("true", "yes", "1")
-        done = analysed(run_dir) if analyst else completed(last_attempt(run_dir))
-        what = "the last analysis did not succeed" if analyst else ("the last launched attempt did not complete (its "
-                                                                    "pipeline log has no 'Pipeline completed successfully')")
-        if ok and not done:
-            return f"REFUSED: {what}: report succeeded=false with its error, or fix it."
-        if done and not ok:
-            return "REFUSED: the last " + ("analysis" if analyst else "launched attempt") + " succeeded: report succeeded=true."
+        if analyst:
+            good = succeeded_analyses(run_dir)
+            names = ", ".join(os.path.basename(g) for g in good)
+            if ok and not good:
+                return "REFUSED: no analysis succeeded: report succeeded=false with the last error."
+            if ok and os.path.basename(os.path.normpath(str(outdir or ""))) not in [os.path.basename(g) for g in good]:
+                return f"REFUSED: OUTDIR must be the folder of an analysis that printed STATUS: SUCCESS ({names})."
+            if good and not ok:
+                return (f"REFUSED: {names} succeeded (a refused or failed revision does not undo it): report "
+                        "succeeded=true with the OUTDIR of the analysis your annotations describe.")
+        else:
+            done = completed(last_attempt(run_dir))
+            if ok and not done:
+                return ("REFUSED: the last launched attempt did not complete (its pipeline log has no 'Pipeline "
+                        "completed successfully'): report succeeded=false with its error, or fix it.")
+            if done and not ok:
+                return "REFUSED: the last launched attempt succeeded: report succeeded=true."
         listed = lambda v: [str(c) for c in (v if isinstance(v, list) else [v] if v else [])
                             if str(c).strip() and str(c).strip().lower() != "none"]
         outcome.update(succeeded=ok, attempts=len(calls), outdir=str(outdir or "none"), fixes_applied=listed(changes_to_plan),
@@ -300,8 +306,9 @@ def main(argv=None):
         except ModelError as e:
             log(f"Geth: {e}")
         if not outcome:  # the agent gave no outcome: say what the disk says
-            ok = analysed(a.run_dir) if single_cell else completed(last_attempt(a.run_dir))
-            outdir = (last_analysis(a.run_dir) if single_cell else os.path.join(a.run_dir, "results")) if ok else "none"
+            good = succeeded_analyses(a.run_dir)
+            ok = bool(good) if single_cell else completed(last_attempt(a.run_dir))
+            outdir = (good[-1] if single_cell else os.path.join(a.run_dir, "results")) if ok else "none"
             outcome.update(succeeded=ok, attempts=len(calls), outdir=outdir, fixes_applied=[], annotations=[],
                            last_error="none" if ok else f"the {agent.name} ended without reporting an outcome")
             save_outcome(a.run_dir, outcome)

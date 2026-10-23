@@ -163,6 +163,18 @@ class RunHarness(unittest.TestCase):
         self.assertIn("single-cell analyst", first[0]["content"])
         self.assertIn('{"resolutions": [0.5]}', first[1]["content"])
 
+    def test_a_refused_revision_does_not_undo_a_successful_analysis(self):
+        for n, ok in ((1, True), (2, False)):  # analysis_2: refused by the gate
+            os.makedirs(os.path.join(self.d, f"analysis_{n}"))
+            if ok:
+                open(os.path.join(self.d, f"analysis_{n}", "SUCCEEDED"), "w").close()
+        tool = run.submit_outcome_tool(self.d, {}, ["a", "b"], analyst=True)
+        submit = lambda **k: tool.func(**dict(dict(changes_to_plan=[], last_error="none", annotations=[]), **k))
+        self.assertIn("analysis_1 succeeded", submit(succeeded=False, outdir="none"))
+        self.assertIn("OUTDIR must be the folder of an analysis", submit(succeeded=True, outdir=os.path.join(self.d, "analysis_2")))
+        self.assertEqual(submit(succeeded=True, outdir=os.path.join(self.d, "analysis_1")), "OUTCOME SAVED")
+        self.assertIn("succeeded: true\nattempts: 2\n", self.outcome())
+
     def test_outcome_txt_round_trip(self):
         outcome = {"succeeded": True, "attempts": 3, "outdir": "/r/results", "fixes_applied": ["a", "b"],
                    "annotations": [], "last_error": "none"}
