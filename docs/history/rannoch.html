@@ -125,14 +125,14 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <span class="eyebrow">Geth 2.0 · codename</span>
   <div class="title-row">
     <h1>Rannoch</h1>
-    <span class="pill ok">R3 done</span>
+    <span class="pill ok">R4 done</span>
   </div>
   <p class="lede">Geth on its own ground. The agents move from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly. Nextflow keeps doing what it is best at: running the pipelines. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
   <div class="meta">
     <span>Started 2026-10-21</span>
     <span>branch feature/rannoch</span>
     <span>Qwen 3.5 397B · ELM</span>
-    <span>Geth 1.x: v1.9.2</span>
+    <span>Geth 1.x: v1.9.3</span>
   </div>
 </header>
 
@@ -218,11 +218,17 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
         </ul>
       </div>
     </li>
-    <li class="step idea">
+    <li class="step done">
       <div class="node"><span class="dot">R4</span></div>
       <div class="step-body">
-        <div class="step-head"><h3>The other agents move over</h3><span class="pill idea">proposed</span></div>
-        <p>Operator, reporter and the lab's designer, engineer and reviewer on the harness, each against its own benchmark. Nextflow then only runs pipelines.</p>
+        <div class="step-head"><h3>The other agents move over</h3><span class="pill ok">done</span></div>
+        <ul>
+          <li><code>GETH_RUNNER=harness</code>: the operator and reporter (<code>geth run</code>, <code>geth report</code>), and the single-cell analyst. <code>GETH_LAB_RUNNER=harness</code>: the lab's designer, judge, engineers and reviewers. Same instructions, tools and skills as the Nextflow agents.</li>
+          <li>Two new checks the typed answers could not give. Geth refuses an outcome the pipeline's log contradicts, either way. A report with numbers it cannot trace goes back to the reporter once, to correct, before it is saved.</li>
+          <li>The tools' scheduler jobs (single-cell toolbox, lab tests) go through two small Nextflow job files with your site's config. Nextflow now only runs jobs.</li>
+          <li>The operator runs the approved plan by naming the pipeline, instead of copying the plan out again. A run takes one driver slot instead of two.</li>
+          <li>Result: every agent works on Rannoch, as well as or better than on Nextflow's agents. The checks are stricter: reports trace every number, and outcomes match the logs. Try it with <code>GETH_RUNNER=harness geth run …</code>.</li>
+        </ul>
       </div>
     </li>
     <li class="step idea">
@@ -300,6 +306,38 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <p>Sol's only real slip was planning yeast RNA-seq without any reference (it judged the test genome too small); Luna once paired reads from two different lanes. Both passed the plan check, which now refuses them. Some misses were the stand-in's: with thinking off it once gave a wrong replicate grouping, which the planner followed.</p>
 </section>
 
+<section aria-labelledby="r4-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="r4-h">Operator, reporter, analyst and lab: Nextflow agents vs Rannoch</h2>
+    <p>Same plans, model, tools and checks. Operator: 8 small test deliveries run with each plan as approved, plus one delivery with a FASTQ cut short, which no allowed fix can repair. Reporter: the reports of 16 finished runs written again on copies (Rannoch twice). Agent time is the run's time minus the pipeline's.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Measure</th><th>Nextflow agents</th><th>Rannoch</th></tr></thead>
+      <tbody>
+        <tr><td>Good deliveries: succeeded, outcome honest</td><td class="n">7/7 (v1.9)</td><td class="n">8/8</td></tr>
+        <tr><td>Their reports: every number traced</td><td class="n">4/7 (v1.9)</td><td class="n">7/8</td></tr>
+        <tr><td>Agent minutes per run, median</td><td class="n">2.1</td><td class="n">1.9</td></tr>
+        <tr><td>Truncated FASTQ: outcome</td><td>failed, said so · 5.7 min</td><td>failed, said so · 2.0 min; its two attempts to drop lanes were refused by the gate</td></tr>
+        <tr><td>Reporter, 16 runs: every number traced</td><td class="n">10/16</td><td class="n">31/31 saved</td></tr>
+        <tr><td>Reporter minutes, median</td><td class="n">1.1</td><td class="n">1.7</td></tr>
+        <tr><td>Single-cell follow-up of PBMC 1k (populations · numbers traced)</td><td class="n">7/7 · 88/88, no revision ever accepted</td><td class="n">7/7 · 104/104 and 91/91, one justified revision</td></tr>
+        <tr><td>Lab designs (kang2018 · pbmc1k)</td><td class="n">17–19/20 · 11–12/12, 3.3–4.6 min</td><td class="n">17/20 · 12/12, 2.4–2.8 min</td></tr>
+        <tr><td>Lab builds, arm B · arm C (pbmc1k)</td><td class="n">delivered, 7 populations, markers 6/6, 22 min · not deliverable, 5, 3/4, 23 min</td><td class="n">delivered, 7, markers 7/7, 26 min · delivered, 5, 3/4, 22 min</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The Nextflow reporter is quicker because it writes once and saves what it wrote. Rannoch sent 11 of 31 first drafts back (one to five numbers each, such as read totals rounded to "182,000"), and every one came back clean. The only number left flagged on an operator run was a bound (">93% mapped"), which the check cannot verify. Agent time is almost all the model's: a median of 109 seconds of model calls per run. The rest is Geth's checks and the pipeline's launch.</p>
+  <p>Found on the way, and fixed:</p>
+  <ul>
+    <li>chipseq and atacseq reports had no QC table and no peak counts, because MultiQC wrote only JSON there.</li>
+    <li>mag's newer MultiQC crashed the results summary.</li>
+    <li>The single-cell analyst's revisions had always been refused on format (also in Geth 1.x). Revisions that name only the changed keys, or list values, now work.</li>
+    <li>A refused revision made my first outcome check reject the analyst's true claim.</li>
+  </ul>
+</section>
+
 <section aria-labelledby="dec-h">
   <div class="section-head">
     <span class="eyebrow">Decisions</span>
@@ -316,6 +354,10 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li><time datetime="2026-10-22">2026-10-22</time><span>The reads now check the plan: amplicon primers, 10x barcode read length, read length, RRBS motif. On past plans they flag only real errors.</span></li>
     <li><time datetime="2026-10-22">2026-10-22</time><span>Comparison through ELM (your runs, hard budgets): Sol 26/27 sparse and fastest for $2 per 45 plans; Luna 23/27 for $0.35; Qwen 19/27, free. The comparison also exposed two plan-check gaps, now closed.</span></li>
     <li><time datetime="2026-10-22">2026-10-22</time><span>Estimate for a frontier comparison with GPT-6 Astra (third-party prices, $10 / $50 per million tokens): about $60 for the R3 benchmark without caching, $30–35 with it, a $10–15 pilot first. Only with you, with a hard budget cap in the harness.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>Qwen stays the free default planner; Sol can be switched on for one plan with <code>geth plan … --model sol</code>, within a 50-cent cap. You start paid plans, never Geth on its own.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>ELM's own prices are unknown, so the cost estimates keep OpenAI's list prices.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>R4 started: the planner is good enough to generalise the harness to the other agents.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>R4 done: operator, reporter, analyst and lab agents run on Rannoch. 8/8 runs honest, 31/31 reports fully traced, both lab builds delivered. Geth no longer needs Nextflow's agent feature; Nextflow only runs the pipelines and jobs.</span></li>
   </ul>
 </section>
 
