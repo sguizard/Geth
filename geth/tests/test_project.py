@@ -30,6 +30,7 @@ class Project(unittest.TestCase):
         self.p = os.path.join(gp.RUNS, "projects", "demo")
         for d in (self.data, self.p, gp.REFERENCES):
             os.makedirs(d)
+        open(os.path.join(self.data, "S1_R1.fastq.gz"), "w").write("reads")
         open(os.path.join(self.p, "data_dir.txt"), "w").write(self.data + "\n")
         open(os.path.join(self.p, "question.txt"), "w").write("Which cell types are there?\n")
         gp.save(os.path.join(self.p, "options.json"), {"lab": False})
@@ -54,6 +55,7 @@ class Project(unittest.TestCase):
         self.assertIn("no step above", self.problems(dict(CELLS, after=["later"]), COUNT)[0])
         self.assertIn("is not a folder of the delivery", self.problems(dict(rnaseq, data="/etc"))[0])
         os.makedirs(os.path.join(self.data, "RNA"))
+        open(os.path.join(self.data, "RNA", "S1_R1.fastq.gz"), "w").write("reads")
         doc = {"steps": [dict(rnaseq, data="RNA")]}
         self.assertEqual(gp.check(self.p, doc)[0], [])  # relative: inside the delivery
         self.assertEqual(doc["steps"][0]["data"], os.path.join(self.data, "RNA"))
@@ -92,10 +94,17 @@ class Project(unittest.TestCase):
         atac = {"id": "atac", "kind": "pipeline", "pipeline": "atacseq", "question": "Peaks."}
         self.assertIn("both use", self.problems(rna, atac)[0])
         os.makedirs(os.path.join(self.data, "ATAC"))
+        for kind in ("RNA", "ATAC"):
+            open(os.path.join(self.data, kind, "S1_R1.fastq.gz"), "w").write("reads")
         self.assertEqual(self.problems(dict(rna, data="RNA"), dict(atac, data="ATAC")), [])
         os.makedirs(os.path.join(self.data, "RNA", "fastq"))
         open(os.path.join(self.data, "RNA", "README.txt"), "w").write("RNA-seq\n")
         self.assertIn("holds no README or sample table", self.problems(dict(rna, data="RNA/fastq"))[0])
+
+    def test_a_pipeline_on_sequencing_data_needs_reads(self):
+        os.makedirs(os.path.join(self.data, "matrix"))
+        open(os.path.join(self.data, "matrix", "kang.h5ad"), "w").write("matrix")
+        self.assertIn("needs sequencing reads", self.problems(dict(COUNT, data="matrix"))[0])
 
     def test_ids_size_and_started_steps(self):
         self.assertIn("is used twice", self.problems(COUNT, dict(COUNT))[0])

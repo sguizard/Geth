@@ -209,6 +209,17 @@ def delivered_genomes(data_dir):
     return sorted(found)
 
 
+READS = (".fastq", ".fastq.gz", ".fq", ".fq.gz", ".bam", ".cram", ".fast5", ".pod5", ".sra")
+
+
+def sequencing_files(folder):
+    """Sequencing files (reads) in a folder, 3 levels deep."""
+    found = []
+    for depth in ("", "*/", "*/*/", "*/*/*/"):
+        found += [f for f in glob.glob(os.path.join(folder, depth + "*")) if f.lower().endswith(READS)]
+    return found
+
+
 def described(folder):
     """Text files that describe data (README, sample tables) directly in a folder."""
     return [f for f in glob.glob(os.path.join(folder, "*")) if os.path.isfile(f)
@@ -292,6 +303,9 @@ def check(pdir, doc, started=()):
                 if not (data.startswith(DATA_ROOT + "/") and os.path.isdir(data)):
                     problems.append(f"{where}: data '{data}' is not a folder of the delivery ({data_dir}): give the "
                                     "folder that holds this step's files (e.g. RNA), or leave data out for the whole delivery")
+                elif not sequencing_files(data):
+                    problems.append(f"{where}: {p} needs sequencing reads, and {data} holds none (e.g. only count "
+                                    "matrices): what the question needs on such data is another kind of step")
         elif kind == "reference":
             if after:
                 problems.append(f"{where}: a reference step builds on nothing (after must be empty)")
