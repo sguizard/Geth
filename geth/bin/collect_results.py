@@ -44,9 +44,16 @@ def json_stats(path):
     with open(path) as fh:
         d = json.load(fh)
     data, heads = d.get("report_general_stats_data") or [], d.get("report_general_stats_headers") or []
+    if isinstance(data, dict):  # MultiQC 1.3x: keyed by module; older: parallel lists
+        pairs = [(data[k], heads.get(k) if isinstance(heads, dict) else None) for k in data]
+    else:
+        pairs = list(zip(data, heads))
     columns, samples = [], {}
-    for module, head in zip(data, heads):
-        for key, h in (head or {}).items():
+    for module, head in pairs:
+        if not isinstance(module, dict) or not isinstance(head, dict):
+            continue
+        for key, h in head.items():
+            h = h if isinstance(h, dict) else {}
             if not h.get("hidden"):
                 # the metric's name, not the report's title: the JSON holds raw values ("M Seqs" there is a count)
                 columns.append((id(module), key, f"{h.get('namespace', '')}: {key}".strip(": ")))
@@ -63,8 +70,15 @@ def stats_tables(outdir):
     files = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_general_stats.txt"), recursive=True))
     if files:
         return [(path, *read_tsv(path)) for path in files]
-    files = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_data.json"), recursive=True))
-    return [(path, *json_stats(path)) for path in files]
+    tables = []
+    for path in sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_data.json"), recursive=True)):
+        try:
+            header, rows = json_stats(path)
+        except (ValueError, AttributeError, TypeError, KeyError):  # a format this does not know: no table
+            continue
+        if rows:
+            tables.append((path, header, rows))
+    return tables
 
 
 def general_stats(outdir):

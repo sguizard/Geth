@@ -74,6 +74,11 @@ class GenericSummary(unittest.TestCase):
 
 
 
+def glob_one(run, name):
+    import glob
+    return glob.glob(os.path.join(run, "results", "**", name), recursive=True)[0]
+
+
 class PeakSummary(unittest.TestCase):
     """chipseq / atacseq: MultiQC's statistics only in multiqc_data.json, and the peaks counted from the peak files."""
 
@@ -105,6 +110,16 @@ class PeakSummary(unittest.TestCase):
         self.assertIn("| Spt5_0min_REP1 | narrowPeak | 779 | `bwa/merged_library/macs3/narrow_peak/` |", text)
         self.assertIn("Spt5.consensus_peaks.boolean.txt` | 1,310 |", text)
         self.assertIn(1.47, cr.raw_values(self.run))
+
+    def test_multiqc_1_3x_keys_modules_by_name(self):
+        import json
+        path = glob_one(self.run, "multiqc_data.json")
+        json.dump({"report_general_stats_data": {"fastqc": {"mouseA_1": {"total_sequences": 25000.0}}},
+                   "report_general_stats_headers": {"fastqc": {"total_sequences": {"namespace": "FastQC: raw reads"}}}},
+                  open(path, "w"))
+        self.assertIn("| mouseA_1 | 25,000 |", cr.collect(self.run, "mag"))
+        open(path, "w").write('{"report_general_stats_data": "odd"}')
+        self.assertIn("No MultiQC general-statistics table found", cr.collect(self.run, "chipseq"))
 
 
 class MagSummary(unittest.TestCase):
