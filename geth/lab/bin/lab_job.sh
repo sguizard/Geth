@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Geth lab (EXPERIMENTAL): one lab job for Rannoch's lab agents, through geth/lab/jobs.nf and the site's Nextflow
-# config (a scheduler job, like main.nf's LAB_INSPECT, MAKE_SUBSET, TEST_STEP...): prints what the tool prints.
+# Geth lab (EXPERIMENTAL): one job of the lab agents' tools (LAB_INSPECT, MAKE_SUBSET, TEST_STEP...), through
+# geth/lab/jobs.nf and the site's Nextflow config (a scheduler job): prints what the tool prints.
 # Usage: lab_job.sh <run_dir> <task> [--<param> <value> ...]   (tasks and their parameters: geth/lab/jobs.nf)
 # Always exits 0: a failure is reported as text.
 set -uo pipefail

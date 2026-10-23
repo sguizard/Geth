@@ -2,7 +2,7 @@
 # Geth: plan, approve and run nf-core analyses with LLM agents.
 #
 #   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
-#             [--answers <file>] [--model <name>] (Rannoch planner: it asks you its questions in the terminal, or
+#             [--answers <file>] [--model <name>] (the planner asks you its questions in the terminal, or
 #                                                 a stand-in answers them from what this file says; --model: a paid
 #                                                 planner model from the site settings, e.g. sol, within its budget)
 #   geth plan --from <run> "<question>" <name> follow-up analysis of a finished run (DE, single-cell downstream)
@@ -23,7 +23,7 @@ runs="$GETH_RUNS_DIR"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
-self=$(readlink -f "${BASH_SOURCE[0]}")  # nf() changes folder: call this script back by its full path
+self=$(readlink -f "${BASH_SOURCE[0]}")  # agents() changes folder: call this script back by its full path
 usage() { sed -n '2,17p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
     local commit; commit=$(git -C "$GETH_HOME" rev-parse --short HEAD 2>/dev/null || true)
@@ -35,25 +35,7 @@ run_dir_of() {
     echo "$runs/$1"
 }
 
-nf() {  # nf <run_dir> <mode> [extra args]
-    local d=$1 mode=$2; shift 2
-    local site=()
-    [ -n "${GETH_NF_CONFIG:-}" ] && site=(-c "$GETH_NF_CONFIG")  # executor, containers: the site's
-    cd "$d"
-    acquire_slots "$d" "$mode" "$([ "$mode" = run ] && echo 2 || echo 1)"  # a run also starts the pipeline's driver
-    local ro=() prev=
-    for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done  # a follow-up reads its upstream run
-    sandboxed "$d" "${ro[@]}" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/main.nf" -c "$GETH_HOME/geth/nextflow.config" "${site[@]}" \
-        --mode "$mode" --run_dir "$d" "$@" \
-        -w "$d/geth_work" -with-agent-trace -with-trace "$d/geth_trace_$mode.txt" -ansi-log false \
-        > "$d/geth_$mode.log" 2>&1
-    local rc=$?
-    explain_timeout $rc "$mode" "$d/geth_$mode.log"
-    rm -f "$d/.geth_$mode.pid"
-    return $rc
-}
-
-harness() {  # harness <run_dir> <stage> [args]: a stage on Geth's own agent loop (Rannoch: geth/harness, no JVM)
+agents() {  # agents <run_dir> <stage> [args]: a stage of Geth's agents (geth/harness: plan, run, report)
     local d=$1 stage=$2; shift 2
     cd "$d"
     local ro=() prev= drivers=0
@@ -71,13 +53,6 @@ harness() {  # harness <run_dir> <stage> [args]: a stage on Geth's own agent loo
     explain_timeout $rc "$stage" "$d/geth_$stage.log"
     rm -f "$d/.geth_$stage.pid"
     return $rc
-}
-
-runner() {  # who runs and reports: the Nextflow agents (default) or Rannoch (GETH_RUNNER=harness)
-    case ${GETH_RUNNER:-nextflow} in
-        nextflow|harness) echo "${GETH_RUNNER:-nextflow}" ;;
-        *) echo "GETH_RUNNER must be 'harness' or 'nextflow' (got '$GETH_RUNNER')" >&2; return 1 ;;
-    esac
 }
 
 active() {  # active <run_dir> <mode>: is a Geth driver working on this run?
@@ -159,7 +134,6 @@ case "$cmd" in
             [ -n "${GETH_PLANNER_MODEL:-}" ] || { echo "No planner model '$model' in the site settings (GETH_PLANNER_${up}_MODEL)." >&2; exit 1; }
             export GETH_PLANNER_BASE_URL=${GETH_PLANNER_BASE_URL:-$GETH_LLM_BASE_URL}
             export GETH_PLANNER_API_KEY_VAR=${GETH_PLANNER_API_KEY_VAR:-$GETH_LLM_API_KEY_VAR}
-            GETH_PLANNER=harness
         fi
         set -- "${args[@]}"
         [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
@@ -188,20 +162,14 @@ case "$cmd" in
         [ -e "$d" ] && { echo "Run '$2' already exists: choose another name." >&2; exit 1; }
         mkdir -p "$d"
         echo "Planning in $d ..."
-        if [ "${GETH_PLANNER:-nextflow}" = harness ]; then  # Rannoch: the planner on Geth's own agent loop
-            if [ -n "$answers" ]; then ask=file; cp "$answers" "$d/answers.txt"   # visible in the sandbox
-            elif [ -t 0 ] && [ -t 1 ]; then ask=terminal; echo "The planner may ask you a few questions here."
-            else ask=none; fi
-            ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
-            echo "Planner: Rannoch (Geth's own agent loop; questions: $ask)"
-            [ -n "${GETH_PLANNER_MODEL:-}" ] && echo "Planner model: $GETH_PLANNER_MODEL (paid: at most \$${GETH_PLANNER_BUDGET_USD:-?} for this plan)"
-            harness "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
-                --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
-                || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
-        else
-            echo "Planner: Nextflow agent (for the planner that asks you questions: export GETH_PLANNER=harness)"
-            nf "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
-        fi
+        if [ -n "$answers" ]; then ask=file; cp "$answers" "$d/answers.txt"   # visible in the sandbox
+        elif [ -t 0 ] && [ -t 1 ]; then ask=terminal; echo "The planner may ask you a few questions here."
+        else ask=none; fi
+        ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
+        [ -n "${GETH_PLANNER_MODEL:-}" ] && echo "Planner model: $GETH_PLANNER_MODEL (paid: at most \$${GETH_PLANNER_BUDGET_USD:-?} for this plan)"
+        agents "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
+            --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
+            || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
         show "$d"
         echo; echo "Review the plan (edit the plan_* files if needed), then: geth approve $2"
         ;;
@@ -233,14 +201,8 @@ case "$cmd" in
             echo "Started in the background (pid $!). Follow it with: geth status $1   (log: $d/geth_run.out)"
             exit 0
         fi
-        who=$(runner)
-        echo "Running the approved plan in $d ..."
-        if [ "$who" = harness ]; then
-            echo "Operator and reporter: Rannoch (Geth's own agent loop; follow it in $d/geth_run.log)"
-            harness "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
-        else
-            nf "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
-        fi
+        echo "Running the approved plan in $d ... (follow it in $d/geth_run.log)"
+        agents "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
         "$self" status "$1"
         ;;
     report)
@@ -253,13 +215,8 @@ case "$cmd" in
             cp "$d/report.md" "$keep"; cp "$d/report_check.txt" "${keep%.md}.check.txt" 2>/dev/null || true
             echo "Previous report kept as $(basename "$keep")"
         fi
-        who=$(runner)
         echo "Writing the report again from $d/results ..."
-        if [ "$who" = harness ]; then
-            harness "$d" report || { echo "Report failed: see $d/geth_report.log" >&2; exit 1; }
-        else
-            nf "$d" report || { echo "Report failed: see $d/geth_report.log" >&2; exit 1; }
-        fi
+        agents "$d" report || { echo "Report failed: see $d/geth_report.log" >&2; exit 1; }
         "$self" status "$1"
         ;;
     status)

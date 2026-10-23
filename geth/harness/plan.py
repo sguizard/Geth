@@ -1,12 +1,11 @@
-"""Rannoch planner: the planner agent of geth/main.nf (--mode plan) on Geth's own agent loop.
+"""geth plan: the planner agent turns a request and a data folder (or a finished run) into a plan.
 
     python3 -m harness.plan --run_dir <dir> --question <text> --data_dir <dir> [--upstream_run <dir>]
                             [--ask terminal|file|none] [--answers <file>]
 
-Same instructions, tools and skills as the Nextflow planner; the plan is handed over through SUBMIT_PLAN (a tool
-call with a schema) instead of a structured final answer, so a plan that fails the check comes back to the agent.
-R3: the planner can also ask the scientist (ASK_USER: in the terminal, from an answers file, or nobody) and browse
-the pipeline's options (PIPELINE_OPTIONS). With --ask none and no questions it plans as in R2.
+The plan is handed over through SUBMIT_PLAN (a tool call with a schema), so a plan that fails the check comes back
+to the agent. The planner can ask the scientist (ASK_USER: in the terminal, from an answers file, or nobody) and
+browse the pipeline's options (PIPELINE_OPTIONS); --ask off plans without questions.
 """
 import argparse
 import json
@@ -46,7 +45,7 @@ barcodes sheet) and the analysis profile for differentialabundance (empty string
 fix every problem it reports, and repeat until it prints "PLAN CHECK: OK". Read every WARNING it
 prints too: fix the plan, or explain in the rationale why the warning does not apply.'''
 
-# A follow-up of a finished nf-core/scrnaseq run: the single-cell toolbox (as main.nf's planner).
+# A follow-up of a finished nf-core/scrnaseq run: the single-cell toolbox.
 SINGLE_CELL = '''
 For a follow-up of a finished nf-core/scrnaseq run, design a downstream analysis for Geth's single-cell
 toolbox instead (pipeline "sc_downstream"): load the sc-downstream skill, find the sample's filtered

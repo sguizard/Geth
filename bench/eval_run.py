@@ -99,7 +99,7 @@ def main():
         "report_untraced": check.split("not traced: ")[1].split(";")[0] if "not traced:" in check else "",
         "plan_min": round(plan_s / 60, 1), "run_min": round(run_s / 60, 1),
         "pipeline_min": round(pipeline_s / 60, 1), "agents_min": round((run_s - pipeline_s) / 60, 1) if run_s else None,
-        "runner": os.environ.get("GETH_RUNNER", "nextflow"),
+        "runner": "rannoch",
         **({"model_usage": json.loads(usage[-1].split(":", 1)[1])} if usage else {}),
         **index, **(biology(run_dir) if kind == "airway_de" else {}),
     }))

@@ -6,7 +6,6 @@
 #   (bench/stage_deliveries.sh), bulk_yeast sc_mouse_chr19 (bench/stage_testdata.sh),
 #   airway_index_test pbmc_index_test (bench/stage_index_tests.sh), sc_rat_ocm (multiplexed 10x)
 # Results: $GETH_BENCH_DIR/<tag>.jsonl (default $GETH_WORK_ROOT/bench)
-# GETH_PLANNER=harness benchmarks the Rannoch planner (geth/harness) instead of the Nextflow one.
 # Rannoch R3: GETH_BENCH_TESTDATA=testdata_sparse plans the sparse deliveries (bench/stage_sparse.sh);
 # GETH_BENCH_ANSWERS=yes lets a stand-in scientist answer the planner from bench/facts/<delivery>.txt;
 # GETH_PLANNER_ASK=off plans without questions.
@@ -75,7 +74,7 @@ run_dir, status, minutes = sys.argv[1], sys.argv[2], int(sys.argv[3]) / 60
 check = os.path.join(run_dir, "plan_check.txt")
 d.update(plan_status=status, plan_min=round(minutes, 1),
          plan_check=open(check).readline().strip() if os.path.isfile(check) else "none",
-         planner=os.environ.get("GETH_PLANNER", "nextflow"), peak_rss_mb=round(int(sys.argv[4] or 0) / 1024))
+         planner="rannoch", peak_rss_mb=round(int(sys.argv[4] or 0) / 1024))
 log = os.path.join(run_dir, "geth_plan.log")
 usage = [l for l in open(log) if l.startswith("Model usage:")] if os.path.isfile(log) else []
 if usage:

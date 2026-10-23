@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Reporter benchmark: the reports of finished runs written again by the reporter of GETH_RUNNER (nextflow, or
-# harness for Rannoch's), on copies of the runs: <tag>_<source run>, with the results hard-linked (no space used,
-# the source run is left as it was).
+# Reporter benchmark: the reports of finished runs written again by the reporter, on copies of the runs:
+# <tag>_<source run>, with the results hard-linked (no space used, the source run is left as it was).
 # Usage: bench_report.sh <tag> <source run> [<source run> ...]
 # Scores: numbers traced by the report check, the five sections asked for, minutes and model usage.
 # Results: $GETH_BENCH_DIR/<tag>.jsonl
@@ -44,7 +43,7 @@ sections = {k: bool(re.search(rf"^#+\s*(\d+\.\s*)?{k}", report, re.M | re.I))
 usage = [l for l in read("geth_report.log").splitlines() if l.startswith("Model usage:")]
 trace = [json.loads(l) for l in read("harness_trace_report.jsonl").splitlines() if l.strip()]
 print(json.dumps({
-    "run": os.path.basename(d), "source": src, "runner": os.environ.get("GETH_RUNNER", "nextflow"), "status": status,
+    "run": os.path.basename(d), "source": src, "runner": "rannoch", "status": status,
     "succeeded_run": "succeeded: true" in read("outcome.txt"),
     "report_numbers": f"{m.group(1)}/{m.group(2)}" if m else "n/a",
     "report_untraced": check.split("not traced: ")[1].split(";")[0] if "not traced:" in check else "",

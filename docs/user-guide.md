@@ -77,8 +77,21 @@ geth plan /path/to/my_data \
   anything the folder does not say.
 - The **name** (`my_analysis`) identifies this analysis from now on. Use letters, digits, `.`, `_` and
   `-`. Each analysis gets its own folder: `$GETH_RUNS_DIR/my_analysis`.
-- Planning takes a few minutes. Nothing runs on your data yet: the planner only lists files and reads
-  text.
+- Planning takes a few minutes. Nothing runs on your data yet: the planner only lists files, reads text and
+  measures the reads.
+- The planner **asks you what your files do not say**: for example the primers, which control goes with
+  which sample, or whether a single-cell library holds several samples. In a terminal, it asks a few
+  questions at a time. Each has numbered options and a recommended answer: press Enter to take it, type a
+  number to pick an option, type your own answer, or `?` to see why it asks.
+- For planning in the background, write what you know in a text file and add `--answers notes.txt`: a
+  stand-in answers the planner from your notes, and says "I don't know" for anything they do not cover.
+- Where the reads can tell, Geth checks your answers and the plan against them and warns about a mismatch:
+  amplicon primers that do not start the reads, a 10x chemistry that does not match the barcode read length
+  (v2: 26 bp; v3 and GEM-X v4: 28 bp), a read length that does not match the reads, an RRBS motif.
+- For a poorly documented delivery, a stronger (paid) planner model can be switched on for one plan, if your
+  site defines it: `geth plan ... --model sol`. It plans within a cost cap set by the site (Sol: usually about
+  5 cents a plan, at most 50 cents), and `geth show` says which model planned and what it cost. Without
+  `--model`, the site's free model plans.
 - If Geth prints `Waiting for a free slot: 2 Nextflow driver(s) running ...`, other analyses are using the
   machine's share (your site sets how many may run at once, `GETH_MAX_DRIVERS`). Geth starts by itself as soon
   as one finishes; you can leave it waiting.
@@ -100,6 +113,8 @@ You will see:
 - **Parameters**: pipeline settings, such as the reference genome and annotation, or the aligner.
 - **Multiplexed samples** (single-cell only, when several samples share one library): which sample each
   barcode of a library holds.
+- **Questions and answers**: what the planner asked you, and what you (or the stand-in) answered.
+- **Command line Geth will run**: the full nf-core command, as it will be launched.
 - **Plan check**: Geth's automatic check of the plan against the pipeline. It should say
   `PLAN CHECK: OK`. It may add `WARNING:` lines: things to check before you approve, for example samples
   listed in your README that appear nowhere in the plan, or a 10x chemistry the delivery does not state.
@@ -162,8 +177,13 @@ sites that use one.
 - If the pipeline fails, the operator reads the error, and may change **only what the error points to**,
   for example a parameter the pipeline rejected. It then resumes the run. It can never change your
   samples, their names, the files or the comparisons. Geth refuses such attempts.
-- After at most a few attempts, it stops and reports the problem instead of guessing.
-- The **reporter agent** writes the report from the pipeline's results.
+- After at most a few attempts, it stops and reports the problem instead of guessing. Geth checks its
+  outcome against the pipeline's own log: a run claimed to have succeeded (or failed) when the log says
+  otherwise is refused.
+- The **reporter agent** writes the report from the pipeline's results. Every number in it is checked
+  against the results; numbers that cannot be traced go back to the reporter once, to correct, before the
+  report is saved.
+- Follow the agents in `$GETH_RUNS_DIR/my_analysis/geth_run.log`.
 
 If the run was interrupted, for example because the machine rebooted, run `geth run my_analysis` again.
 It resumes where it stopped.
@@ -295,37 +315,6 @@ The annotation model must match your tissue and species. Available models are li
 | The report says some numbers could not be traced | Check those numbers against the results before using them. |
 | `Waiting for a free slot ...` | Other analyses are running; Geth starts by itself when one finishes. |
 | `... stopped after its time limit ...` | The stage ran longer than your site allows. If it was making progress, ask for a higher limit, then run the same command again: a run resumes. |
-
-## Trying the planner that asks (Rannoch, Geth 2.0 preview)
-
-On the `feature/rannoch` branch, a new planner runs without Nextflow's agent feature and asks you what your
-files do not say (for example the primers, which control goes with which sample, or whether a single-cell
-library holds several samples):
-
-```bash
-GETH_PLANNER=harness geth plan /path/to/my_data "Your question." my_analysis
-```
-
-- In a terminal, it asks a few questions at a time. Each has numbered options and a recommended answer:
-  press Enter to take it, type a number to pick an option, type your own answer, or `?` to see why it asks.
-- For a run in the background, write what you know in a text file and add `--answers notes.txt`: a stand-in
-  answers the planner from your notes, and says "I don't know" for anything they do not cover.
-- `geth show my_analysis` prints the questions with your answers, and the full command line Geth will run.
-- For a poorly documented delivery, a stronger (paid) planner model can be switched on for one plan, if your
-  site defines it: `geth plan ... --model sol`. It plans within a cost cap set by the site (Sol: usually about
-  5 cents a plan, at most 50 cents), and `geth show` says which model planned and what it cost. Without
-  `--model`, the site's free model plans.
-- Where the reads can tell, Geth checks your answers and the plan against them and warns about a mismatch:
-  amplicon primers that do not start the reads, a 10x chemistry that does not match the barcode read length
-  (v2: 26 bp; v3 and GEM-X v4: 28 bp), a read length that does not match the reads, an RRBS motif.
-
-The operator and reporter can run on the same loop (`GETH_RUNNER=harness geth run my_analysis`, and
-`geth report` likewise). The pipeline still runs as before; what changes is who drives it, and two checks:
-Geth refuses an outcome that the pipeline's log contradicts (a run claimed to have succeeded, or failed), and a
-report with numbers it cannot trace goes back to the reporter once, to correct, before it is saved. Follow
-the run in `geth_run.log`. Single-cell downstream analyses work the same way: the planner inspects the cells
-(`geth plan --from <scrnaseq run>`) and the analyst runs the approved design, with the toolbox's jobs submitted
-through your site's scheduler.
 
 ## Good to know
 

@@ -1,13 +1,12 @@
-"""Geth lab (EXPERIMENTAL) on Rannoch: the lab agents of geth/lab/main.nf on Geth's own agent loop.
+"""Geth lab (EXPERIMENTAL): the designer, judge, engineers and reviewers of geth lab.
 
     python3 -m harness.lab --mode design|judge|engineer|review|engineer_c|review_c --run_dir <lab run> --data_dir <dir>
                            [--question <text>] [--lab_skill true|false] [--build_round N] [--data_file <h5ad>]
                            [--lab_java_home ... --lab_nxf_launcher ... --lab_nxf_framework ...]   (arm C)
 
-Same instructions, tools and skills as the Nextflow lab agents. Their structured final answers become final tools
-that Geth checks: SUBMIT_DESIGN (the design check), SUBMIT_NOTES (only once the spec or pipeline passed its check),
+Each agent ends with a final tool that Geth checks: SUBMIT_DESIGN (the design check), SUBMIT_NOTES (only once the spec or pipeline passed its check),
 SUBMIT_REVIEW. The jobs (LAB_INSPECT, MAKE_SUBSET, TEST_STEP, LINT_PIPELINE, TEST_PIPELINE) go through the site's
-scheduler (bin/lab_job.sh, geth/lab/jobs.nf); agent-written code only ever runs in the lab sandbox, as before.
+scheduler (bin/lab_job.sh, geth/lab/jobs.nf); agent-written code only ever runs in the lab sandbox, 
 """
 import argparse
 import json
@@ -178,7 +177,7 @@ def lines(v):
     return "\n".join(str(x) for x in v) if isinstance(v, list) else str(v or "")
 
 
-# ---------------------------------------------------------------- tools (as the processes of geth/lab/main.nf)
+# ---------------------------------------------------------------- tools
 
 def lab_list_files(roots):
     def run(dir):

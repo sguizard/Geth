@@ -1,7 +1,6 @@
 /*
- * Geth's scheduler jobs for Rannoch's agents (geth/harness): one task per launch, submitted through the site's
- * Nextflow configuration like every other Geth job, its output written to --out. (The Nextflow agents of
- * main.nf run the same processes as their tools.)
+ * Geth's scheduler jobs for its agents' tools (geth/harness): one task per launch, submitted through the site's
+ * Nextflow configuration like every other Geth job, its output written to --out.
  *
  *   --task inspect --h5ad <file>                     the single-cell toolbox's look at a count matrix
  *   --task analyse --run_dir <dir> --design <file>   one analysis of an approved single-cell design
@@ -13,7 +12,7 @@ nextflow.enable.types = true
 // Parameters: --task, --h5ad, --design, --run_dir, --out; the site's folders come from nextflow.config next to
 // this file, which Nextflow loads with it.
 
-// The single-cell toolbox (bin/sc_downstream.py) in the pinned CellTypist container: as main.nf.
+// The single-cell toolbox (bin/sc_downstream.py) in the pinned CellTypist container.
 process SC_INSPECT {
     container 'https://depot.galaxyproject.org/singularity/celltypist:1.7.1--pyhdfd78af_2'
     containerOptions "-B ${params.data_root} -B ${params.references} -B ${params.runs_dir}"

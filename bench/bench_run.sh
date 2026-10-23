@@ -4,7 +4,6 @@
 # Usage: bench_run.sh <tag> <run_name>:<dataset>[:<planned run>] ...   (datasets: bench/eval_plan.py)
 #   <planned run>: copy that run's plan into a new run <run_name> first (the same plan for two runners).
 # One run at a time (two Nextflow drivers). Results: $GETH_BENCH_DIR/<tag>.jsonl
-# GETH_RUNNER=harness runs with Rannoch's operator and reporter (geth/harness/run.py) instead of the Nextflow ones.
 set -uo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
 

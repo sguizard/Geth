@@ -1,13 +1,14 @@
-"""Rannoch run: the operator and reporter agents of geth/main.nf (--mode run, --mode report) on Geth's own loop.
+"""geth run / geth report: the operator (or the single-cell analyst) runs the approved plan, the reporter writes
+report.md.
 
     python3 -m harness.run --run_dir <dir> [--report_only]
 
-Same instructions and tools as the Nextflow agents. Two fences the structured answers could not give:
+Two fences (which Geth 1.x's Nextflow agents, with their typed final answers, could not give):
 - the operator's outcome goes through SUBMIT_OUTCOME, which refuses "succeeded" unless the last launched attempt's
   pipeline log says it completed;
 - the reporter's report goes through SUBMIT_REPORT, which runs the report check: numbers that cannot be traced to
   the results come back to the reporter once, to correct, before the report is saved with Geth's note.
-The pipelines themselves still run on Nextflow (run_nfcore.sh), as scheduler jobs. A single-cell downstream design
+The pipelines run on Nextflow (run_nfcore.sh), as scheduler jobs. A single-cell downstream design
 (pipeline sc_downstream) goes to the analyst instead of the operator: Geth's toolbox, as scheduler jobs too
 (bin/sc_job.sh, geth/jobs.nf).
 """
@@ -184,7 +185,7 @@ def save_annotations_tool(run_dir):
 
 
 def save_outcome(run_dir, outcome):
-    """outcome.txt, as SAVE_OUTCOME of geth/main.nf writes it (lists as Groovy prints them: [a, b])."""
+    """outcome.txt, as Geth 1.x wrote it (lists as Groovy printed them: [a, b])."""
     listed = lambda v: "[" + ", ".join(v) + "]"
     write(run_dir, "outcome.txt", f"succeeded: {str(outcome['succeeded']).lower()}\nattempts: {outcome['attempts']}\n"
               f"outdir: {outcome['outdir']}\nchanges_to_plan: {listed(outcome['fixes_applied'])}\n"
@@ -266,7 +267,7 @@ def submit_report_tool(run_dir, pipeline, attempts):
 
 
 def outcome_from_file(run_dir):
-    """outcome.txt back as an outcome (lists as one entry, as savedList() of geth/main.nf)."""
+    """outcome.txt back as an outcome (a list as one entry, as Geth 1.x read it back)."""
     saved = {}
     for line in read(run_dir, "outcome.txt").splitlines():
         if ": " in line:

@@ -1,4 +1,4 @@
-"""The planner's tools, as plain Python: the same behaviour and output as the Nextflow tools of geth/main.nf.
+"""The planner's tools, as plain Python.
 
 They only read under GETH_DATA_ROOT (data, and finished runs for follow-ups) and the reference catalogue, and
 only write in the run folder.

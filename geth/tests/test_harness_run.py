@@ -192,7 +192,7 @@ class RunHarness(unittest.TestCase):
                    "annotations": [], "last_error": "none"}
         run.save_outcome(self.d, outcome)
         back = run.outcome_from_file(self.d)
-        self.assertEqual(back["fixes_applied"], ["a, b"])  # one entry, as savedList() of main.nf
+        self.assertEqual(back["fixes_applied"], ["a, b"])  # one entry, as Geth 1.x read it
         self.assertEqual({k: back[k] for k in ("succeeded", "attempts", "outdir", "annotations", "last_error")},
                          {k: outcome[k] for k in ("succeeded", "attempts", "outdir", "annotations", "last_error")})
 

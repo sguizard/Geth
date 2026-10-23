@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One job of the single-cell toolbox for Rannoch's agents, through geth/jobs.nf and the site's Nextflow config
-# (a scheduler job, like main.nf's SC_INSPECT and SC_ANALYSE): prints what the tool prints.
+# One job of the single-cell toolbox for Geth's agents (SC_INSPECT, SC_ANALYSE), through geth/jobs.nf and the
+# site's Nextflow config (a scheduler job): prints what the tool prints.
 # Usage: sc_job.sh <run_dir> inspect <h5ad>
 #        sc_job.sh <run_dir> analyse <design.txt>
 # Always exits 0: a failure is reported as text.

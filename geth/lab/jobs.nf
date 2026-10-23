@@ -1,7 +1,6 @@
 /*
- * Geth lab (EXPERIMENTAL): the lab's scheduler jobs for Rannoch's lab agents (geth/harness/lab.py), one task per
- * launch, its output written to --out. The same processes as the tools of main.nf (copied: main.nf goes when the
- * Nextflow agents do).
+ * Geth lab (EXPERIMENTAL): the scheduler jobs of the lab agents' tools (geth/harness/lab.py), one task per launch,
+ * its output written to --out.
  *
  *   --task inspect   --h5ad <file>                    LAB_INSPECT: a look at a count matrix
  *   --task subset    --data_file <file>               MAKE_SUBSET: the 3000-cell test subset (once per build)

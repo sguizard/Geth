@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Run one of Geth's agent drivers (a Nextflow run of geth/main.nf or geth/lab/main.nf) inside a container, on the
-# machine Geth runs on (phase 12). The driver keeps the network (its agents call the model service) and can still
-# submit scheduler jobs, but it only sees what its run needs:
+# Run one of Geth's agent stages (python3 -m harness.<stage>, or a lab job) inside a container, on the machine Geth
+# runs on (phase 12). The stage keeps the network (its agents call the model service) and can still start
+# Nextflow and submit scheduler jobs (its tools' jobs, the nf-core pipelines), but it only sees what its run needs:
 #   read-write : the run folder, Nextflow's home (plugins, pipeline assets), and GETH_AGENT_SANDBOX_RW
 #                (":"-separated: e.g. the container image cache the site's Nextflow config uses)
 #   read-only  : Geth, this run's data folder (the driver's --data_dir, or data_dir.txt), the reference

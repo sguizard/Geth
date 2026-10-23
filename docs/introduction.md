@@ -41,11 +41,11 @@ your data and results, so a model mistake is caught rather than trusted.
 
 | Step | Command | Who | What happens |
 |---|---|---|---|
-| Plan | `geth plan` | planner agent | Lists and reads the data folder, then chooses one of the supported pipelines. Writes the samplesheet, parameters and a rationale, and checks them against the pipeline's own schemas until the check passes. |
+| Plan | `geth plan` | planner agent | Lists and reads the data folder, then chooses one of the supported pipelines. Asks you what the files do not say. Writes the samplesheet, parameters and a rationale, and checks them against the pipeline's own schemas (and the reads) until the check passes. |
 | Review | `geth show` | you | Shows the plan and its automatic check. You can edit any plan file. |
 | Approve | `geth approve` | you | Records your name and a fingerprint of every plan file. Any later edit needs a new approval. |
 | Run | `geth run` | operator agent | Launches the approved plan. On failure it may change only what the error points to; the sample design can never change. The run resumes where it stopped. |
-| Report | (automatic) | reporter agent | Writes `report.md` from ready-made result tables. Every number and link is traced back to the results. |
+| Report | (automatic) | reporter agent | Writes `report.md` from ready-made result tables. Every number and link is traced back to the results; untraced ones go back to the reporter to correct. |
 
 A finished analysis can be the starting point of a follow-up:
 
@@ -99,9 +99,9 @@ What Geth is **not**:
 ## Status
 
 Geth is research software (`geth version` prints the version; the [changelog](../CHANGELOG.md) lists
-what each release changed), developed and validated on a university SGE cluster. The
-Nextflow `agent` feature it builds on is a preview in Nextflow 26.10, and its interface may change.
-Geth pins the Nextflow version for that reason.
+what each release changed), developed and validated on a university SGE cluster. Since version 2.0 its
+agents run on Geth's own small harness, which talks to the model service directly; Nextflow runs the
+pipelines.
 
 ## Where to go next
 
