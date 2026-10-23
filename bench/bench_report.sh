@@ -25,7 +25,7 @@ for src in "$@"; do
         for a in "$s"/attempt_*; do [ -d "$a" ] && cp -a "$a" "$d"/; done
         cp -al "$s/results" "$d/results"
     fi
-    rm -f "$d/report.md" "$d/report_check.txt"
+    rm -f "$d/report.md" "$d/report_check.txt" "$d/harness_trace_report.jsonl"
     t0=$(date +%s)
     "$geth" report "$name" < /dev/null > /dev/null 2>&1 && status=ok || status=failed
     t1=$(date +%s)

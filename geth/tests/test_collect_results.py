@@ -74,6 +74,39 @@ class GenericSummary(unittest.TestCase):
 
 
 
+class PeakSummary(unittest.TestCase):
+    """chipseq / atacseq: MultiQC's statistics only in multiqc_data.json, and the peaks counted from the peak files."""
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp(prefix="geth_collect_")
+        out = os.path.join(self.run, "results")
+        data = os.path.join(out, "multiqc", "narrow_peak", "multiqc_data")
+        peaks = os.path.join(out, "bwa", "merged_library", "macs3", "narrow_peak")
+        os.makedirs(data)
+        os.makedirs(os.path.join(peaks, "consensus", "Spt5"))
+        import json
+        json.dump({"report_general_stats_data": [{"Spt5_0min_REP1": {"NSC": 1.47}},
+                                                 {"Spt5_0min_REP1_T1_1": {"total_sequences": 100000.0, "avg_sequence_length": 76}}],
+                   "report_general_stats_headers": [{"NSC": {"title": "NSC", "namespace": "phantompeakqualtools"}},
+                                                    {"total_sequences": {"title": "M Seqs", "namespace": "FastQC"},
+                                                     "avg_sequence_length": {"title": "Length", "hidden": True}}]},
+                  open(os.path.join(data, "multiqc_data.json"), "w"))
+        open(os.path.join(peaks, "Spt5_0min_REP1_peaks.narrowPeak"), "w").write("chrI\t1\t2\n" * 779)
+        open(os.path.join(peaks, "consensus", "Spt5", "Spt5.consensus_peaks.boolean.txt"), "w").write("header\n" + "x\n" * 1310)
+
+    def tearDown(self):
+        shutil.rmtree(self.run)
+
+    def test_json_statistics_and_peak_counts(self):
+        text = cr.collect(self.run, "chipseq")
+        self.assertIn("| Sample | phantompeakqualtools: NSC | FastQC: total_sequences |", text)  # raw names, hidden left out
+        self.assertIn("| Spt5_0min_REP1_T1_1 | n/a | 100,000 |", text)
+        self.assertIn("Raw values from MultiQC's data", text)
+        self.assertIn("| Spt5_0min_REP1 | narrowPeak | 779 | `bwa/merged_library/macs3/narrow_peak/` |", text)
+        self.assertIn("Spt5.consensus_peaks.boolean.txt` | 1,310 |", text)
+        self.assertIn(1.47, cr.raw_values(self.run))
+
+
 class MagSummary(unittest.TestCase):
     """nf-core/mag: assemblies and bins, from the files mag 5.5.0 writes (values from the mag_gut test run)."""
 
