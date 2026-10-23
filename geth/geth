@@ -49,6 +49,8 @@ agents() {  # agents <run_dir> <stage> [args]: a stage of Geth's agents (geth/ha
         esac
         prev=$a
     done
+    # A follow-up's run and report read its upstream run (the count matrix, the plan check at launch)
+    [ -f "$d/plan_upstream.txt" ] && [ -d "$(cat "$d/plan_upstream.txt")" ] && ro+=(--ro "$(cat "$d/plan_upstream.txt")")
     [ "$stage" = run ] && drivers=1
     acquire_slots "$d" "$stage" "$drivers"
     local fg=()  # questions in the terminal: the agent must stay in the terminal's foreground to read it
