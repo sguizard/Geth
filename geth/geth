@@ -255,7 +255,7 @@ project() {  # project <subcommand> ...: see project_usage
         _coordinate)  # internal (geth_project.py run): the coordinator agent at a decision point
             p=$(project_dir_of "$1")
             local mode=$2 step=${3:-} ro=() r
-            for r in "$runs/$(basename "$p")"-*; do [ -d "$r" ] && ro+=(--step_run "$r"); done
+            for r in "$runs/$(basename "$p")"-* "$runs/lab/$(basename "$p")"-*; do [ -d "$r" ] && ro+=(--step_run "$r"); done
             GETH_LOG_SUFFIX=_$mode${step:+_$step} agents "$p" project --mode "$mode" ${step:+--step "$step"} "${ro[@]}"
             ;;
         *) project_usage ;;

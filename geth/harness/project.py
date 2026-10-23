@@ -304,10 +304,14 @@ def main(argv=None):
         tools = [read_text(data_root), list_files(data_root), read_step_tool(pdir), capabilities_tool(pdir),
                  nfcore_tool(), check_steps_tool(pdir), decide_tool(pdir, a.step)]
         agent = Agent("coordinator", REVIEWER, tools, client, max_turns=12, trace_path=trace, log=log)
+        if step.get("kind") == "lab":  # a lab step: its build's state, reviews and result tables
+            outcome = gp.read(os.path.join(gp.lab_runs(pdir, a.step)[1], "build_state.txt")).strip() or "(none)"
+            report = read_step_tool(pdir).func(a.step)[:6000]
+        else:
+            outcome = gp.read(os.path.join(run_dir, "outcome.txt")).strip() or "(none)"
+            report = gp.read(os.path.join(run_dir, "report.md")).strip()[:6000] or "(none)"
         prompt = REVIEW_PROMPT.format(question=question, steps=steps_text(pdir, doc), step=a.step,
-                                      state=gp.status(pdir, step),
-                                      outcome=gp.read(os.path.join(run_dir, "outcome.txt")).strip() or "(none)",
-                                      report=gp.read(os.path.join(run_dir, "report.md")).strip()[:6000] or "(none)")
+                                      state=gp.status(pdir, step), outcome=outcome, report=report)
         done = lambda name, out: out.startswith("DECISION SAVED")
     else:
         doc = gp.approved_doc(pdir, quiet=True) or {}
