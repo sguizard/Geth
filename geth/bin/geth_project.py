@@ -527,8 +527,10 @@ def run(pdir, answers="", auto=False):
             if state in ("waiting", "running"):
                 return 2
         state = status(pdir, step)
+        reviewed = sid in (load(os.path.join(pdir, "reviews.json"), {}) or {})
         if state in ("done", "failed", "plan failed"):
-            log(pdir, f"step {sid}: {state}")
+            if not reviewed:  # newly finished: say so, and let the coordinator decide what follows
+                log(pdir, f"step {sid}: {state}")
             action = review(pdir, step)
             if action == "revise":
                 log(pdir, f"the coordinator proposes new steps after {sid}: geth project show {name}; "

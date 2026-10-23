@@ -1337,6 +1337,21 @@ def mentioned(name, text):
     return re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text or "") is not None
 
 
+# Option names too common to tie an error to one parameter (deseq2_vs_method is not named by "a method").
+GENERIC_OPTIONS = {"method", "type", "mode", "file", "path", "name", "value", "size", "args", "options", "blind",
+                   "test", "level", "list", "data", "format", "version", "skip", "save", "output", "input"}
+
+
+def names_tool_option(name, text):
+    """An error from a tool that names one of its options: deseq2_vst_nsub, after DESEQ2_DIFFERENTIAL failed with
+    "less than 'nsub' rows". The parameter's first word is the tool, its last the option (4+ letters, not generic)."""
+    parts = name.lower().split("_")
+    tool, option, low = parts[0], parts[-1], (text or "").lower()
+    return (len(parts) >= 2 and len(tool) >= 3 and len(option) >= 4 and option not in GENERIC_OPTIONS
+            and re.search(rf"(?<![a-z0-9]){re.escape(tool)}", low) is not None
+            and re.search(rf"(?<![\w-]){re.escape(option)}(?![\w-])", low) is not None)
+
+
 def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=""):
     try:
         plan = approved_plan(run_dir)
@@ -1422,7 +1437,8 @@ def gate(run_dir, pipeline, sheet_text, params_text, contrasts_text="", profile=
     else:
         for k in added + removed + changed:
             if not mentioned(k, text) and not skips_named_step(k, params.get(k), text) \
-                    and not names_its_file(old.get(k), text) and not skips_named_tools(k, old.get(k), params.get(k), text):
+                    and not names_its_file(old.get(k), text) and not skips_named_tools(k, old.get(k), params.get(k), text) \
+                    and not names_tool_option(k, text):
                 what = "added" if k in added else "removed" if k in removed else f"changed ({old[k]!r} -> {params[k]!r})"
                 problems.append(f"param '{k}' was {what} but the previous error does not mention it"
                                 + ("" if text else " (the approved plan must be launched unchanged first)"))

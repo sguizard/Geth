@@ -7,10 +7,12 @@ Scenarios (bench/bench_project.sh):
   bulk_de      airway reads, dexamethasone response     -> rnaseq, then differentialabundance after it
   multiomics   yeast RNA-seq + ATAC-seq in one delivery  -> rnaseq on RNA/, atacseq on ATAC/, independent
   noref        yeast RNA-seq, no reference in delivery  -> Ensembl yeast genome (reference), rnaseq after it
+                                                        (once the catalogue has that genome: rnaseq only)
   smallrna     human miRNA reads                         -> a gap naming nf-core/smrnaseq, no Geth pipeline
   kang_gap     a count matrix, DE per cell type, no lab -> gaps only (no pipeline step can take an .h5ad)
   kang_lab     the same with --lab                        -> one lab step on the delivery's .h5ad
 """
+import glob
 import json
 import os
 import sys
@@ -55,9 +57,13 @@ def score(pdir, scenario):
     elif scenario == "noref":
         ref = [s for s in steps if s.get("kind") == "reference"]
         rna = pipelines(steps, "rnaseq")
-        checks.update(yeast_genome=len(ref) == 1 and ref[0].get("species") == "saccharomyces_cerevisiae"
-                      and ref[0].get("assembly") == "R64-1-1",
-                      rnaseq_after_it=len(rna) == 1 and after_ok(rna, ref), nothing_else=len(analyses) == 1)
+        if glob.glob(os.path.join(os.environ.get("GETH_REFERENCES", ""), "saccharomyces_cerevisiae_R64-1-1_ens*")):
+            # a project has catalogued the genome since: the right plan uses it, without a download
+            checks.update(no_download=not ref, rnaseq=len(rna) == 1, nothing_else=len(analyses) == 1)
+        else:
+            checks.update(yeast_genome=len(ref) == 1 and ref[0].get("species") == "saccharomyces_cerevisiae"
+                          and ref[0].get("assembly") == "R64-1-1",
+                          rnaseq_after_it=len(rna) == 1 and after_ok(rna, ref), nothing_else=len(analyses) == 1)
     elif scenario == "smallrna":
         gaps = [s for s in steps if s.get("kind") == "gap"]
         checks.update(gap_names_smrnaseq=any(str(s.get("nfcore", "")).replace("nf-core/", "") == "smrnaseq" for s in gaps),
