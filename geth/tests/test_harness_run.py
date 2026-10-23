@@ -132,6 +132,37 @@ class RunHarness(unittest.TestCase):
         self.assertIn("did not write a report", open(os.path.join(self.d, "report.md")).read())
         self.assertIn("no report was written", open(os.path.join(self.d, "report_check.txt")).read())
 
+    def test_the_analyst_runs_the_toolbox_and_its_annotations_are_kept(self):
+        open(os.path.join(self.d, "plan_pipeline.txt"), "w").write("sc_downstream\n")
+        open(os.path.join(self.d, "plan_params.json"), "w").write('{"resolutions": [0.5]}\n')
+        jobs = []
+
+        def fake_job(run_dir, task, path):  # the toolbox job: analysis_N, SUCCEEDED when it worked
+            jobs.append((task, open(path).read()))
+            out = os.path.join(run_dir, f"analysis_{len(jobs)}")
+            os.makedirs(out)
+            open(os.path.join(out, "SUCCEEDED"), "w").close()
+            return f"STATUS: SUCCESS\nOUTDIR: {out}\nclusters: 2\nFLAGS: none"
+        saved_job, run.sc_job = run.sc_job, fake_job
+        try:
+            rc, client = self.go(
+                {"content": "", "tool_calls": [call("activate_skill", skill_name="sc-downstream")]},
+                {"content": "", "tool_calls": [call("SC_ANALYSE", design='{"resolutions": [0.5]}')]},
+                {"content": "", "tool_calls": [call("SAVE_ANNOTATIONS", annotations="cluster 0: B cell (MS4A1)\ncluster 1: NK (NKG7)")]},
+                {"content": "", "tool_calls": [call("SUBMIT_OUTCOME", succeeded=True, outdir="analysis_1", changes_to_plan=[],
+                                                    annotations=["cluster 0: B cell (MS4A1)", "cluster 1: NK (NKG7)"],
+                                                    last_error="none")]},
+                {"content": "", "tool_calls": [call("SUBMIT_REPORT", report="# Summary\nTwo clusters.")]})
+        finally:
+            run.sc_job = saved_job
+        self.assertEqual(rc, 0)
+        self.assertEqual(jobs, [("analyse", '{"resolutions": [0.5]}\n')])
+        self.assertIn("annotations: [cluster 0: B cell (MS4A1), cluster 1: NK (NKG7)]", self.outcome())
+        self.assertEqual(open(os.path.join(self.d, "annotations.txt")).read(), "cluster 0: B cell (MS4A1)\ncluster 1: NK (NKG7)\n")
+        first = client.seen[0]
+        self.assertIn("single-cell analyst", first[0]["content"])
+        self.assertIn('{"resolutions": [0.5]}', first[1]["content"])
+
     def test_outcome_txt_round_trip(self):
         outcome = {"succeeded": True, "attempts": 3, "outdir": "/r/results", "fixes_applied": ["a", "b"],
                    "annotations": [], "last_error": "none"}

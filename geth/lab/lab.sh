@@ -16,7 +16,7 @@
 #   geth lab stop <name>                                           stop a lab run and its scheduler jobs
 #
 # The lab works only on benchmark data (GETH_LAB_DATA, default $GETH_DATA_ROOT/testdata) and writes to
-# $GETH_RUNS_DIR/lab/<name>.
+# $GETH_RUNS_DIR/lab/<name>. GETH_LAB_RUNNER=harness runs the lab agents on Rannoch (geth/harness/lab.py).
 source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)/env.sh" || exit 1
 set -euo pipefail
 export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
@@ -30,12 +30,24 @@ run_dir_of() {
     echo "$lab/$1"
 }
 lab_nf() {  # lab_nf <run_dir> <mode> <tag> [params...]: one lab stage, one driver slot
+    # GETH_LAB_RUNNER=harness: the agents on Rannoch (geth/harness/lab.py), their jobs through geth/lab/jobs.nf
     local d=$1 mode=$2 tag=$3 rc
     shift 3
     acquire_slots "$d" "$tag" 1
-    sandboxed "$d" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
-        --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" \
-        -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1
+    if [ "${GETH_LAB_RUNNER:-nextflow}" = harness ] && [ "$mode" = run_c ]; then  # no agent: the full run's job
+        local p=() k
+        while [ $# -gt 0 ]; do case $1 in --lab_*|--data_file|--full_*) p+=("$1" "$2"); shift 2 ;; *) shift ;; esac; done
+        (cd "$d" && sandboxed "$d" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/lab/jobs.nf" "${site[@]}" \
+            --task run_project --run_dir "$d" "${p[@]}" --out "$d/full_c_report.txt" \
+            -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1)
+    elif [ "${GETH_LAB_RUNNER:-nextflow}" = harness ]; then
+        sandboxed "$d" -- timeout "$(stage_limit "$mode")" env PYTHONPATH="$GETH_HOME/geth" python3 -m harness.lab \
+            --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" > "$d/geth_$tag.log" 2>&1
+    else
+        sandboxed "$d" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
+            --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" \
+            -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1
+    fi
     rc=$?
     explain_timeout $rc "$mode" "$d/geth_$tag.log"
     rm -f "$d/.geth_$tag.pid"
@@ -84,12 +96,9 @@ case "$cmd" in
         [ -e "$d" ] && { echo "Lab run '$3' already exists: choose another name." >&2; exit 1; }
         mkdir -p "$d"
         cd "$d"
-        acquire_slots "$d" design 1
-        sandboxed "$d" -- timeout "$(stage_limit design)" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
-            --mode design --question "$question" --data_dir "$data_dir" --run_dir "$d" --lab_skill "$skill" \
-            -w "$d/geth_work" -with-trace "$d/geth_trace_design.txt" -ansi-log false > "$d/geth_design.log" 2>&1 \
-            || { rm -f "$d/.geth_design.pid"; echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
-        rm -f "$d/.geth_design.pid"
+        echo "$data_dir" > "$d/data_dir.txt"
+        lab_nf "$d" design design --question "$question" --lab_skill "$skill" \
+            || { echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
         show "$d"
         ;;
     show)

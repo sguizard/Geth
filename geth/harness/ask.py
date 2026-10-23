@@ -89,6 +89,7 @@ class TerminalProgress:
                 "PIPELINE_OPTIONS": lambda: f"Browsing the options of nf-core/{args.get('pipeline', '')}"
                                             + (f": {args['section']}" if args.get("section") else "")
                                             + (f" ('{args['search']}')" if args.get("search") else ""),
+                "SC_INSPECT": lambda: f"Inspecting the cells of {base('h5ad')} (a scheduler job)",
                 "CHECK_PLAN": lambda: "Checking the plan",
                 "SUBMIT_PLAN": lambda: "Submitting the plan",
                 "ASK_USER": lambda: "Asking you"}.get(name, lambda: name)()

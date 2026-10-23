@@ -33,6 +33,7 @@ h5ad=$(python3 -c 'import csv, sys; print(next(csv.DictReader(open(sys.argv[1]))
 export GETH_CACHE="$PWD/.cache"
 if sc_downstream.py run "$h5ad" "$out/design.json" "$out" > "$out/summary.txt" 2> "$out/stderr.txt"; then
     geth_checks.py record "$run_dir" analysis "$sheet" "$out/design.json" "$out/summary.txt"
+    touch "$out/SUCCEEDED"  # what an agent's success claim is checked against
     echo "STATUS: SUCCESS"
     echo "OUTDIR: $out"
     cat "$out/summary.txt"

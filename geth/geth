@@ -56,11 +56,13 @@ nf() {  # nf <run_dir> <mode> [extra args]
 harness() {  # harness <run_dir> <stage> [args]: a stage on Geth's own agent loop (Rannoch: geth/harness, no JVM)
     local d=$1 stage=$2; shift 2
     cd "$d"
-    # No Nextflow driver for the agents: no slot, but a pid file (geth list, geth stop); a run still starts the
-    # pipeline's driver (one slot).
-    acquire_slots "$d" "$stage" "$([ "$stage" = run ] && echo 1 || echo 0)"
-    local ro=() prev=
+    local ro=() prev= drivers=0
     for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done
+    # No Nextflow driver for the agents: no slot, but a pid file (geth list, geth stop). A run still starts the
+    # pipeline's driver (or the single-cell toolbox's jobs), and so may a plan on a single-cell run (SC_INSPECT).
+    [ "$stage" = run ] && drivers=1
+    [ ${#ro[@]} -gt 0 ] && [ "$(cat "${ro[1]}/plan_pipeline.txt" 2>/dev/null)" = scrnaseq ] && drivers=1
+    acquire_slots "$d" "$stage" "$drivers"
     local fg=()  # questions in the terminal: the agent must stay in the terminal's foreground to read it
     for a in "$@"; do [ "$a" = terminal ] && fg=(--foreground); done
     sandboxed "$d" "${ro[@]}" -- timeout "${fg[@]}" "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
@@ -71,14 +73,9 @@ harness() {  # harness <run_dir> <stage> [args]: a stage on Geth's own agent loo
     return $rc
 }
 
-runner() {  # runner <run_dir>: who runs and reports, the Nextflow agents (default) or Rannoch (GETH_RUNNER=harness)
+runner() {  # who runs and reports: the Nextflow agents (default) or Rannoch (GETH_RUNNER=harness)
     case ${GETH_RUNNER:-nextflow} in
-        nextflow) echo nextflow ;;
-        harness)  # the single-cell toolbox's analyst is not on Rannoch yet
-            if [ "$(cat "$1/plan_pipeline.txt" 2>/dev/null)" = sc_downstream ]; then
-                echo "GETH_RUNNER=harness: the single-cell analyst is not on Rannoch yet; the Nextflow agents run this one." >&2
-                echo nextflow
-            else echo harness; fi ;;
+        nextflow|harness) echo "${GETH_RUNNER:-nextflow}" ;;
         *) echo "GETH_RUNNER must be 'harness' or 'nextflow' (got '$GETH_RUNNER')" >&2; return 1 ;;
     esac
 }
@@ -236,7 +233,7 @@ case "$cmd" in
             echo "Started in the background (pid $!). Follow it with: geth status $1   (log: $d/geth_run.out)"
             exit 0
         fi
-        who=$(runner "$d")
+        who=$(runner)
         echo "Running the approved plan in $d ..."
         if [ "$who" = harness ]; then
             echo "Operator and reporter: Rannoch (Geth's own agent loop; follow it in $d/geth_run.log)"
@@ -256,7 +253,7 @@ case "$cmd" in
             cp "$d/report.md" "$keep"; cp "$d/report_check.txt" "${keep%.md}.check.txt" 2>/dev/null || true
             echo "Previous report kept as $(basename "$keep")"
         fi
-        who=$(runner "$d")
+        who=$(runner)
         echo "Writing the report again from $d/results ..."
         if [ "$who" = harness ]; then
             harness "$d" report || { echo "Report failed: see $d/geth_report.log" >&2; exit 1; }

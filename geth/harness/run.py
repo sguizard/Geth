@@ -7,7 +7,9 @@ Same instructions and tools as the Nextflow agents. Two fences the structured an
   pipeline log says it completed;
 - the reporter's report goes through SUBMIT_REPORT, which runs the report check: numbers that cannot be traced to
   the results come back to the reporter once, to correct, before the report is saved with Geth's note.
-The pipelines themselves still run on Nextflow (run_nfcore.sh), as scheduler jobs.
+The pipelines themselves still run on Nextflow (run_nfcore.sh), as scheduler jobs. A single-cell downstream design
+(pipeline sc_downstream) goes to the analyst instead of the operator: Geth's toolbox, as scheduler jobs too
+(bin/sc_job.sh, geth/jobs.nf).
 """
 import argparse
 import glob
@@ -16,9 +18,9 @@ import os
 import subprocess
 import sys
 
-from .agent import Agent, Tool, string_params
+from .agent import Agent, Tool, load_skills, string_params
 from .llm import Client, ModelError
-from .tools import GETH_HOME, scratch
+from .tools import GETH_HOME, sc_job, scratch
 
 BIN = os.path.join(GETH_HOME, "geth", "bin")
 sys.path.insert(0, BIN)
@@ -45,6 +47,31 @@ profile: {profile}
 
 When you are done, call SUBMIT_OUTCOME with: whether the run succeeded, the OUTDIR printed by the tool (or
 "none"), every change you made to the plan (or an empty list), and the last error (or "none").'''
+
+ANALYST = '''You are Geth's single-cell analyst. You run a downstream analysis design that a person has
+approved, with the SC_ANALYSE tool, then interpret the diagnostics.
+First call SC_ANALYSE with the approved design lines exactly as given. Read the diagnostics: cells kept
+per QC step, doublet rate, clusters per resolution, and for each cluster its size, top markers, the
+canonical marker panel and the CellTypist label with its agreement.
+You may call SC_ANALYSE once more, only if a diagnostic shows a real problem, changing only tunable keys
+(QC thresholds, doublet rate/threshold, HVG number, neighbours, Leiden resolutions/chosen) and adding a
+line justification=... that cites the diagnostic. If STATUS: REFUSED, do not insist: report.
+The diagnostics end with FLAGS computed by Geth: for each flag, either revise the design to address it
+or state in your final answer why it needs no change. Do not describe the results as better than the
+diagnostics show.
+Then annotate every cluster of the final analysis from its markers, supported by CellTypist; write
+"uncertain" when markers and CellTypist disagree, and save the annotations with SAVE_ANNOTATIONS
+(one line per cluster: "cluster <id>: <cell type> (<key markers>)"). Never claim success unless the
+tool printed STATUS: SUCCESS.'''
+
+ANALYST_PROMPT = '''Run the approved design now: call SC_ANALYSE with this design exactly as given (a JSON object; for a
+revision you may send the changed keys and the justification as key=value lines instead):
+{params}
+
+When you are done, call SUBMIT_OUTCOME with: whether the analysis succeeded, the OUTDIR of the final analysis,
+every change you made to the design with its justification, and how you handled each FLAG (or an empty list),
+one annotation per cluster as "cluster <id>: <cell type> (<key markers>)" (also saved with SAVE_ANNOTATIONS),
+and the last error (or "none").'''
 
 REPORTER = '''You are Geth's reporting assistant. You write concise, factual analysis reports in Markdown
 for biologists. Copy tables and numbers from the COLLECT_RESULTS output exactly as printed: do not
@@ -114,6 +141,39 @@ def completed(attempt):
     return bool(attempt) and "Pipeline completed successfully" in read(attempt, "nextflow.log")
 
 
+def last_analysis(run_dir):
+    analyses = sorted(glob.glob(os.path.join(run_dir, "analysis_*")), key=lambda p: int(p.rsplit("_", 1)[1]))
+    return analyses[-1] if analyses else None
+
+
+def analysed(run_dir):
+    """Did the last analysis of the single-cell toolbox succeed (sc_analyse.sh leaves SUCCEEDED)?"""
+    last = last_analysis(run_dir)
+    return bool(last) and os.path.isfile(os.path.join(last, "SUCCEEDED"))
+
+
+def sc_analyse_tool(run_dir, calls):
+    def run(design):
+        calls.append("SC_ANALYSE")
+        text = json.dumps(design) if isinstance(design, dict) else str(design)
+        return sc_job(run_dir, "analyse", scratch(run_dir, **{f"design_{len(calls)}.txt": text})[f"design_{len(calls)}.txt"])
+    return Tool("SC_ANALYSE", "Run one analysis of the single-cell design with Geth's toolbox (a scheduler job) and "
+                "print its diagnostics: STATUS: SUCCESS with OUTDIR, FAILED, or REFUSED (a change that is not allowed).",
+                string_params(design="the design: a JSON object, or key=value lines (a revision: the changed keys and "
+                              "justification=...)"), run, check=True)
+
+
+def save_annotations_tool(run_dir):
+    def run(annotations):
+        lines = annotations if isinstance(annotations, list) else str(annotations).splitlines()
+        lines = [str(l).strip() for l in lines if str(l).strip()]
+        write(run_dir, "annotations.txt", "\n".join(lines) + "\n")
+        return f"Saved {len(lines)} annotation line(s)."
+    return Tool("SAVE_ANNOTATIONS", "Save the cluster annotations, one line per cluster: "
+                "\"cluster <id>: <cell type> (<key markers>)\".",
+                string_params(annotations="the annotation lines, one per cluster"), run)
+
+
 def save_outcome(run_dir, outcome):
     """outcome.txt, as SAVE_OUTCOME of geth/main.nf writes it (lists as Groovy prints them: [a, b])."""
     listed = lambda v: "[" + ", ".join(v) + "]"
@@ -122,32 +182,36 @@ def save_outcome(run_dir, outcome):
               f"annotations: {listed(outcome['annotations'])}\nlast_error: {outcome['last_error']}\n")
 
 
-def submit_outcome_tool(run_dir, outcome, calls):
-    """The operator's final answer. The claim must agree with the pipeline log of the last launched attempt, either
-    way; the number of attempts is the number of RUN_NFCORE calls Geth saw, not the model's count."""
-    def run(succeeded, outdir, changes_to_plan, last_error):
+def submit_outcome_tool(run_dir, outcome, calls, analyst=False):
+    """The operator's (or analyst's) final answer. The claim must agree with the disk, either way: the pipeline log of
+    the last launched attempt (the toolbox: the last analysis); the number of attempts is the number of calls Geth
+    saw, not the model's count."""
+    def run(succeeded, outdir, changes_to_plan, last_error, annotations=None):
         ok = str(succeeded).lower() in ("true", "yes", "1")
-        done = completed(last_attempt(run_dir))
+        done = analysed(run_dir) if analyst else completed(last_attempt(run_dir))
+        what = "the last analysis did not succeed" if analyst else ("the last launched attempt did not complete (its "
+                                                                    "pipeline log has no 'Pipeline completed successfully')")
         if ok and not done:
-            return ("REFUSED: the last launched attempt did not complete (its pipeline log has no 'Pipeline completed "
-                    "successfully'): report succeeded=false with its error, or fix it with RUN_NFCORE.")
+            return f"REFUSED: {what}: report succeeded=false with its error, or fix it."
         if done and not ok:
-            return "REFUSED: the last launched attempt completed successfully (its pipeline log says so): report succeeded=true."
-        changes = changes_to_plan if isinstance(changes_to_plan, list) else [str(changes_to_plan)] if changes_to_plan else []
-        outcome.update(succeeded=ok, attempts=len(calls), outdir=str(outdir or "none"),
-                       fixes_applied=[str(c) for c in changes if str(c).strip() and str(c).lower() != "none"],
-                       annotations=[], last_error=str(last_error or "none"))
+            return "REFUSED: the last " + ("analysis" if analyst else "launched attempt") + " succeeded: report succeeded=true."
+        listed = lambda v: [str(c) for c in (v if isinstance(v, list) else [v] if v else [])
+                            if str(c).strip() and str(c).strip().lower() != "none"]
+        outcome.update(succeeded=ok, attempts=len(calls), outdir=str(outdir or "none"), fixes_applied=listed(changes_to_plan),
+                       annotations=listed(annotations), last_error=str(last_error or "none"))
         save_outcome(run_dir, outcome)
         return "OUTCOME SAVED"
     array = {"type": "array", "items": {"type": "string"}}
-    return Tool("SUBMIT_OUTCOME", "Report the run's outcome, when you are done with RUN_NFCORE. Geth checks the claim "
-                "against the pipeline's log.",
-                {"type": "object", "required": ["succeeded", "outdir", "changes_to_plan", "last_error"],
-                 "properties": {"succeeded": {"type": "boolean"},
-                                "outdir": {"type": "string", "description": "the OUTDIR printed by RUN_NFCORE, or 'none'"},
-                                "changes_to_plan": dict(array, description="every change you made to the plan, or []"),
-                                "last_error": {"type": "string", "description": "the last error, or 'none'"}}},
-                run, final=True)
+    props = {"succeeded": {"type": "boolean"},
+             "outdir": {"type": "string", "description": "the OUTDIR printed by the tool, or 'none'"},
+             "changes_to_plan": dict(array, description="every change you made to the plan" + (
+                 " with its justification, and how you handled each FLAG" if analyst else "") + ", or []"),
+             "last_error": {"type": "string", "description": "the last error, or 'none'"}}
+    if analyst:
+        props["annotations"] = dict(array, description='one line per cluster: "cluster <id>: <cell type> (<key markers>)"')
+    return Tool("SUBMIT_OUTCOME", "Report the outcome when you are done. Geth checks the claim against the "
+                + ("toolbox's" if analyst else "pipeline's") + " record.",
+                {"type": "object", "required": list(props), "properties": props}, run, final=True)
 
 
 def collect_tool(run_dir):
@@ -206,8 +270,7 @@ def main(argv=None):
     if not os.path.isfile(os.path.join(a.run_dir, "APPROVED")):
         sys.exit(f"The plan in {a.run_dir} has not been approved: run `geth approve` first")
     plan = load_plan(a.run_dir)
-    if plan["pipeline"] == "sc_downstream":
-        sys.exit("The single-cell toolbox's analyst is not on the Rannoch runner yet (R4b): run without GETH_RUNNER=harness")
+    single_cell = plan["pipeline"] == "sc_downstream"
     try:
         client = Client()
     except ModelError as e:
@@ -222,17 +285,25 @@ def main(argv=None):
         outcome = outcome_from_file(a.run_dir)
     else:
         outcome, calls = {}, []
-        operator = Agent("operator", OPERATOR, [run_nfcore_tool(a.run_dir, calls), submit_outcome_tool(a.run_dir, outcome, calls)],
-                         client, max_turns=10, trace_path=trace, log=log)
+        if single_cell:
+            skills = {k: v for k, v in load_skills(os.path.join(GETH_HOME, "geth", "skills")).items() if k == "sc-downstream"}
+            agent = Agent("analyst", ANALYST, [sc_analyse_tool(a.run_dir, calls), save_annotations_tool(a.run_dir),
+                                               submit_outcome_tool(a.run_dir, outcome, calls, analyst=True)],
+                          client, skills=skills, max_turns=8, trace_path=trace, log=log)
+            prompt = ANALYST_PROMPT.format(params=plan["params"])
+        else:
+            agent = Agent("operator", OPERATOR, [run_nfcore_tool(a.run_dir, calls), submit_outcome_tool(a.run_dir, outcome, calls)],
+                          client, max_turns=10, trace_path=trace, log=log)
+            prompt = OPERATOR_PROMPT.format(**{k: plan[k] or "''" for k in ("pipeline", "sheet", "params", "sheet2", "profile")})
         try:  # a gate refusal is a check's refusal: the same one again and again ends the loop
-            operator.run(OPERATOR_PROMPT.format(**{k: plan[k] or "''" for k in ("pipeline", "sheet", "params", "sheet2", "profile")}),
-                         done=lambda name, out: out.startswith("OUTCOME SAVED") or "STATUS: SUCCESS" in out)
+            agent.run(prompt, done=lambda name, out: out.startswith("OUTCOME SAVED") or "STATUS: SUCCESS" in out)
         except ModelError as e:
             log(f"Geth: {e}")
-        if not outcome:  # the operator gave no outcome: say what the disk says
-            ok = completed(last_attempt(a.run_dir))
-            outcome.update(succeeded=ok, attempts=len(calls), outdir=os.path.join(a.run_dir, "results") if ok else "none",
-                           fixes_applied=[], annotations=[], last_error="none" if ok else "the operator ended without reporting an outcome")
+        if not outcome:  # the agent gave no outcome: say what the disk says
+            ok = analysed(a.run_dir) if single_cell else completed(last_attempt(a.run_dir))
+            outdir = (last_analysis(a.run_dir) if single_cell else os.path.join(a.run_dir, "results")) if ok else "none"
+            outcome.update(succeeded=ok, attempts=len(calls), outdir=outdir, fixes_applied=[], annotations=[],
+                           last_error="none" if ok else f"the {agent.name} ended without reporting an outcome")
             save_outcome(a.run_dir, outcome)
 
     reporter = Agent("reporter", REPORTER, [collect_tool(a.run_dir),

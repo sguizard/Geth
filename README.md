@@ -128,7 +128,8 @@ python3 geth/tests/test_collect_results.py
 python3 geth/tests/test_lab_build.py
 python3 geth/tests/test_harness.py
 python3 geth/tests/test_harness_run.py
-nextflow lint geth/main.nf geth/lab/main.nf
+python3 geth/tests/test_harness_lab.py
+nextflow lint geth/main.nf geth/lab/main.nf geth/jobs.nf geth/lab/jobs.nf
 ```
 
 The [developer guide](docs/developer-guide.md) explains the code and how to add a pipeline.

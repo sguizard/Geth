@@ -17,7 +17,7 @@ from .agent import Agent, load_skills
 from .ask import FileAnswerer, Nobody, TerminalAsker, TerminalProgress, ask_tool
 from .llm import Client, ModelError
 from .tools import (GETH_HOME, check_plan, checks, inspect_reads, list_files, list_references, pipeline_options,
-                    read_text, submit_plan)
+                    read_text, sc_inspect, submit_plan)
 
 INSTRUCTION = '''You are Geth, a bioinformatics analysis planner. You turn a scientist's request and a
 sequencing data folder into a run plan for exactly one nf-core pipeline. For new sequencing data:
@@ -45,6 +45,13 @@ plus the second sheet in contrasts_csv (differentialabundance: the contrasts; mu
 barcodes sheet) and the analysis profile for differentialabundance (empty strings otherwise),
 fix every problem it reports, and repeat until it prints "PLAN CHECK: OK". Read every WARNING it
 prints too: fix the plan, or explain in the rationale why the warning does not apply.'''
+
+# A follow-up of a finished nf-core/scrnaseq run: the single-cell toolbox (as main.nf's planner).
+SINGLE_CELL = '''
+For a follow-up of a finished nf-core/scrnaseq run, design a downstream analysis for Geth's single-cell
+toolbox instead (pipeline "sc_downstream"): load the sc-downstream skill, find the sample's filtered
+count matrix in the upstream results, call SC_INSPECT on it, and choose every design value from the
+observed data; the samplesheet is "sample,h5ad" and the parameters are the design key=value lines.'''
 
 QUESTIONS = '''
 
@@ -117,6 +124,10 @@ def main(argv=None):
     tools = [list_files(data_root), read_text(data_root), list_references(references),
              check_plan(a.run_dir, a.upstream_run), submit_plan(a.run_dir, a.upstream_run)]
     instruction, hint, progress = INSTRUCTION, "", None
+    single_cell = bool(a.upstream_run) and open(os.path.join(a.upstream_run, "plan_pipeline.txt")).read().strip() == "scrnaseq"
+    if single_cell:  # the single-cell toolbox: its inspection runs as a scheduler job
+        tools.append(sc_inspect(a.run_dir, data_root))
+        instruction += SINGLE_CELL
     if a.ask != "off":
         transcript = os.path.join(a.run_dir, "plan_questions.md")
         open(transcript, "w").close()
@@ -127,7 +138,9 @@ def main(argv=None):
         tools += [pipeline_options(), ask_tool(asker, transcript), inspect_reads(data_root)]
         instruction += QUESTIONS
         hint = "If you cannot fix it from the data, ask the scientist with ASK_USER (for example which file to use)."
-    skills = {k: v for k, v in load_skills(os.path.join(GETH_HOME, "geth", "skills")).items() if k != "sc-downstream"}
+    skills = load_skills(os.path.join(GETH_HOME, "geth", "skills"))
+    if not single_cell:
+        skills.pop("sc-downstream", None)
     agent = Agent("planner", instruction, tools, client, skills=skills, max_turns=a.max_turns,
                   trace_path=os.path.join(a.run_dir, "harness_trace_plan.jsonl"), log=lambda m: print(m, flush=True),
                   stuck_hint=hint, progress=progress)

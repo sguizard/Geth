@@ -11,6 +11,7 @@ from .agent import Tool, string_params
 
 GETH_HOME = os.environ.get("GETH_HOME", os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 CHECKS = os.path.join(GETH_HOME, "geth", "bin", "geth_checks.py")
+SC_JOB = os.path.join(GETH_HOME, "geth", "bin", "sc_job.sh")
 
 
 def under(path, root):
@@ -221,3 +222,21 @@ def inspect_reads(data_root):
                 f"({100 * lengths.count(common) // len(lengths)}% of reads). First read names: {'; '.join(names)}")
     return Tool("INSPECT_READS", "Read lengths of a FASTQ file (.fastq or .fastq.gz), from its first reads: use it "
                 "for the read length instead of counting letters.", string_params(path="absolute path of the FASTQ"), run)
+
+
+def sc_job(run_dir, task, arg):
+    """One job of the single-cell toolbox (bin/sc_job.sh: geth/jobs.nf through the site's scheduler)."""
+    result = subprocess.run(["bash", SC_JOB, run_dir, task, arg], capture_output=True, text=True)
+    return (result.stdout + result.stderr).strip()
+
+
+def sc_inspect(run_dir, data_root):
+    def run(h5ad):
+        if not under(h5ad, data_root) or not h5ad.endswith(".h5ad"):
+            return f"REFUSED: only .h5ad files under {data_root} can be inspected"
+        if not os.path.isfile(h5ad):
+            return f"NOT FOUND: {h5ad}"
+        return sc_job(run_dir, "inspect", h5ad)
+    return Tool("SC_INSPECT", "Inspect a single-cell count matrix (.h5ad) with Geth's single-cell toolbox: cells, "
+                "and the distributions of counts, genes and mitochondrial fraction per cell (a scheduler job: a few "
+                "minutes).", string_params(h5ad="absolute path of the .h5ad file"), run)

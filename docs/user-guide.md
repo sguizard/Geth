@@ -323,7 +323,9 @@ The operator and reporter can run on the same loop (`GETH_RUNNER=harness geth ru
 `geth report` likewise). The pipeline still runs as before; what changes is who drives it, and two checks:
 Geth refuses an outcome that the pipeline's log contradicts (a run claimed to have succeeded, or failed), and a
 report with numbers it cannot trace goes back to the reporter once, to correct, before it is saved. Follow
-the run in `geth_run.log`. Single-cell downstream analyses (`sc_downstream`) still run on the Nextflow agents.
+the run in `geth_run.log`. Single-cell downstream analyses work the same way: the planner inspects the cells
+(`geth plan --from <scrnaseq run>`) and the analyst runs the approved design, with the toolbox's jobs submitted
+through your site's scheduler.
 
 ## Good to know
 
