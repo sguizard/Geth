@@ -200,6 +200,15 @@ def ensembl(name):
             f"release: {release}\n" + "\n".join(f"file: {u} ({s / 1e6:,.0f} MB)" for u, s in files))
 
 
+def delivered_genomes(data_dir):
+    """Genome FASTA files the delivery brings with it (3 levels deep)."""
+    found = []
+    for pattern in ("*.fa", "*.fa.gz", "*.fasta", "*.fasta.gz", "*.fna", "*.fna.gz"):
+        for depth in ("", "*/", "*/*/", "*/*/*/"):
+            found += glob.glob(os.path.join(data_dir, depth + pattern))
+    return sorted(found)
+
+
 def catalogue_entry(step):
     """The catalogue folder a reference step creates (as stage_ensembl.sh names it)."""
     return os.path.join(REFERENCES, f"{step.get('species')}_{step.get('assembly')}_ens{step.get('release')}")
@@ -229,6 +238,7 @@ def check(pdir, doc, started=()):
     lab = (load(os.path.join(pdir, "options.json"), {}) or {}).get("lab", False)
     data_dir = read(os.path.join(pdir, "data_dir.txt")).strip()
     old = {s.get("id"): s for s in (load(os.path.join(pdir, "steps.json"), {}) or {}).get("steps", [])}
+    folders = {}  # data folder -> the pipeline step on sequencing data that uses it
     for i, s in enumerate(steps, start=1):
         s = s if isinstance(s, dict) else {}
         sid, kind, where = str(s.get("id", "")), s.get("kind"), f"step {i}"
@@ -265,6 +275,10 @@ def check(pdir, doc, started=()):
                     problems.append(f"{where}: {p} runs on sequencing data, so it builds on no analysis step "
                                     "(only on reference steps)")
                 data = str(s.get("data") or data_dir)
+                if data in folders:
+                    problems.append(f"{where}: steps {folders[data]} and {sid} both use {data}: give each its own "
+                                    "folder of the delivery (data), e.g. RNA and ATAC")
+                folders.setdefault(data, sid)
                 if not (data.startswith(DATA_ROOT + "/") and os.path.isdir(data)):
                     problems.append(f"{where}: data '{data}' is not a folder of the delivery ({data_dir}): give the "
                                     "folder that holds this step's files (e.g. RNA), or leave data out for the whole delivery")
@@ -277,6 +291,9 @@ def check(pdir, doc, started=()):
                                 "copy them from FIND_GENOME")
             elif os.path.isdir(catalogue_entry(s)):
                 problems.append(f"{where}: the catalogue already has {catalogue_entry(s)}: no download needed")
+            elif delivered_genomes(data_dir):
+                problems.append(f"{where}: the delivery brings its own genome ({delivered_genomes(data_dir)[0]}): the "
+                                "pipeline steps use it, no download needed")
             else:
                 try:
                     files = ensembl_files(species, assembly, release)

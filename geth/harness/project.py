@@ -40,7 +40,8 @@ Plan as few steps as the question needs:
 - a gap for every part of the question that no specialist does: what it is, the nf-core pipeline that would do
   it (SEARCH_NFCORE) if there is one, and what the earlier steps hand over to it.
 Each step's question tells its specialist exactly what to do, in the scientist's terms; for a comparison, say
-what is compared with what. Ask the scientist (ASK_USER) only what the files do not say and the steps depend on.
+what is compared with what. Ask the scientist (ASK_USER) only what the files do not say and the choice of steps
+depends on; each step's own details (strandedness, parameters) are for its specialist, who will ask if needed.
 Call CHECK_STEPS until it prints "STEP CHECK: OK", then SUBMIT_STEPS with exactly that list and a short rationale.'''
 
 PLAN_PROMPT = '''Request: {question}

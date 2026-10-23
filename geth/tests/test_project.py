@@ -82,6 +82,18 @@ class Project(unittest.TestCase):
         self.assertIn("the catalogue already has", self.problems(genome)[0])
         self.assertIn("species (e.g. mus_musculus)", self.problems(dict(genome, release="latest"))[0])
 
+    def test_no_download_when_the_delivery_brings_its_genome_and_one_folder_per_pipeline(self):
+        genome = {"id": "genome", "kind": "reference", "question": "Yeast genome.", "species": "saccharomyces_cerevisiae",
+                  "assembly": "R64-1-1", "release": "116"}
+        os.makedirs(os.path.join(self.data, "RNA", "reference"))
+        open(os.path.join(self.data, "RNA", "reference", "genome.fa"), "w").write(">chrI\nACGT\n")
+        self.assertIn("the delivery brings its own genome", self.problems(genome)[0])
+        rna = {"id": "rna", "kind": "pipeline", "pipeline": "rnaseq", "question": "Count."}
+        atac = {"id": "atac", "kind": "pipeline", "pipeline": "atacseq", "question": "Peaks."}
+        self.assertIn("both use", self.problems(rna, atac)[0])
+        os.makedirs(os.path.join(self.data, "ATAC"))
+        self.assertEqual(self.problems(dict(rna, data="RNA"), dict(atac, data="ATAC")), [])
+
     def test_ids_size_and_started_steps(self):
         self.assertIn("is used twice", self.problems(COUNT, dict(COUNT))[0])
         self.assertIn("at most 8", self.problems(*[dict(GAP, id=f"g{i}") for i in range(9)])[0])
