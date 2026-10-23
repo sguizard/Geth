@@ -57,8 +57,8 @@ def traced(token, value, facts):
     return False
 
 
-def check(report, run_dir, pipeline, attempts):
-    """(summary line, untraced numbers, untraced links) of a report; writes nothing."""
+def facts_of(run_dir, pipeline, attempts):
+    """(fact text, raw values) of one run: what a report on it may quote."""
     fact_text = collect(run_dir, pipeline) + f"\nattempts {attempts}\n"
     for f in ("question.txt", "plan_samplesheet.csv", "plan_params.json", "plan_rationale.txt"):
         p = os.path.join(run_dir, f)
@@ -66,7 +66,18 @@ def check(report, run_dir, pipeline, attempts):
             fact_text += open(p).read() + "\n"
     for p in sorted(glob.glob(os.path.join(run_dir, "attempt_*", "error.txt"))):
         fact_text += open(p, errors="replace").read() + "\n"
-    facts = {v for _, v in numbers(scrub(fact_text))} | set(raw_values(run_dir))
+    return fact_text, raw_values(run_dir)
+
+
+def check(report, run_dir, pipeline, attempts):
+    """(summary line, untraced numbers, untraced links) of a report; writes nothing."""
+    return check_against(report, [facts_of(run_dir, pipeline, attempts)])
+
+
+def check_against(report, sources, extra_text=""):
+    """The report check against several runs' facts (a project report), plus any extra fact text."""
+    fact_text = extra_text + "\n" + "\n".join(text for text, _ in sources)
+    facts = {v for _, v in numbers(scrub(fact_text))} | {v for _, raw in sources for v in raw}
 
     checked, unverified = 0, []
     for token, value in numbers(scrub(report)):

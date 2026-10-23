@@ -15,6 +15,7 @@
 #   geth stop <name>                           stop a planning or a run, and its scheduler jobs (geth run resumes it)
 #   geth doctor                                check the installation and the site configuration
 #   geth version                               print Geth's version
+#   geth project new|show|approve|run|list|stop  several analyses towards one question (geth project for details)
 #   geth lab ...                               EXPERIMENTAL agent-designed analyses (not for real analyses)
 source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)/env.sh" || exit 1
 set -euo pipefail
@@ -24,7 +25,7 @@ checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
 self=$(readlink -f "${BASH_SOURCE[0]}")  # agents() changes folder: call this script back by its full path
-usage() { sed -n '2,17p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,19p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
     local commit; commit=$(git -C "$GETH_HOME" rev-parse --short HEAD 2>/dev/null || true)
     echo "Geth $(cat "$GETH_HOME/VERSION" 2>/dev/null || echo unknown)${commit:+ (commit $commit)}"
@@ -38,19 +39,24 @@ run_dir_of() {
 agents() {  # agents <run_dir> <stage> [args]: a stage of Geth's agents (geth/harness: plan, run, report)
     local d=$1 stage=$2; shift 2
     cd "$d"
-    local ro=() prev= drivers=0
-    for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done
+    local ro=() prev= drivers=0 a log="$d/geth_$stage${GETH_LOG_SUFFIX:-}.log"
     # No Nextflow driver for the agents: no slot, but a pid file (geth list, geth stop). A run still starts the
     # pipeline's driver (or the single-cell toolbox's jobs), and so may a plan on a single-cell run (SC_INSPECT).
+    for a in "$@"; do
+        case $prev in
+            --upstream_run) ro+=(--ro "$a"); [ "$(cat "$a/plan_pipeline.txt" 2>/dev/null)" = scrnaseq ] && drivers=1 ;;
+            --step_run) ro+=(--ro "$a") ;;  # a project's coordinator reads its steps' runs
+        esac
+        prev=$a
+    done
     [ "$stage" = run ] && drivers=1
-    [ ${#ro[@]} -gt 0 ] && [ "$(cat "${ro[1]}/plan_pipeline.txt" 2>/dev/null)" = scrnaseq ] && drivers=1
     acquire_slots "$d" "$stage" "$drivers"
     local fg=()  # questions in the terminal: the agent must stay in the terminal's foreground to read it
     for a in "$@"; do [ "$a" = terminal ] && fg=(--foreground); done
     sandboxed "$d" "${ro[@]}" -- timeout "${fg[@]}" "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
-        python3 -m "harness.$stage" --run_dir "$d" "$@" > "$d/geth_$stage.log" 2>&1
+        python3 -m "harness.$stage" --run_dir "$d" "$@" > "$log" 2>&1
     local rc=$?
-    explain_timeout $rc "$stage" "$d/geth_$stage.log"
+    explain_timeout $rc "$stage" "$log"
     rm -f "$d/.geth_$stage.pid"
     return $rc
 }
@@ -114,6 +120,131 @@ show() {
     echo; check "$d" || true
 }
 
+project_py=$GETH_HOME/geth/bin/geth_project.py
+project_dir_of() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9._]+$ ]] || { echo "Project names may only use letters, digits, '.' and '_'." >&2; exit 1; }
+    echo "$runs/projects/$1"
+}
+project_usage() {
+    cat >&2 <<'USAGE'
+geth project: several analyses towards one question. The coordinator agent proposes the steps and you approve
+them; each pipeline step is an ordinary Geth run, named <project>-<step> (geth show / approve / status it).
+
+  geth project new <data_dir> "<question>" <name> [--lab] [--answers <file>] [--model <name>]
+                                      the coordinator reads the delivery and proposes the steps
+                                      (--lab: allow the EXPERIMENTAL lab, agents writing the analysis code,
+                                      for what no pipeline does)
+  geth project show <name>            the steps, where each stands, the coordinator's rationale
+  geth project approve <name> [--yes] approve the steps (or the coordinator's revised steps)
+  geth project run <name> [--answers <file>] [--detach]
+                                      run the next steps; it stops when a step's plan needs your approval
+                                      (geth show / geth approve <name>-<step>): run it again to continue
+  geth project list                   all projects and where they stand
+  geth project stop <name>            stop the project and its running step
+USAGE
+    exit 1
+}
+
+project() {  # project <subcommand> ...: see project_usage
+    local sub=${1:-} p rc
+    shift || true
+    case "$sub" in
+        new)
+            local lab=false answers= model= args=() ask
+            while [ $# -gt 0 ]; do
+                case $1 in
+                    --lab) lab=true; shift ;;
+                    --answers) answers=$(readlink -f "${2:-}"); shift 2 || project_usage ;;
+                    --model) model=${2:-}; shift 2 || project_usage ;;
+                    *) args+=("$1"); shift ;;
+                esac
+            done
+            [ ${#args[@]} -eq 3 ] || project_usage
+            local data_dir question=${args[1]}
+            data_dir=$(readlink -f "${args[0]}"); p=$(project_dir_of "${args[2]}")
+            [ -d "$data_dir" ] || { echo "No such folder: $data_dir" >&2; exit 1; }
+            case "$data_dir" in
+                "$GETH_DATA_ROOT"/?*) ;;
+                *) echo "Agents can only read data under GETH_DATA_ROOT ($GETH_DATA_ROOT)." >&2; exit 1 ;;
+            esac
+            [ -e "$p" ] && { echo "Project '${args[2]}' already exists: choose another name." >&2; exit 1; }
+            [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
+            [ -z "$model" ] || use_model "$model" || exit 1
+            mkdir -p "$p"
+            printf '%s\n' "$question" > "$p/question.txt"
+            printf '%s\n' "$data_dir" > "$p/data_dir.txt"
+            printf '{"lab": %s}\n' "$lab" > "$p/options.json"
+            if [ -n "$answers" ]; then ask=file; cp "$answers" "$p/answers.txt"
+            elif [ -t 0 ] && [ -t 1 ]; then ask=terminal
+            else ask=none; fi
+            ask=${GETH_PLANNER_ASK:-$ask}
+            echo "The coordinator is reading the delivery and proposing the steps in $p ..."
+            GETH_LOG_SUFFIX=_plan agents "$p" project --mode plan --ask "$ask" ${answers:+--answers "$p/answers.txt"} \
+                || { echo "Planning the project failed: see $p/geth_project_plan.log" >&2; exit 1; }
+            python3 "$project_py" show "$p"
+            echo; echo "Review the steps, then: geth project approve ${args[2]}"
+            ;;
+        show|status)
+            [ $# -eq 1 ] || project_usage
+            python3 "$project_py" show "$(project_dir_of "$1")"
+            ;;
+        approve)
+            [ $# -ge 1 ] || project_usage
+            p=$(project_dir_of "$1")
+            python3 "$project_py" show "$p"
+            if [ "${2:-}" != "--yes" ]; then
+                read -r -p "Approve these steps? [y/N] " answer
+                [[ "$answer" =~ ^[Yy]$ ]] || { echo "Not approved."; exit 1; }
+            fi
+            python3 "$project_py" approve "$p" "$(whoami)"
+            ;;
+        run)
+            [ $# -ge 1 ] || project_usage
+            p=$(project_dir_of "$1"); shift
+            [ -d "$p" ] || { echo "No project named '$(basename "$p")'." >&2; exit 1; }
+            local detach=no extra=()
+            while [ $# -gt 0 ]; do
+                case $1 in
+                    --detach) detach=yes; shift ;;
+                    --answers) extra+=(--answers "$(readlink -f "${2:-}")"); shift 2 || project_usage ;;
+                    --yes) extra+=(--auto-approve); shift ;;  # benchmarks only: approve each step's plan as planned
+                    *) project_usage ;;
+                esac
+            done
+            if [ "$detach" = yes ]; then
+                setsid nohup "$self" project run "$(basename "$p")" "${extra[@]}" > "$p/project_run.out" 2>&1 < /dev/null &
+                echo "Started in the background (pid $!). Follow it with: geth project show $(basename "$p")   (log: $p/log.md)"
+                exit 0
+            fi
+            driver_alive "$p/.geth_driver.pid" && { echo "Project '$(basename "$p")' is already running." >&2; exit 1; }
+            echo "$(hostname) $$ 0" > "$p/.geth_driver.pid"
+            python3 "$project_py" run "$p" "${extra[@]}" && rc=0 || rc=$?
+            rm -f "$p/.geth_driver.pid"
+            exit $rc
+            ;;
+        list)
+            [ $# -eq 0 ] || project_usage
+            python3 "$project_py" list "$runs/projects"
+            ;;
+        stop)
+            [ $# -eq 1 ] || project_usage
+            p=$(project_dir_of "$1")
+            "$GETH_HOME/geth/bin/stop_driver.sh" "$p"
+            local r
+            for r in "$runs/$(basename "$p")"-*; do  # a step running on its own (geth run <project>-<step>)
+                [ -d "$r" ] && ls "$r"/.geth_*.pid > /dev/null 2>&1 && "$GETH_HOME/geth/bin/stop_driver.sh" "$r"
+            done
+            ;;
+        _coordinate)  # internal (geth_project.py run): the coordinator agent at a decision point
+            p=$(project_dir_of "$1")
+            local mode=$2 step=${3:-} ro=() r
+            for r in "$runs/$(basename "$p")"-*; do [ -d "$r" ] && ro+=(--step_run "$r"); done
+            GETH_LOG_SUFFIX=_$mode${step:+_$step} agents "$p" project --mode "$mode" ${step:+--step "$step"} "${ro[@]}"
+            ;;
+        *) project_usage ;;
+    esac
+}
+
 cmd=${1:-}; shift || true
 case "$cmd" in
     plan)
@@ -124,16 +255,8 @@ case "$cmd" in
             elif [ "$1" = --model ]; then model=${2:-}; shift 2 || usage
             else args+=("$1"); shift; fi
         done
-        if [ -n "$model" ]; then  # a paid planner model, opt-in per plan: GETH_PLANNER_<NAME>_* in the site settings
-            [[ "$model" =~ ^[A-Za-z0-9_]+$ ]] || { echo "Model names use letters, digits and '_' (got '$model')." >&2; exit 1; }
-            up=${model^^}
-            for k in MODEL PRICES BUDGET_USD API REASONING BASE_URL API_KEY_VAR; do
-                v=GETH_PLANNER_${up}_$k
-                [ -n "${!v:-}" ] && export "GETH_PLANNER_$k=${!v}"
-            done
-            [ -n "${GETH_PLANNER_MODEL:-}" ] || { echo "No planner model '$model' in the site settings (GETH_PLANNER_${up}_MODEL)." >&2; exit 1; }
-            export GETH_PLANNER_BASE_URL=${GETH_PLANNER_BASE_URL:-$GETH_LLM_BASE_URL}
-            export GETH_PLANNER_API_KEY_VAR=${GETH_PLANNER_API_KEY_VAR:-$GETH_LLM_API_KEY_VAR}
+        if [ -n "$model" ]; then  # a paid planner model, opt-in per plan: GETH_MODEL_<NAME>_* in the site settings
+            use_model "$model" || exit 1
         fi
         set -- "${args[@]}"
         [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
@@ -166,7 +289,7 @@ case "$cmd" in
         elif [ -t 0 ] && [ -t 1 ]; then ask=terminal; echo "The planner may ask you a few questions here."
         else ask=none; fi
         ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
-        [ -n "${GETH_PLANNER_MODEL:-}" ] && echo "Planner model: $GETH_PLANNER_MODEL (paid: at most \$${GETH_PLANNER_BUDGET_USD:-?} for this plan)"
+        [ -n "${GETH_MODEL_MODEL:-}" ] && echo "Planner model: $GETH_MODEL_MODEL (paid: at most \$${GETH_MODEL_BUDGET_USD:-?} for this plan)"
         agents "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
             --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
             || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
@@ -269,6 +392,9 @@ case "$cmd" in
         ;;
     lab)
         exec "$GETH_HOME/geth/lab/lab.sh" "$@"
+        ;;
+    project)
+        project "$@"
         ;;
     *) usage ;;
 esac

@@ -1,0 +1,526 @@
+#!/usr/bin/env python3
+"""Geth projects: several analyses towards one question.
+
+The coordinator agent (geth/harness/project.py) proposes the steps and a person approves them. This file checks
+the steps, keeps the project's state and runs it. Each pipeline step is an ordinary Geth run, planned, approved
+and run with the usual commands. Nothing here talks to a model.
+
+  geth_project.py capabilities [--lab]               what a project's steps may be
+  geth_project.py check <project_dir> <steps.json>   the step check: STEP CHECK: OK, or the problems
+  geth_project.py nfcore <words...>                   nf-core pipelines matching the words (for gaps)
+  geth_project.py ensembl <species>                   a species' genome and annotation in Ensembl
+  geth_project.py show <project_dir>
+  geth_project.py list <projects folder>
+  geth_project.py approve <project_dir> <who>
+  geth_project.py run <project_dir> [--answers <file>] [--auto-approve]
+
+A project folder, $GETH_RUNS_DIR/projects/<name>/:
+  question.txt, data_dir.txt, options.json   the request, the delivery, {"lab": true|false}
+  steps.json, steps_check.txt                the coordinator's steps, as checked
+  steps.proposed.json                        a change the coordinator proposed during the run (needs approval)
+  APPROVED                                   who approved the steps, when, and their SHA-256
+  reviews.json                               the coordinator's decision after each finished step
+  log.md                                     what happened, in order
+  report.md, report_check.txt                the project report
+Pipeline step <id> runs as $GETH_RUNS_DIR/<project>-<id>. Exit status of run: 0 finished, 2 waiting for a person,
+3 the coordinator proposes new steps (approve them, then run again), 1 an error.
+"""
+import glob
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import geth_checks as gc  # noqa: E402
+
+GETH_HOME = os.environ.get("GETH_HOME", os.path.dirname(os.path.dirname(HERE)))
+GETH = os.path.join(GETH_HOME, "geth", "geth")
+RUNS = os.environ.get("GETH_RUNS_DIR", "").rstrip("/")
+DATA_ROOT = os.environ.get("GETH_DATA_ROOT", "").rstrip("/")
+REFERENCES = os.environ.get("GETH_REFERENCES", "").rstrip("/")
+CATALOGUE = os.path.join(GETH_HOME, "geth", "schemas", "nfcore_catalogue.tsv")
+ENSEMBL_REST = "https://rest.ensembl.org"
+ENSEMBL_FTP = "https://ftp.ensembl.org/pub"
+
+KINDS = ("pipeline", "reference", "gap", "lab")
+MAX_STEPS = 8
+STEP_ID = re.compile(r"^[a-z][a-z0-9_]{0,15}$")
+H5AD_STEPS = ("scrnaseq", "sc_downstream")  # steps whose results a lab step can start from
+
+
+def read(path, default=""):
+    try:
+        with open(path, errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return default
+
+
+def load(path, default=None):
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return default
+
+
+def save(path, data):
+    with open(path, "w") as fh:
+        json.dump(data, fh, indent=2)
+
+
+def log(pdir, text):
+    with open(os.path.join(pdir, "log.md"), "a") as fh:
+        fh.write(f"- {time.strftime('%F %T')} {text}\n")
+    print(text, flush=True)
+
+
+def step_run(pdir, sid):
+    return os.path.join(RUNS, f"{os.path.basename(pdir)}-{sid}")
+
+
+# ---------------------------------------------------------------- what the coordinator may plan
+
+def skill_descriptions():
+    out = {}
+    for path in glob.glob(os.path.join(GETH_HOME, "geth", "skills", "*", "SKILL.md")):
+        m = re.search(r"^description:\s*(.*)$", read(path), re.M)
+        name = os.path.basename(os.path.dirname(path)).replace("nfcore-", "").replace("-", "_")
+        out[name] = m.group(1).strip() if m else ""
+    return out
+
+
+def capabilities(lab):
+    desc = skill_descriptions()
+    raw = [p for p in sorted(gc.REGISTRY) if not gc.REGISTRY[p].get("follows")]
+    follow = [p for p in sorted(gc.REGISTRY) if gc.REGISTRY[p].get("follows")]
+    lines = ["Kind pipeline, on sequencing data (no analysis step before it; 'data' = its folder in the delivery):"]
+    lines += [f"- {p}: {desc.get(p, '')}" for p in raw]
+    lines += ["", "Kind pipeline, follow-ups (after = the one finished step they build on):"]
+    lines += [f"- {p}: after a {gc.REGISTRY[p]['follows']} step. {desc.get(p, '')}" for p in follow]
+    lines += ["", "Kind reference: download a genome and its annotation from Ensembl into the reference catalogue, when "
+              "LIST_REFERENCES has no entry for the species a pipeline step needs (fields species, assembly, release: "
+              "from FIND_GENOME). That pipeline step lists it in after.",
+              "", "Kind gap: a part of the question that none of the above does. Say what it is (suggestion), name the "
+              "nf-core pipeline that would do it if one exists (nfcore, from SEARCH_NFCORE), and what the earlier steps "
+              "hand over to it."]
+    if lab:
+        lines += ["", "Kind lab (EXPERIMENTAL, allowed in this project): agents design and write a single-cell analysis "
+                  "of a count matrix (.h5ad) and test it in a sandbox. After a scrnaseq or sc_downstream step, or with "
+                  "no after when the delivery is a folder with one .h5ad file. Use it only for what no pipeline does."]
+    else:
+        lines += ["", "The lab (agents writing analysis code) is not allowed in this project: what would need it is a gap."]
+    return "\n".join(lines)
+
+
+def nfcore(words):
+    words = [w.lower() for w in words if len(w) > 2]
+    hits = []
+    for line in read(CATALOGUE).splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        name, release, description = (line.split("\t") + ["", ""])[:3]
+        score = sum(w in f"{name} {description}".lower() for w in words)
+        if score:
+            hits.append((-score, name, release, description))
+    out = [f"nf-core/{n} (release {r}; {'Geth runs it' if n in gc.REGISTRY else 'not in Geth'}): {d}"
+           for _, n, r, d in sorted(hits)[:10]]
+    return "\n".join(out) or "No nf-core pipeline matches these words."
+
+
+# ---------------------------------------------------------------- Ensembl, for reference steps
+
+def http_json(url):
+    request = urllib.request.Request(url, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return json.load(response)
+
+
+def http_size(url):
+    """The size of a file on Ensembl's server, or None if it is not there."""
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=60) as response:
+            return int(response.headers.get("Content-Length") or 0)
+    except urllib.error.HTTPError:
+        return None
+
+
+def ensembl_files(species, assembly, release):
+    """The genome and annotation a reference step downloads, as geth/references/stage_ensembl.sh fetches them:
+    [(url, bytes), (url, bytes)]. Raises ValueError when Ensembl has no such files."""
+    base, cap = f"{ENSEMBL_FTP}/release-{release}", species[:1].upper() + species[1:]
+    for kind in ("primary_assembly", "toplevel"):
+        fasta = f"{base}/fasta/{species}/dna/{cap}.{assembly}.dna.{kind}.fa.gz"
+        size = http_size(fasta)
+        if size is not None:
+            break
+    else:
+        raise ValueError(f"Ensembl release {release} has no genome for {species} {assembly}")
+    # the annotation: species imported from Ensembl Genomes (e.g. yeast) carry that site's release in its name
+    try:
+        with urllib.request.urlopen(f"{base}/gtf/{species}/", timeout=60) as response:
+            listing = response.read().decode(errors="replace")
+    except urllib.error.HTTPError:
+        listing = ""
+    names = sorted(set(re.findall(re.escape(f"{cap}.{assembly}.") + r"\d+\.gtf\.gz", listing)))
+    if not names:
+        raise ValueError(f"Ensembl release {release} has no annotation (GTF) for {species} {assembly}")
+    gtf = f"{base}/gtf/{species}/{names[0]}"
+    return [(fasta, size), (gtf, http_size(gtf) or 0)]
+
+
+def ensembl(name):
+    species = name.strip().lower().replace(" ", "_")
+    try:
+        if not re.match(r"^[a-z]+_[a-z]+", species):  # a common name ("mouse"): Ensembl's taxonomy
+            found = http_json(f"{ENSEMBL_REST}/taxonomy/name/{urllib.parse.quote(name.strip())}")
+            species = found[0]["scientific_name"].lower().replace(" ", "_")
+        genome = http_json(f"{ENSEMBL_REST}/info/genomes/{species}")
+        release = http_json(f"{ENSEMBL_REST}/info/data")["releases"][0]
+        files = ensembl_files(genome["name"], genome["assembly_name"], release)
+    except (urllib.error.URLError, ValueError, KeyError, IndexError, OSError) as e:
+        return f"NOT FOUND in Ensembl ({e}): Geth stages genomes from Ensembl only; without one, the step is a gap."
+    return (f"species: {genome['name']} ({genome.get('display_name', '')})\nassembly: {genome['assembly_name']}\n"
+            f"release: {release}\n" + "\n".join(f"file: {u} ({s / 1e6:,.0f} MB)" for u, s in files))
+
+
+def catalogue_entry(step):
+    """The catalogue folder a reference step creates (as stage_ensembl.sh names it)."""
+    return os.path.join(REFERENCES, f"{step.get('species')}_{step.get('assembly')}_ens{step.get('release')}")
+
+
+# ---------------------------------------------------------------- the step check
+
+def check(pdir, doc, started=()):
+    """Problems and notes of a step list. started: ids of steps already begun, which a revision must keep as is."""
+    problems, notes, seen = [], [], {}
+    steps = doc.get("steps") if isinstance(doc, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return ["no steps: give at least one step"], notes
+    if len(steps) > MAX_STEPS:
+        problems.append(f"{len(steps)} steps: at most {MAX_STEPS} per project")
+    lab = (load(os.path.join(pdir, "options.json"), {}) or {}).get("lab", False)
+    data_dir = read(os.path.join(pdir, "data_dir.txt")).strip()
+    old = {s.get("id"): s for s in (load(os.path.join(pdir, "steps.json"), {}) or {}).get("steps", [])}
+    for i, s in enumerate(steps, start=1):
+        s = s if isinstance(s, dict) else {}
+        sid, kind, where = str(s.get("id", "")), s.get("kind"), f"step {i}"
+        if not STEP_ID.match(sid):
+            problems.append(f"{where}: id '{sid}' must be 1-16 lower-case letters, digits or '_', starting with a letter")
+        elif sid in seen:
+            problems.append(f"{where}: id '{sid}' is used twice")
+        where = f"step {i} ({sid})"
+        if sid in started and s != old.get(sid):
+            problems.append(f"{where} has started: it must stay exactly as approved")
+        if kind not in KINDS:
+            problems.append(f"{where}: kind must be one of {', '.join(KINDS)} (got {kind!r})")
+        if not str(s.get("question", "")).strip():
+            problems.append(f"{where}: the question for this step is missing")
+        after = s.get("after") or []
+        after = after if isinstance(after, list) else [after]
+        for a in after:
+            if a not in seen:
+                problems.append(f"{where}: after '{a}': no step above with that id (a step builds on steps listed before it)")
+        ups = [seen[a] for a in after if a in seen]
+        if kind == "pipeline":
+            p = gc.pipeline_name(str(s.get("pipeline", "")))
+            if p not in gc.REGISTRY:
+                problems.append(f"{where}: Geth does not run '{p}' (LIST_CAPABILITIES); if nf-core has it "
+                                f"(SEARCH_NFCORE), make this step a gap naming it")
+                seen[sid] = s
+                continue
+            follows = gc.REGISTRY[p].get("follows")
+            analyses = [u for u in ups if u.get("kind") != "reference"]
+            if follows and not (len(analyses) == 1 and gc.pipeline_name(str(analyses[0].get("pipeline", ""))) == follows):
+                problems.append(f"{where}: {p} builds on one finished {follows} step: list that step in after")
+            if not follows:
+                if analyses:
+                    problems.append(f"{where}: {p} runs on sequencing data, so it builds on no analysis step "
+                                    "(only on reference steps)")
+                data = str(s.get("data") or data_dir)
+                if not (data.startswith(DATA_ROOT + "/") and os.path.isdir(data)):
+                    problems.append(f"{where}: data '{data}' must be an existing folder of the delivery")
+        elif kind == "reference":
+            if after:
+                problems.append(f"{where}: a reference step builds on nothing (after must be empty)")
+            species, assembly, release = (str(s.get(k, "")).strip() for k in ("species", "assembly", "release"))
+            if not (re.match(r"^[a-z]+_[a-z0-9_]+$", species) and assembly and release.isdigit()):
+                problems.append(f"{where}: species (e.g. mus_musculus), assembly and release (a number) are needed: "
+                                "copy them from FIND_GENOME")
+            elif os.path.isdir(catalogue_entry(s)):
+                problems.append(f"{where}: the catalogue already has {catalogue_entry(s)}: no download needed")
+            else:
+                try:
+                    files = ensembl_files(species, assembly, release)
+                    notes.append(f"{where} downloads {sum(b for _, b in files) / 1e9:.1f} GB (compressed) into "
+                                 f"{catalogue_entry(s)}")
+                except (ValueError, urllib.error.URLError, OSError) as e:
+                    problems.append(f"{where}: cannot verify the files in Ensembl ({e})")
+        elif kind == "gap":
+            if not str(s.get("suggestion", "")).strip():
+                problems.append(f"{where}: say what the gap is and what would fill it (suggestion)")
+            nf = str(s.get("nfcore", "")).strip().replace("nf-core/", "")
+            if nf and nf not in [l.split("\t")[0] for l in read(CATALOGUE).splitlines() if not l.startswith("#")]:
+                problems.append(f"{where}: nf-core has no pipeline named '{nf}' (SEARCH_NFCORE)")
+            elif nf and nf in gc.REGISTRY:
+                problems.append(f"{where}: Geth runs {nf}: make this step a pipeline step")
+        elif kind == "lab":
+            if not lab:
+                problems.append(f"{where}: this project does not allow the lab (geth project new ... --lab): make it a gap")
+            analyses = [u for u in ups if u.get("kind") == "pipeline"]
+            single = glob.glob(os.path.join(data_dir, "*.h5ad"))
+            if analyses and not (len(analyses) == 1 and gc.pipeline_name(str(analyses[0].get("pipeline"))) in H5AD_STEPS):
+                problems.append(f"{where}: a lab step starts from one scrnaseq or sc_downstream step's count matrix")
+            if not analyses and len(single) != 1:
+                problems.append(f"{where}: with no step before it, the delivery must be a folder with one .h5ad file")
+        seen[sid] = s
+    if not any(s.get("kind") in ("pipeline", "lab") for s in steps if isinstance(s, dict)):
+        notes.append("no step analyses data: the project report will only describe the gaps")
+    return problems, notes
+
+
+def check_report_text(problems, notes):
+    text = "STEP CHECK: OK" if not problems else f"STEP CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems)
+    return text + "".join(f"\nNOTE: {n}" for n in notes)
+
+
+# ---------------------------------------------------------------- approval and state
+
+def sha(path):
+    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+
+def approve(pdir, who):
+    proposed = os.path.join(pdir, "steps.proposed.json")
+    path = proposed if os.path.isfile(proposed) else os.path.join(pdir, "steps.json")
+    doc = load(path)
+    started = [s["id"] for s in (approved_doc(pdir, quiet=True) or {}).get("steps", []) if status(pdir, s) != "todo"]
+    problems, notes = check(pdir, doc or {}, started)
+    if problems:
+        print(check_report_text(problems, notes))
+        return 1
+    if path == proposed:
+        os.replace(proposed, os.path.join(pdir, "steps.json"))
+        log(pdir, "approved the coordinator's revised steps")
+    save(os.path.join(pdir, "APPROVED"), {"approved_by": who, "approved_at": time.strftime("%F %T"),
+                                          "sha256": sha(os.path.join(pdir, "steps.json"))})
+    print(f"Project steps approved by {who}.")
+    return 0
+
+
+def approved_doc(pdir, quiet=False):
+    """The approved steps, or None (quiet) / an error when they are not approved or changed since."""
+    record, path = load(os.path.join(pdir, "APPROVED")), os.path.join(pdir, "steps.json")
+    if record and os.path.isfile(path) and record.get("sha256") == sha(path):
+        return load(path)
+    if quiet:
+        return None
+    raise ValueError("the project's steps are not approved (or changed since): geth project approve " + os.path.basename(pdir))
+
+
+def status(pdir, step):
+    kind, run = step.get("kind"), step_run(pdir, step.get("id"))
+    if kind == "gap":
+        return "gap"
+    if kind == "reference":
+        if os.path.isfile(os.path.join(catalogue_entry(step), "README.txt")):
+            return "done"
+        return "failed" if os.path.isfile(os.path.join(pdir, f"reference_{step['id']}.failed")) else "todo"
+    if kind == "lab":
+        state = read(os.path.join(RUNS, "lab", os.path.basename(run), "build_state.txt")).strip()
+        if not os.path.isdir(os.path.join(RUNS, "lab", os.path.basename(run) + "-design")):
+            return "todo"
+        if not state:
+            return "waiting for approval" if not os.path.isfile(os.path.join(pdir, f"lab_{step['id']}.approved")) else "approved"
+        return "done" if state.startswith("done") else "failed" if state.startswith(("failed", "stopped")) else "running"
+    if not os.path.isdir(run):
+        return "todo"
+    if not os.path.isfile(os.path.join(run, "plan_pipeline.txt")):
+        return "plan failed"
+    if not os.path.isfile(os.path.join(run, "APPROVED")):
+        return "waiting for approval"
+    outcome = read(os.path.join(run, "outcome.txt"))
+    if not outcome:
+        return "approved"
+    return "done" if "succeeded: true" in outcome else "failed"
+
+
+def show(pdir):
+    doc = load(os.path.join(pdir, "steps.json"), {}) or {}
+    print(f"Project : {os.path.basename(pdir)}")
+    print(f"Question: {read(os.path.join(pdir, 'question.txt')).strip()}")
+    print(f"Data    : {read(os.path.join(pdir, 'data_dir.txt')).strip()}")
+    print(f"Lab     : {'allowed (EXPERIMENTAL)' if (load(os.path.join(pdir, 'options.json'), {}) or {}).get('lab') else 'not allowed'}")
+    print("\nSteps:")
+    for i, s in enumerate(doc.get("steps", []), start=1):
+        kind = s.get("kind")
+        what = {"pipeline": f"nf-core/{s.get('pipeline')}" if s.get("pipeline") != "sc_downstream" else "single-cell toolbox",
+                "reference": f"download {s.get('species')} {s.get('assembly')} (Ensembl {s.get('release')})",
+                "gap": "GAP: no specialist" + (f" (nf-core/{s.get('nfcore')} would)" if s.get("nfcore") else ""),
+                "lab": "lab: agents write the analysis (EXPERIMENTAL)"}.get(kind, kind)
+        after = f", after {', '.join(s.get('after') or [])}" if s.get("after") else ""
+        run = f"   run: {os.path.basename(step_run(pdir, s['id']))}" if kind in ("pipeline", "lab") else ""
+        print(f"  {i}. {s.get('id')} [{what}{after}] {status(pdir, s)}{run}")
+        print(f"     {s.get('question', '')}")
+        if s.get("suggestion"):
+            print(f"     -> {s['suggestion']}")
+    if doc.get("rationale"):
+        print(f"\nRationale: {doc['rationale']}")
+    print("\n" + (read(os.path.join(pdir, "steps_check.txt")).strip() or "Not checked yet."))
+    record = load(os.path.join(pdir, "APPROVED"))
+    print("Approved by " + record["approved_by"] + " on " + record["approved_at"] if approved_doc(pdir, quiet=True)
+          else "Not approved: geth project approve " + os.path.basename(pdir))
+    if os.path.isfile(os.path.join(pdir, "steps.proposed.json")):
+        print("The coordinator proposes new steps (steps.proposed.json): review them, then geth project approve.")
+
+
+# ---------------------------------------------------------------- the run
+
+def geth(*args, quiet=False):
+    """A geth command, as a person would type it (its output shown unless quiet)."""
+    kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL} if quiet else {}
+    return subprocess.run([GETH, *args], **kwargs).returncode
+
+
+def coordinate(pdir, mode, step=""):
+    """The coordinator agent at a decision point (sandboxed, like every agent stage)."""
+    return geth("project", "_coordinate", os.path.basename(pdir), mode, step)
+
+
+def download(pdir, step):
+    """A reference step: geth/references/stage_ensembl.sh, as a job where the site allows downloads."""
+    script = os.path.join(GETH_HOME, "geth", "references", "stage_ensembl.sh")
+    label = step.get("label") or step["species"].replace("_", " ").capitalize()
+    submit = os.environ.get("GETH_DOWNLOAD_SUBMIT", "").split()
+    log(pdir, f"step {step['id']}: downloading {step['species']} {step['assembly']} (Ensembl {step['release']})"
+        + (f" with: {' '.join(submit)}" if submit else " here"))
+    out = os.path.join(pdir, f"reference_{step['id']}.log")
+    args = [step["species"], step["assembly"], str(step["release"]), label]
+    command = [*submit, script, *args] if submit else ["bash", script, *args]  # submit: e.g. qsub -sync y -q staging
+    with open(out, "w") as fh:
+        rc = subprocess.run(command, stdout=fh, stderr=subprocess.STDOUT, cwd=pdir).returncode
+    if rc != 0 or status(pdir, step) != "done":
+        open(os.path.join(pdir, f"reference_{step['id']}.failed"), "w").write(f"exit {rc}: see {out}\n")
+
+
+def review(pdir, step):
+    """The coordinator's decision after a step finished: continue, stop or revise (kept in reviews.json)."""
+    reviews = load(os.path.join(pdir, "reviews.json"), {}) or {}
+    if step["id"] not in reviews:
+        coordinate(pdir, "review", step["id"])
+        reviews = load(os.path.join(pdir, "reviews.json"), {}) or {}
+    decision = reviews.get(step["id"], {"action": "continue", "reason": "the coordinator gave no decision"})
+    return decision.get("action", "continue")
+
+
+def run(pdir, answers="", auto=False):
+    doc = approved_doc(pdir)
+    name, question = os.path.basename(pdir), read(os.path.join(pdir, "question.txt")).strip()
+    steps = {s["id"]: s for s in doc["steps"]}
+    stopped = False
+    for step in doc["steps"]:
+        sid, kind, run_name = step["id"], step["kind"], os.path.basename(step_run(pdir, step["id"]))
+        state = status(pdir, step)
+        blocked = [a for a in step.get("after") or [] if status(pdir, steps[a]) != "done"]
+        if stopped or (blocked and state == "todo"):
+            if state == "todo":
+                log(pdir, f"step {sid}: not started ({'the project stopped' if stopped else 'it builds on ' + ', '.join(blocked) + ', not done'})")
+            continue
+        if kind == "gap":
+            continue
+        if kind == "reference" and state == "todo":
+            download(pdir, step)
+        if kind == "pipeline":
+            if state == "todo":
+                upstream = [a for a in step.get("after") or [] if steps[a]["kind"] == "pipeline"]
+                where = ["--from", os.path.basename(step_run(pdir, upstream[0]))] if upstream else [step.get("data") or read(os.path.join(pdir, "data_dir.txt")).strip()]
+                log(pdir, f"step {sid}: planning {run_name}")
+                geth("plan", *where, f"{step['question']} (Step '{sid}' of the project: {question})", run_name,
+                     *(["--answers", answers] if answers else []))
+                state = status(pdir, step)
+            if state == "waiting for approval":
+                if not auto:
+                    log(pdir, f"step {sid}: planned, waiting for you: geth show {run_name}; geth approve {run_name}; "
+                        f"then geth project run {name}")
+                    return 2
+                geth("approve", run_name, "--yes", quiet=True)
+                state = status(pdir, step)
+            if state == "approved":
+                log(pdir, f"step {sid}: running {run_name}")
+                geth("run", run_name)
+        if kind == "lab":
+            state = lab_step(pdir, step, steps, auto)
+            if state in ("waiting", "running"):
+                return 2
+        state = status(pdir, step)
+        if state in ("done", "failed", "plan failed"):
+            log(pdir, f"step {sid}: {state}")
+            action = review(pdir, step)
+            if action == "revise":
+                log(pdir, f"the coordinator proposes new steps after {sid}: geth project show {name}; "
+                    f"geth project approve {name}; then geth project run {name}")
+                return 3
+            stopped = action == "stop"
+    if not os.path.isfile(os.path.join(pdir, "report.md")):
+        log(pdir, "all steps processed: writing the project report")
+        coordinate(pdir, "summary")
+    print(read(os.path.join(pdir, "report_check.txt")).strip(), flush=True)
+    return 0
+
+
+def lab_step(pdir, step, steps, auto):
+    """A lab step (R5c): the lab designs, a person approves the design, the lab builds and runs it."""
+    raise NotImplementedError("lab steps come with R5c")
+
+
+def list_projects(root):
+    print(f"{'PROJECT':24} {'APPROVED':9} STEPS")
+    for pdir in sorted(glob.glob(os.path.join(root, "*"))):
+        doc = load(os.path.join(pdir, "steps.json"), {}) or {}
+        states = [f"{s.get('id')}: {status(pdir, s)}" for s in doc.get("steps", [])]
+        print(f"{os.path.basename(pdir):24} {'yes' if approved_doc(pdir, quiet=True) else 'no':9} "
+              f"{'; '.join(states) or 'no steps yet'}")
+
+
+def main(argv):
+    cmd, args = (argv[1], argv[2:]) if len(argv) > 1 else ("", [])
+    if cmd == "capabilities":
+        print(capabilities("--lab" in args))
+    elif cmd == "nfcore":
+        print(nfcore(args))
+    elif cmd == "ensembl":
+        print(ensembl(" ".join(args)))
+    elif cmd == "check":
+        problems, notes = check(args[0], load(args[1], {}) or {})
+        text = check_report_text(problems, notes)
+        print(text)
+        return 1 if problems else 0
+    elif cmd == "show":
+        show(args[0])
+    elif cmd == "list":
+        list_projects(args[0])
+    elif cmd == "approve":
+        return approve(args[0], args[1])
+    elif cmd == "run":
+        answers = args[args.index("--answers") + 1] if "--answers" in args else ""
+        try:
+            return run(args[0], answers, "--auto-approve" in args)
+        except ValueError as e:
+            print(f"Geth: {e}", file=sys.stderr)
+            return 1
+    else:
+        print(__doc__)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

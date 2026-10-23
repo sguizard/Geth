@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 from .agent import Agent, Tool, load_skills, string_params
-from .llm import Client, ModelError
+from .llm import ModelError, model_client
 from .tools import GETH_HOME, list_references, scratch
 
 LAB_BIN = os.path.join(GETH_HOME, "geth", "lab", "bin")
@@ -364,7 +364,7 @@ def main(argv=None):
     if a.mode in ("engineer", "engineer_c", "review_c") and not inside(a.data_file, [a.data_dir]):
         sys.exit(f"--data_file must be in the design's data folder ({a.data_dir})")
     try:
-        client = Client()
+        client = model_client()
     except ModelError as e:
         sys.exit(f"Geth: {e}")
     d, skill = a.run_dir, a.lab_skill.lower() == "true"

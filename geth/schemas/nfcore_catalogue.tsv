@@ -1,0 +1,146 @@
+# nf-core pipelines (https://nf-co.re/pipelines.json, 2026-10-23): name, latest release ('none': not released yet), description
+abotyper	none	A pipeline for characterising the Human Blood Group and Red Cell Antigens using Oxford Nanopore third-generation sequencing data.
+airrflow	5.1.2	B-cell and T-cell Adaptive Immune Receptor Repertoire (AIRR) sequencing analysis pipeline using the Immcantation framework
+alleleexpression	none	Alleleexpression is a nf-core pipeline for allele-specific expression (ASE) analysis using STAR-WASP for alignment, UMI-tools for deduplication, and phaser for haplotype phasing and ASE detection.
+ampliseq	3.0.0	Amplicon sequencing analysis workflow using DADA2 and QIIME2
+atacseq	2.1.2	ATAC-seq peak-calling and QC analysis pipeline
+bacass	2.6.1	Simple bacterial assembly and annotation pipeline
+bacmodel	1.0.0	Systems-based bacterial functional modeling pipeline
+bactmap	1.0.0	A mapping-based pipeline for creating a phylogeny from bacterial whole genome sequences
+bamtofastq	2.2.1	Converts bam or cram files to fastq format and does quality control.
+cageseq	1.0.2	CAGE-sequencing analysis pipeline with trimming, alignment and counting of CAGE tags.
+callingcards	1.0.0	A pipeline for processing calling cards data
+captnseq	none	CAPTn-seq is an extended Tn-seq pipeline that goes 1) from raw reads to gene essentiality then 2) to gene-gene interaction calls (fron HTTM experiments).
+cellpainting	none	
+chipseq	2.1.0	ChIP-seq peak-calling, QC and differential analysis pipeline.
+circdna	1.1.0	Pipeline for the identification of extrachromosomal circular DNA (ecDNA) from Circle-seq, WGS, and ATAC-seq data that were generated from cancer and other eukaryotic cells.
+circrna	none	circRNA quantification, differential expression analysis and miRNA target prediction of RNA-Seq data
+clipseq	1.0.0	CLIP sequencing analysis pipeline for QC, pre-mapping, genome mapping, UMI deduplication, and multiple peak-calling options.
+coproid	2.0.1	Coprolite host Identification pipeline
+createpanelrefs	1.0.0	Generate Panel of Normals, models or other similar references from lots of samples
+createtaxdb	3.1.0	Parallelised and automated construction of metagenomic classifier databases of different tools
+crisprseq	2.3.0	A pipeline for the analysis of CRISPR edited data. It allows the evaluation of the quality of gene editing experiments using targeted next generation sequencing (NGS) data (`targeted`) as well as the discovery of important genes from knock-out or activation CRISPR-Cas9 screens using CRISPR pooled DNA (`screening`).
+cutandrun	3.2.2	Analysis pipeline for CUT&RUN and CUT&TAG experiments that includes QC, support for spike-ins, IgG controls, peak calling and downstream analysis.
+daamicrobiome	none	Microbiome differential abundance consensus pipeline
+dartseq	none	Pipeline for m6A detection in RNAseq data
+datasync	1.0.2	nf-core/datasync is a system operation pipeline that provides several workflows for handling system operation / automation tasks
+deepmodeloptim	none	Stochastic Testing and Input Manipulation for Unbiased Learning Systems
+deepmutscan	none	nf-core/deepmutscan is a reproducible, scalable, and community-curated pipeline for analyzing deep mutational scanning (DMS) data using shotgun DNA sequencing.
+demo	1.2.0	nf-core/demo is a simple nf-core style bioinformatics pipeline for workshops and demos.
+demultiplex	1.8.0	Demultiplexing pipeline for sequencing data
+denovotranscript	1.2.1	A pipeline for de novo transcriptome assembly of paired-end short reads from bulk RNA-seq
+detaxizer	1.3.0	A pipeline to identify (and remove) certain sequences from raw genomic data. Default taxon to identify (and remove) is Homo sapiens. Removal is optional.
+diaproteomics	1.2.4	Automated quantitative analysis of DIA proteomics mass spectrometry measurements.
+differentialabundance	2.0.0	Differential abundance analysis for feature/ observation matrices from platforms such as RNA-seq
+diseasemodulediscovery	none	A pipeline for network-based disease module identification.
+drop	1.0.0	Pipeline to find aberrant events in RNA-Seq data, useful for diagnosis of rare disorders
+drugresponseeval	1.3.0	Pipeline for testing drug response prediction models in a statistically and biologically sound way.
+dualrnaseq	1.0.0	Analysis of Dual RNA-seq data - an experimental method for interrogating host-pathogen interactions through simultaneous RNA-seq.
+eager	2.5.3	A fully reproducible and state-of-the-art ancient DNA analysis pipeline
+epigenomesegmentation	none	An nf-core pipeline for epigenome segmentation using EpiSegMix/Meth — a hidden Markov model with flexible read count distributions and state duration modeling for histone, open chromatin, and methylation signals.
+epitopeprediction	3.2.0	A bioinformatics best-practice analysis pipeline for epitope prediction and annotation
+evexplorer	none	nf-core/evexplorer is a pipeline for analyzing RNA data from extracellular vesicles, compatible with technologies such as nextflex, comboSeq, and ONT with further support forthcoming. evexplorer handles QC, expressed region detection, library size normalization and Differential RNA Expression (DRE)
+fastqrepair	1.1.1	A pipeline that can be used to recover corrupted FASTQ.gz files, drop or fix uncompliant reads, remove unpaired reads, and settles reads that became disordered
+fastquorum	2.0.0	Pipeline to produce consensus reads using unique molecular indexes/barcodes (UMIs)
+fetchngs	1.13.0	Pipeline to fetch metadata and raw FastQ files from public databases
+funcprofiler	1.0.0	Read-based functional profiling of microbiome sequencing data
+funcscan	4.0.0	(Meta-)genome screening for functional and natural product gene sequences
+genephylomodeler	none	A bioinformatics pipeline that fits evolutionary models and detects natural selection from multiple sequence alignments
+genomeassembler	2.0.0	Assembly and scaffolding of haploid / unphased genomes from long ONT or PacBio HiFi reads
+genomeqc	1.0.1	Compare the quality of multiple genomes, along with their annotations.
+genomeskim	none	QC and filtering of genome skims, followed by organelle assembly and/or genome analysis
+genomicrelatedness	none	Bioinformatics pipeline for estimating genetic relatedness from low-coverage whole-genome sequencing (sWGS) data
+gwas	none	UNDER CONSTRUCTION: A pipeline for Genome Wide Association Studies
+hadge	1.0.0	Comprehensive pipeline for donor demultiplexing in single cell
+hgtseq	1.1.0	A pipeline to investigate horizontal gene transfer from NGS data
+hic	2.1.0	Analysis of Chromosome Conformation Capture data (Hi-C)
+hicar	1.0.0	Pipeline for HiCAR data, a robust and sensitive multi-omic co-assay for simultaneous measurement of transcriptome, chromatin accessibility and cis-regulatory chromatin contacts.
+hlatyping	2.2.0	Precision HLA typing from next-generation sequencing data
+imcyto	1.0.0	Image Mass Cytometry analysis pipeline
+isoseq	3.0.1	Genome annotation with PacBio Iso-Seq. Takes raw subreads as input, generate Full Length Non Chemiric (FLNC) sequences and produce a bed annotation.
+kmermaid	0.1.0-alpha	k-mer similarity analysis pipeline
+lncpipe	none	UNDER DEVELOPMENT--- Analysis of long non-coding RNAs from RNA-seq datasets
+longraredisease	1.0.0	Long read sequencing pipeline to identify variants in patients with neurodevelopmental disorders
+lsmquant	1.0.3	A pipeline for processing and analysis of light-sheet microscopy images.
+mag	5.5.0	Assembly and binning of metagenomes
+magmap	1.3.1	Best-practice analysis pipeline for mapping reads to a (large) collections of genomes
+marsseq	1.0.3	MARS-seq v2 pre-processing pipeline with velocity
+mcmicro	2.0.0	An end-to-end processing pipeline that transforms multi-channel whole-slide images into single-cell data.
+meerpipe	none	nf-core/meerpipe is a astronomy pipeline that processes MeerKAT pulsar data to produce images and data products for pulsar timing analysis
+metaboigniter	2.0.1	Pre-processing of mass spectrometry-based metabolomics data with quantification and identification based on MS1 and MS2 data.
+metapep	1.0.0	From metagenomes to epitopes and beyond
+metatdenovo	2.0.0	Assembly and annotation of metatranscriptomic or metagenomic data for prokaryotic, eukaryotic and viruses.
+methylarray	none	Process methylation data from Illumina arrays. Pre-processing, quality checks, confounder check and DMPs (differentially methylated positions) and DMRs (differentially methylated regions). Optionally estimates cell type composition and adjusts data for it.
+methylong	2.0.0	Extract methylation calls from long reads (ONT/ PacBio)
+methylseq	4.2.0	Methylation (Bisulfite-Sequencing) analysis pipeline using Bismark/bwa-meth + MethylDackel or bwa-mem + rastair
+mhcquant	3.3.0	Identify and quantify MHC eluted peptides from mass spectrometry raw data
+mitodetect	none	A-Z analysis of mitochondrial NGS data
+mnaseseq	1.0.0	MNase-seq analysis pipeline using BWA and DANPOS2.
+moleculardynamics	none	
+molkart	1.2.0	A pipeline for processing Molecular Cartography data from Resolve Bioscience (combinatorial FISH)
+mspepid	none	This pipeline performs the peptide identification of MS2 spectra from a proteomics experiment. For this, different search algorithm and rescoring approaches can be selected.
+multiplesequencealign	1.1.1	A pipeline to run and systematically evaluate Multiple Sequence Alignment (MSA) methods.
+nanoseq	3.1.0	Nanopore demultiplexing, QC and alignment pipeline
+nanostring	1.3.3	An analysis pipeline for Nanostring nCounter expression data.
+nascent	2.3.0	Nascent Transcription Processing Pipeline
+ncrnannotator	none	nf-core pipeline for genome-level ncRNA annotation using Infernal
+omicsgenetraitassociation	none	A nextflow pipeline which integrates multiple omic data streams and performs coordinated analysis
+oncoanalyser	3.0.0	A comprehensive cancer DNA/RNA analysis and reporting pipeline
+pacsomatic	none	Nextflow pipeline for PacBio HiFi tumor/normal somatic genomics
+pacvar	1.1.0	Longread PacBio sequencing processing for WGS and PureTarget
+pairgenomealign	3.0.4	Pairwise genome comparison pipeline using the LAST software to align a list of query genomes to a target genome, and plot the results
+pangenome	1.1.3	Renders a collection of sequences into a pangenome graph. https://doi.org/10.1093/bioinformatics/btae609.
+panoramaseq	none	a pipeline to process sequencing based spatial transccriptomics data from in-situ arrays
+pathogenepidemiology	none	[DEVELOPMENT UNDERWAY] A profile-based pipeline for genomic epidemiological analysis of predefined pathogens.
+pathogensurveillance	1.1.0	Surveillance of pathogens using population genomics and sequencing
+phageannotator	none	Pipeline for identifying, annotation, and quantifying phage sequences in (meta)-genomic sequences.
+phaseimpute	1.1.0	A bioinformatics pipeline to phase and impute genetic data
+phyloplace	2.3.0	nf-core/phyloplace is a bioinformatics best-practice analysis pipeline that performs phylogenetic placement with EPA-NG.
+pixelator	5.0.3	Pipeline to generate Proximity Network Assay data with Pixelator (Pixelgen Technologies AB)
+plasmodiumdrugres	1.0.0	Pipeline for analyzing drug resistance markers from Plasmodium microhaplotype data. Translates variants into amino acid changes at drug resistance loci and estimates allele frequencies and prevalences at both single-locus and multi-locus levels. Microhaplotype data can be supplied in the form of an allele table or a PMO file.
+proteinannotator	1.1.0	Generation of sequence-level annotations for amino acid sequences
+proteinfamilies	2.6.0	Generation and updating of protein families
+proteinfold	2.0.0	Protein 3D structure prediction pipeline
+proteogenomicsdb	1.0.0	The ProteoGenomics database generation workflow creates different protein databases for ProteoGenomics data analysis.
+provenancereport	1.0.0	Generate reproducible Quarto reports together with an audit trail of inputs, checksums, software versions, runtime environments, and provenance metadata.
+radseq	none	Variant-calling pipeline for Restriction site-associated DNA sequencing (RADseq).
+rangeland	1.0.0	Pipeline for remotely sensed imagery. The pipeline processes satellite imagery alongside auxiliary data in multiple steps to arrive at a set of trend files related to land-cover changes.
+raredisease	3.1.2	Call and score variants from WGS/WES of rare disease patients.
+rarevariantburden	none	Pipeline for performing consistent summary count based rare variant burden test, which is useful when we only have sequenced cases data. For example, we can compare the cases against public summary count data, such as gnomAD.
+readsimulator	1.0.1	A pipeline to simulate sequencing reads, such as Amplicon, Target Capture, Metagenome, and Whole genome data.
+references	0.1	nf-core/references is a bioinformatics pipeline that build references, for multiple use cases
+reportho	1.1.0	nf-core pipeline for comparative analysis of ortholog predictions
+ribomsqc	1.0.0	QC pipeline that monitors mass spectrometer performance in ribonucleoside analysis
+riboseq	2.0.0	Pipeline for the analysis of ribosome profiling, or Ribo-seq (also named ribosome footprinting) data.
+rnadnavar	1.0.0	Pipeline for RNA and DNA integrated analysis for somatic mutation detection
+rnafusion	4.1.3	RNA-seq analysis pipeline for detection of gene-fusions
+rnaseq	3.27.0	RNA sequencing analysis pipeline using STAR, RSEM, HISAT2 or Salmon with gene/isoform counts and extensive quality control.
+rnasplice	2.0.0	rnasplice is a bioinformatics pipeline for RNA-seq alternative splicing analysis
+rnastructurome	1.1.0	a bioinformatics pipeline for analysing chemical high-throughput RNA structure-probing data
+rnavar	1.3.0	gatk4 RNA variant calling pipeline
+sammyseq	none	Pipeline for Sequential Analysis of MacroMolecules accessibilitY sequencing (SAMMY-seq) data, to analyze chromatin state.
+sarek	3.10.0	Analysis pipeline to detect germline or somatic variants (pre-processing, variant calling and annotation) from WGS / targeted sequencing
+scdownstream	none	A single cell transcriptomics pipeline for QC, integration and making the data presentable
+scnanoseq	1.3.0	Single-cell/nuclei pipeline for data derived from Oxford Nanopore and 10X Genomics
+scrnaseq	4.2.0	Single-cell RNA-Seq pipeline for barcode-based protocols such as 10x, DropSeq or SmartSeq, offering a variety of aligners and empty-droplet detection
+seqinspector	1.1.2	Dedicated QC-only pipeline for sequencing data. The pipeline will run a (potentially large) set of QC tools and can output global and group specific Multiqc reports. The pipeline is targeting core facilities or research groups with larger sequencing throughput.
+seqsubmit	1.0.0	nf-core pipeline for data submission to ENA
+slamseq	1.0.0	SLAMSeq processing and analysis pipeline
+smrnaseq	2.4.1	A small-RNA sequencing analysis pipeline
+sopa	1.0.1	Nextflow version of Sopa - spatial omics pipeline and analysis
+spatialaxe	1.0.1	A bioinformatics best-practice processing and quality control pipeline for Xenium and Artera data
+spatialvi	none	Pipeline for processing spatially-resolved gene counts with spatial coordinates and image data. Designed for 10x Genomics Visium transcriptomics.
+spinningjenny	none	Pipeline for simulating the first industrial revolution using Agent Based Models.
+stableexpression	1.1.0	This pipeline is designed to identify the most stable genes in one or more expression datasets (RNA-seq / Microarray). The ideal use case is for determining the most suitable RT-qPCR reference genes for a given species.
+taxmarker	none	Identify taxonomically mislabelled sequences
+taxprofiler	2.0.1	Highly parallelised multi-taxonomic profiling of shotgun short- and long-read metagenomic data
+tbanalyzer	none	An nf-core (meta) pipeline for analysis of different members of Mycobacterium tuberculosis complex.
+tfactivity	none	Bioinformatics pipeline that makes use of expression and open chromatin data to identify differentially active transcription factors across conditions.
+troughgraph	none	A quantitative assessment of the underlying permafrost landscapes and, per extension, of the level of permafrost thaw in the region
+tumourevo	1.0.0	Analysis pipeline to model tumour clonal evolution from WGS data (driver annotation, quality control of copy number calls, subclonal and mutational signature deconvolution)
+variantbenchmarking	1.5.0	Pipeline to evaluate and validate the accuracy of variant calling methods in genomic research
+variantcatalogue	none	Pipeline to generate variant catalogues, a list of variants and their frequencies in a population, from whole genome sequences.
+variantprioritization	1.0.0	Bioinformatics analysis pipeline for the functional annotation and translation of somatic SNVs/InDels and copy number abberations for precision cancer medicine using Personal Cancer Genome Reporter (PCGR). The pipeline offers germline SNVs/INDELS intepretation and annotation using Cancer Predisposition Sequencing Reporter (CPSR).
+viralintegration	0.1.1	Analysis pipeline for the identification of viral integration events in genomes using a chimeric read approach.
+viralmetagenome	1.2.0	A nf-core pipeline for untargeted whole genome reconstruction with iSNV detection from metagenomic samples.
+viralrecon	3.0.0	Assembly and intrahost/low-frequency variant calling for viral samples

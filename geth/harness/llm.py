@@ -2,10 +2,11 @@
 
 Client() is the site's model service, from the site configuration (env.sh): GETH_LLM_BASE_URL, GETH_LLM_MODEL,
 GETH_LLM_ALLOWED_MODELS and GETH_LLM_API_KEY_VAR (the name of the variable that holds the key).
-Client("GETH_PLANNER") is another model for the planner only (a comparison chosen by a person), and only with a
-hard budget: GETH_PLANNER_MODEL, GETH_PLANNER_BASE_URL, GETH_PLANNER_API_KEY_VAR, GETH_PLANNER_PRICES ("input,
-cached input, output" in USD per million tokens) and GETH_PLANNER_BUDGET_USD (per plan). It stops before a request
-once the plan has spent its budget.
+Client("GETH_MODEL") is another model chosen by a person for one command (geth plan / project / lab ... --model
+<name>, from the site's GETH_MODEL_<NAME>_* settings), and only with a hard budget: GETH_MODEL_MODEL,
+GETH_MODEL_BASE_URL, GETH_MODEL_API_KEY_VAR, GETH_MODEL_PRICES ("input,cached input,output" in USD per million
+tokens) and GETH_MODEL_BUDGET_USD (per agent stage). It stops before a request once the stage has spent its budget.
+(GETH_PLANNER_* is the same, under its Geth 2.0.0 name.) model_client() picks the right one.
 <prefix>_API=responses speaks OpenAI's Responses API instead of chat completions: the GPT-6 models refuse tools with
 reasoning in chat completions. Reasoning effort: <prefix>_REASONING (default medium); the model's own reasoning
 items are handed back to it at each turn (store=false, encrypted).
@@ -16,6 +17,16 @@ import os
 import time
 import urllib.error
 import urllib.request
+
+
+def model_client(site=False):
+    """The model of an agent stage: the one a person chose for this command, if any, else the site's.
+    site=True: always the site's (the stand-in scientist answers with the site's model)."""
+    if not site:
+        for prefix in ("GETH_MODEL", "GETH_PLANNER"):
+            if os.environ.get(f"{prefix}_MODEL"):
+                return Client(prefix)
+    return Client()
 
 
 class ModelError(Exception):
@@ -59,7 +70,7 @@ class Client:
         """One answer of the model: returns an assistant message (content, tool_calls), whatever the API.
         extra: more request fields (chat completions only), e.g. turning a model's thinking off."""
         if self.budget is not None and self.usage["usd"] >= self.budget:
-            raise ModelError(f"budget reached: this plan has spent ${self.usage['usd']:.4f} of its "
+            raise ModelError(f"budget reached: this stage has spent ${self.usage['usd']:.4f} of its "
                              f"${self.budget:.4f} on {self.model}")
         if self.api == "responses":
             return self._responses(messages, tools)

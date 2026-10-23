@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 from .agent import Agent, Tool, load_skills, string_params
-from .llm import Client, ModelError
+from .llm import ModelError, model_client
 from .tools import GETH_HOME, sc_job, scratch
 
 BIN = os.path.join(GETH_HOME, "geth", "bin")
@@ -292,7 +292,7 @@ def main(argv=None):
     plan = load_plan(a.run_dir)
     single_cell = plan["pipeline"] == "sc_downstream"
     try:
-        client = Client()
+        client = model_client()
     except ModelError as e:
         sys.exit(f"Geth: {e}")
     log = lambda m: print(m, flush=True)

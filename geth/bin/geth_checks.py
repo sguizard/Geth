@@ -85,12 +85,13 @@ REGISTRY = {
               "extra_config": "legacy_singularity.config",
               "design": ("Sample_Name", "Library_ID", "Lane", "SeqType", "Strandedness", "UDG_Treatment", "R1", "R2", "BAM")},
     "differentialabundance": {
-        "revision": "2.0.0", "design": None, "key": "sample", "downstream": True,
+        "revision": "2.0.0", "design": None, "key": "sample", "downstream": True, "follows": "rnaseq",
         "second_sheet": {"file": "plan_contrasts.csv", "param": "contrasts", "what": "the contrasts"},
         "profiles": ("rnaseq", "rnaseq_deseq2_gprofiler2", "rnaseq_deseq2_gsea", "rnaseq_limma"),
     },
     # Geth's own single-cell toolbox (bin/sc_downstream.py): the agents design, the toolbox executes.
-    "sc_downstream": {"revision": "1.0.0", "design": ("sample", "h5ad"), "key": "sample", "toolbox": True},
+    "sc_downstream": {"revision": "1.0.0", "design": ("sample", "h5ad"), "key": "sample", "toolbox": True,
+                      "follows": "scrnaseq"},
 }
 
 # The single-cell design menu: key -> (type, low or choices, high, required).
