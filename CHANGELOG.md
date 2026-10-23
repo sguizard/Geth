@@ -2,6 +2,13 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 2.0.1 (2026-10-23)
+
+- **`geth run` of a differential expression follow-up works in the agent sandbox.** The run's launch-time plan
+  check could not see the count matrix, which lives in the upstream run: only `geth plan --from` mounted it.
+  The run and the report now mount the upstream run read-only too. (Found by a 2.1 project test; single-cell
+  follow-ups were not affected, their toolbox jobs run outside the sandbox.)
+
 ## 2.0.0 (2026-10-23), codename Rannoch
 
 **The agents run on Geth's own harness; Nextflow only runs the pipelines and the tools' jobs.** Geth 1.x's
