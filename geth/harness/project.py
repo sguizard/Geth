@@ -33,7 +33,8 @@ First inspect the delivery: list it, read every README or metadata text file, an
 files do not say what they are. Then call LIST_CAPABILITIES and LIST_REFERENCES.
 Plan as few steps as the question needs:
 - a pipeline step for each kind of data in the delivery that the question needs (a delivery may hold several,
-  e.g. RNA-seq and ATAC-seq: give each step its own data folder then);
+  e.g. RNA-seq and ATAC-seq: give each step its own data folder then, the one that holds that kind's README,
+  sample table and reference, not only its reads);
 - a follow-up step only after the step it builds on;
 - a reference step when a pipeline step needs a genome that the catalogue lacks: find it with FIND_GENOME and
   list it in that pipeline step's after;

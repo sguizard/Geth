@@ -93,6 +93,9 @@ class Project(unittest.TestCase):
         self.assertIn("both use", self.problems(rna, atac)[0])
         os.makedirs(os.path.join(self.data, "ATAC"))
         self.assertEqual(self.problems(dict(rna, data="RNA"), dict(atac, data="ATAC")), [])
+        os.makedirs(os.path.join(self.data, "RNA", "fastq"))
+        open(os.path.join(self.data, "RNA", "README.txt"), "w").write("RNA-seq\n")
+        self.assertIn("holds no README or sample table", self.problems(dict(rna, data="RNA/fastq"))[0])
 
     def test_ids_size_and_started_steps(self):
         self.assertIn("is used twice", self.problems(COUNT, dict(COUNT))[0])

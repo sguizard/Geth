@@ -209,6 +209,12 @@ def delivered_genomes(data_dir):
     return sorted(found)
 
 
+def described(folder):
+    """Text files that describe data (README, sample tables) directly in a folder."""
+    return [f for f in glob.glob(os.path.join(folder, "*")) if os.path.isfile(f)
+            and f.lower().endswith((".txt", ".tsv", ".csv", ".md", ".xlsx"))]
+
+
 def catalogue_entry(step):
     """The catalogue folder a reference step creates (as stage_ensembl.sh names it)."""
     return os.path.join(REFERENCES, f"{step.get('species')}_{step.get('assembly')}_ens{step.get('release')}")
@@ -279,6 +285,10 @@ def check(pdir, doc, started=()):
                     problems.append(f"{where}: steps {folders[data]} and {sid} both use {data}: give each its own "
                                     "folder of the delivery (data), e.g. RNA and ATAC")
                 folders.setdefault(data, sid)
+                parent = os.path.dirname(data)
+                if data != data_dir and parent.startswith(data_dir) and described(parent) and not described(data):
+                    problems.append(f"{where}: data {data} holds no README or sample table, but {parent} does: give "
+                                    f"{parent}, so that the step's planner reads them (and any reference beside them)")
                 if not (data.startswith(DATA_ROOT + "/") and os.path.isdir(data)):
                     problems.append(f"{where}: data '{data}' is not a folder of the delivery ({data_dir}): give the "
                                     "folder that holds this step's files (e.g. RNA), or leave data out for the whole delivery")
