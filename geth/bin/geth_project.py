@@ -12,6 +12,7 @@ and run with the usual commands. Nothing here talks to a model.
   geth_project.py show <project_dir>
   geth_project.py list <projects folder>
   geth_project.py approve <project_dir> <who>
+  geth_project.py approve-lab <project_dir> <step id> <who>   a lab step's design
   geth_project.py run <project_dir> [--answers <file>] [--auto-approve]
 
 A project folder, $GETH_RUNS_DIR/projects/<name>/:
@@ -27,6 +28,7 @@ Pipeline step <id> runs as $GETH_RUNS_DIR/<project>-<id>. Exit status of run: 0 
 """
 import glob
 import hashlib
+import shutil
 import json
 import os
 import re
@@ -85,6 +87,12 @@ def log(pdir, text):
 
 def step_run(pdir, sid):
     return os.path.join(RUNS, f"{os.path.basename(pdir)}-{sid}")
+
+
+def lab_runs(pdir, sid):
+    """A lab step's two lab runs: its design, and its build."""
+    name = os.path.basename(step_run(pdir, sid))
+    return os.path.join(RUNS, "lab", name + "-design"), os.path.join(RUNS, "lab", name)
 
 
 # ---------------------------------------------------------------- what the coordinator may plan
@@ -335,11 +343,16 @@ def status(pdir, step):
             return "done"
         return "failed" if os.path.isfile(os.path.join(pdir, f"reference_{step['id']}.failed")) else "todo"
     if kind == "lab":
-        state = read(os.path.join(RUNS, "lab", os.path.basename(run), "build_state.txt")).strip()
-        if not os.path.isdir(os.path.join(RUNS, "lab", os.path.basename(run) + "-design")):
+        design, build = lab_runs(pdir, step["id"])
+        if not os.path.isdir(design):
             return "todo"
+        if not read(os.path.join(design, "lab_design_check.txt")).startswith("DESIGN CHECK: OK"):
+            return "plan failed"
+        if not os.path.isfile(os.path.join(pdir, f"lab_{step['id']}.approved")):
+            return "waiting for approval"
+        state = read(os.path.join(build, "build_state.txt")).strip()
         if not state:
-            return "waiting for approval" if not os.path.isfile(os.path.join(pdir, f"lab_{step['id']}.approved")) else "approved"
+            return "approved"
         return "done" if state.startswith("done") else "failed" if state.startswith(("failed", "stopped")) else "running"
     if not os.path.isdir(run):
         return "todo"
@@ -384,10 +397,10 @@ def show(pdir):
 
 # ---------------------------------------------------------------- the run
 
-def geth(*args, quiet=False):
+def geth(*args, quiet=False, env=None):
     """A geth command, as a person would type it (its output shown unless quiet)."""
     kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL} if quiet else {}
-    return subprocess.run([GETH, *args], **kwargs).returncode
+    return subprocess.run([GETH, *args], env={**os.environ, **(env or {})}, **kwargs).returncode
 
 
 def coordinate(pdir, mode, step=""):
@@ -476,9 +489,88 @@ def run(pdir, answers="", auto=False):
     return 0
 
 
+def matrix_of(pdir, step):
+    """The count matrix a finished step hands over to a lab step."""
+    run_dir = step_run(pdir, step["id"])
+    if step.get("pipeline") == "sc_downstream":
+        done = sorted(glob.glob(os.path.join(run_dir, "analysis_*", "SUCCEEDED")), key=lambda p: int(p.split("analysis_")[1].split("/")[0]))
+        return os.path.join(os.path.dirname(done[-1]), "processed.h5ad") if done else ""
+    for name in ("combined_cellbender_filter_matrix.h5ad", "combined_filtered_matrix.h5ad"):
+        found = glob.glob(os.path.join(run_dir, "results", "**", "mtx_conversions", name), recursive=True)
+        if found:
+            return found[0]
+    return ""
+
+
+def lab_input(pdir, step, steps):
+    """The lab's data folder for a step: one .h5ad (an earlier step's count matrix, or the delivery's) and a README."""
+    folder = os.path.join(pdir, f"lab_{step['id']}")
+    if os.path.isdir(folder):
+        return folder
+    ups = [steps[a] for a in step.get("after") or [] if steps[a].get("kind") == "pipeline"]
+    source = matrix_of(pdir, ups[0]) if ups else (glob.glob(os.path.join(read(os.path.join(pdir, "data_dir.txt")).strip(), "*.h5ad")) or [""])[0]
+    if not os.path.isfile(source):
+        raise ValueError(f"step {step['id']}: no count matrix to start from ({source or 'none found'})")
+    os.makedirs(folder)
+    try:
+        os.link(source, os.path.join(folder, os.path.basename(source)))
+    except OSError:
+        shutil.copy(source, folder)
+    origin = (f"step {ups[0]['id']} ({ups[0]['pipeline']}, run {os.path.basename(step_run(pdir, ups[0]['id']))})"
+              if ups else "the delivery")
+    readme = os.path.join(read(os.path.join(pdir, "data_dir.txt")).strip(), "README.txt")
+    with open(os.path.join(folder, "README.txt"), "w") as fh:
+        fh.write(f"Count matrix for a step of the Geth project {os.path.basename(pdir)}.\n"
+                 f"The project's question: {read(os.path.join(pdir, 'question.txt')).strip()}\n"
+                 f"This step: {step['question']}\n"
+                 f"{os.path.basename(source)} comes from {origin}.\n")
+        if ups:
+            fh.write("\nThe report of that step:\n" + read(os.path.join(step_run(pdir, ups[0]["id"]), "report.md"))[:6000])
+        elif os.path.isfile(readme):
+            fh.write("\nThe delivery's README:\n" + read(readme)[:6000])
+    return folder
+
+
+def lab_env(folder):
+    """The lab reads only benchmark folders (GETH_LAB_DATA): a project's lab step adds its own data folder."""
+    roots = os.environ.get("GETH_LAB_DATA") or os.path.join(DATA_ROOT, "testdata")
+    return {"GETH_LAB_DATA": f"{roots}:{folder}"}
+
+
 def lab_step(pdir, step, steps, auto):
-    """A lab step (R5c): the lab designs, a person approves the design, the lab builds and runs it."""
-    raise NotImplementedError("lab steps come with R5c")
+    """A lab step: the lab designs the analysis, a person approves the design, the lab builds and runs it (arm B)."""
+    name = os.path.basename(step_run(pdir, step["id"]))
+    design, build = lab_runs(pdir, step["id"])
+    state = status(pdir, step)
+    folder = os.path.join(pdir, f"lab_{step['id']}")
+    if state == "todo":
+        folder = lab_input(pdir, step, steps)
+        log(pdir, f"step {step['id']}: the lab designs the analysis ({os.path.basename(design)}, EXPERIMENTAL)")
+        geth("lab", "design", folder, step["question"], os.path.basename(design), env=lab_env(folder))
+        state = status(pdir, step)
+    if state == "waiting for approval":
+        if not auto:
+            log(pdir, f"step {step['id']}: the lab's design waits for you: geth lab show {os.path.basename(design)}; "
+                f"geth project approve {os.path.basename(pdir)} --lab {step['id']}; then geth project run {os.path.basename(pdir)}")
+            return "waiting"
+        approve_lab(pdir, step["id"], "benchmark (automatic)")
+        state = status(pdir, step)
+    if state == "approved":
+        log(pdir, f"step {step['id']}: the lab builds and runs it ({name}, EXPERIMENTAL)")
+        geth("lab", "build", os.path.basename(design), name, env=lab_env(folder))
+    return status(pdir, step)
+
+
+def approve_lab(pdir, sid, who):
+    design, _ = lab_runs(pdir, sid)
+    if not read(os.path.join(design, "lab_design_check.txt")).startswith("DESIGN CHECK: OK"):
+        print(f"Step {sid} has no checked lab design to approve.")
+        return 1
+    files = sorted(glob.glob(os.path.join(design, "lab_design_*.txt")))
+    save(os.path.join(pdir, f"lab_{sid}.approved"), {"approved_by": who, "approved_at": time.strftime("%F %T"),
+                                                     "sha256": {os.path.basename(f): sha(f) for f in files}})
+    log(pdir, f"step {sid}: the lab's design approved by {who}")
+    return 0
 
 
 def list_projects(root):
@@ -509,6 +601,8 @@ def main(argv):
         list_projects(args[0])
     elif cmd == "approve":
         return approve(args[0], args[1])
+    elif cmd == "approve-lab":
+        return approve_lab(args[0], args[1], args[2])
     elif cmd == "run":
         answers = args[args.index("--answers") + 1] if "--answers" in args else ""
         try:

@@ -136,6 +136,7 @@ them; each pipeline step is an ordinary Geth run, named <project>-<step> (geth s
                                       for what no pipeline does)
   geth project show <name>            the steps, where each stands, the coordinator's rationale
   geth project approve <name> [--yes] approve the steps (or the coordinator's revised steps)
+  geth project approve <name> --lab <step> [--yes]   approve a lab step's design (geth lab show it first)
   geth project run <name> [--answers <file>] [--detach]
                                       run the next steps; it stops when a step's plan needs your approval
                                       (geth show / geth approve <name>-<step>): run it again to continue
@@ -190,13 +191,24 @@ project() {  # project <subcommand> ...: see project_usage
             ;;
         approve)
             [ $# -ge 1 ] || project_usage
-            p=$(project_dir_of "$1")
-            python3 "$project_py" show "$p"
-            if [ "${2:-}" != "--yes" ]; then
-                read -r -p "Approve these steps? [y/N] " answer
+            p=$(project_dir_of "$1"); shift
+            local lab_step= yes=no
+            while [ $# -gt 0 ]; do
+                case $1 in --lab) lab_step=${2:-}; shift 2 || project_usage ;; --yes) yes=yes; shift ;; *) project_usage ;; esac
+            done
+            if [ -n "$lab_step" ]; then  # a lab step's design (EXPERIMENTAL): read it first with geth lab show
+                "$GETH_HOME/geth/lab/lab.sh" show "$(basename "$p")-$lab_step-design"
+                question="Approve this lab design for step $lab_step? [y/N] "
+            else
+                python3 "$project_py" show "$p"
+                question="Approve these steps? [y/N] "
+            fi
+            if [ "$yes" != yes ]; then
+                read -r -p "$question" answer
                 [[ "$answer" =~ ^[Yy]$ ]] || { echo "Not approved."; exit 1; }
             fi
-            python3 "$project_py" approve "$p" "$(whoami)"
+            if [ -n "$lab_step" ]; then python3 "$project_py" approve-lab "$p" "$lab_step" "$(whoami)"
+            else python3 "$project_py" approve "$p" "$(whoami)"; fi
             ;;
         run)
             [ $# -ge 1 ] || project_usage

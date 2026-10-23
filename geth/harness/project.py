@@ -10,6 +10,7 @@
 The coordinator never runs anything: the project's runner (geth_project.py run) does, with the usual commands.
 """
 import argparse
+import glob
 import json
 import os
 import subprocess
@@ -68,7 +69,8 @@ SUMMARIZER = '''You are Geth's coordinator, writing the project report for the s
 (READ_STEP) and answer the project's question from them. Copy numbers exactly as the reports print them: do not
 recompute, round differently or invent values. Do not add links. Sections: Summary (the answer, in a few
 sentences); Steps (what each step did, its run name, and its outcome); Results (the findings that answer the
-question, step by step); Gaps (what no step could do, and what would do it); Caveats and next steps.
+question, step by step; say plainly that a lab step's results come from agent-written code and are
+EXPERIMENTAL); Gaps (what no step could do, and what would do it); Caveats and next steps.
 Then call SUBMIT_REPORT with the whole report in Markdown.'''
 
 SUMMARY_PROMPT = '''The project's question: {question}
@@ -164,9 +166,28 @@ def genome_tool():
                 lambda species: gp.ensembl(str(species)))
 
 
+def lab_tables(pdir, sid, lines=60):
+    """A lab step's result tables (agent-written code: EXPERIMENTAL), as text."""
+    _, build = gp.lab_runs(pdir, sid)
+    out = []
+    for path in sorted(glob.glob(os.path.join(build, "results", "**", "*.tsv"), recursive=True))[:12]:
+        out.append(f"--- {os.path.relpath(path, build)}\n" + "".join(gp.read(path).splitlines(True)[:lines]))
+    return "\n".join(out)
+
+
 def read_step_tool(pdir):
     def run(step):
         run_dir = gp.step_run(pdir, step)
+        design, build = gp.lab_runs(pdir, step)
+        if os.path.isdir(design):  # a lab step (EXPERIMENTAL)
+            parts = [f"Lab step {step} (EXPERIMENTAL: agent-written code). Design: {os.path.basename(design)}; build: "
+                     f"{os.path.basename(build)}; state: {gp.read(os.path.join(build, 'build_state.txt')).strip() or 'not built'}"]
+            for f in ("lab_design_steps.txt", "lab_design_statistics.txt", "review_1.txt", "review_2.txt"):
+                text = gp.read(os.path.join(design if f.startswith("lab_") else build, f)).strip()
+                if text:
+                    parts.append(f"--- {f}\n{text[:4000]}")
+            parts.append(lab_tables(pdir, step) or "(no result tables)")
+            return "\n".join(parts)
         if not os.path.isdir(run_dir):
             return f"NOT FOUND: step '{step}' has no run (gaps and reference steps have none)"
         parts = [f"Run {os.path.basename(run_dir)}"]
@@ -220,6 +241,7 @@ def project_report_tool(pdir, doc):
                 sources.append(check_report.facts_of(run_dir, gp.read(os.path.join(run_dir, "plan_pipeline.txt")).strip(), attempts))
                 sources.append((gp.read(os.path.join(run_dir, "report.md")), []))  # what the step's report quoted
         extra = gp.read(os.path.join(pdir, "question.txt")) + json.dumps(doc)
+        extra += "".join(lab_tables(pdir, s["id"], lines=100000) for s in doc.get("steps", []) if s.get("kind") == "lab")
         summary, unverified, links = check_report.check_against(report, sources, extra)
         tries.append(summary)
         if (unverified or links) and len(tries) < 2:

@@ -91,7 +91,7 @@ class Project(unittest.TestCase):
         gp.save(os.path.join(self.p, "steps.json"), {"steps": [COUNT]})  # edited after approval
         self.assertIsNone(gp.approved_doc(self.p, quiet=True))
 
-    def fake_geth(self, *args, quiet=False):
+    def fake_geth(self, *args, quiet=False, env=None):
         """The geth commands, as far as the runner sees them: folders and files."""
         self.calls.append(args)
         if args[0] == "plan":
@@ -100,6 +100,15 @@ class Project(unittest.TestCase):
             open(os.path.join(run, "plan_pipeline.txt"), "w").write("x\n")
         elif args[0] == "approve":
             open(os.path.join(gp.RUNS, args[1], "APPROVED"), "w").write("{}")
+        elif args[:2] == ("lab", "design"):
+            d = os.path.join(gp.RUNS, "lab", args[-1])
+            os.makedirs(d)
+            open(os.path.join(d, "lab_design_check.txt"), "w").write("DESIGN CHECK: OK\n")
+            open(os.path.join(d, "lab_design_steps.txt"), "w").write("qc | ...\n")
+        elif args[:2] == ("lab", "build"):
+            d = os.path.join(gp.RUNS, "lab", args[-1])
+            os.makedirs(d)
+            open(os.path.join(d, "build_state.txt"), "w").write("done (review: approve)\n")
         elif args[0] == "run":
             ok = "true" if args[1] not in self.fail else "false"
             open(os.path.join(gp.RUNS, args[1], "outcome.txt"), "w").write(f"succeeded: {ok}\nattempts: 1\n")
@@ -146,6 +155,23 @@ class Project(unittest.TestCase):
         os.remove(os.path.join(self.p, "reviews.json"))
         self.start(COUNT, CELLS, decisions={"count": "revise"})
         self.assertEqual(gp.run(self.p, auto=True), 3)
+
+
+    def test_a_lab_step_starts_from_the_count_matrix_and_waits_for_its_design_approval(self):
+        gp.save(os.path.join(self.p, "options.json"), {"lab": True})
+        open(os.path.join(self.data, "kang.h5ad"), "w").write("matrix")
+        open(os.path.join(self.data, "README.txt"), "w").write("PBMC, IFN-beta and control.\n")
+        lab = {"id": "ifn", "kind": "lab", "question": "Which genes respond to IFN-beta per cell type?"}
+        self.start(lab)
+        self.assertEqual(gp.run(self.p), 2)  # the design waits for the person
+        folder = os.path.join(self.p, "lab_ifn")
+        self.assertEqual(sorted(os.listdir(folder)), ["README.txt", "kang.h5ad"])
+        self.assertIn("PBMC, IFN-beta and control.", gp.read(os.path.join(folder, "README.txt")))
+        self.assertEqual(self.calls[0][:3], ("lab", "design", folder))
+        self.assertEqual(gp.approve_lab(self.p, "ifn", "tester"), 0)
+        self.assertEqual(gp.run(self.p), 0)
+        self.assertEqual(self.calls[1], ("lab", "build", "demo-ifn-design", "demo-ifn"))
+        self.assertEqual(gp.status(self.p, lab), "done")
 
 
 if __name__ == "__main__":
