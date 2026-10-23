@@ -5,28 +5,33 @@ nf-core, and have read the [introduction](introduction.md).
 
 ## Design in one paragraph
 
-Geth is a **Nextflow workflow whose steps are agents**, built on Nextflow 26.10's `agent` primitive
-(plugin `nf-agent`). Each agent gets an instruction, a few **tools**, optionally **skills**, and returns a
-typed **record**. A tool is a Nextflow process, so a tool can run locally or as a scheduler job like any
-task. Around the agents sit **deterministic gates** written in plain Python (`geth_checks.py`). The gates
-validate every plan against the pinned pipeline's own schemas, freeze the approved design, and decide
-which changes a retry may make. A finished report is checked number by number against the results. The
-agents decide; the gates verify; a person approves.
+Geth is a few **agents on a small harness** (`geth/harness`, Python standard library only), surrounded by
+**deterministic gates**. Each agent gets an instruction, a few **tools**, optionally **skills** that it loads
+when it needs them, and ends by calling a **final tool** that Geth checks (`SUBMIT_PLAN`, `SUBMIT_OUTCOME`,
+`SUBMIT_REPORT` ...). An answer only counts once its final tool accepts it; a refusal goes back to the agent.
+The agents talk to the model service directly. **Nextflow runs the nf-core pipelines and the tools' scheduler
+jobs** (`geth/jobs.nf`), nothing else. The gates, in plain Python (`geth_checks.py`), validate every plan
+against the pinned pipeline's own schemas, freeze the approved design, decide which changes a retry may
+make, and check a finished report number by number against the results. The agents decide; the gates
+verify; a person approves.
+
+Geth 1.x ran its agents on Nextflow's preview `agent` feature. Geth 2.0 (codename Rannoch) moved them to
+their own harness, one measured step at a time (`docs/history/rannoch.html`).
 
 ## Where to start reading
 
 Follow one analysis through the code, in the order things happen:
 
-1. `geth/geth`: the commands. `geth plan` and `geth run` both end in `nf()`, which starts
-   `geth/main.nf` with a mode. Each driver goes through `sandboxed` (`geth/bin/driver_slots.sh`), inside
-   the agent sandbox when the site asks for it.
-2. `geth/main.nf`, from the bottom: the `workflow` block picks the mode. Read the `planner` agent above it:
-   its instruction, its tools and its record. Each tool is a short `process` (`LIST_FILES`, `CHECK_PLAN` ...).
+1. `geth/geth`: the commands. `geth plan`, `geth run` and `geth report` each end in `agents()`, which starts
+   a stage (`python3 -m harness.plan`, `harness.run`, `harness.report`). Each stage goes through `sandboxed`
+   (`geth/bin/driver_slots.sh`), inside the agent sandbox when the site asks for it.
+2. `geth/harness/agent.py`: the loop. Then `harness/plan.py`: the planner's instruction, its tools
+   (`tools.py`, `ask.py`) and its final tool `SUBMIT_PLAN`. `llm.py` is the model client.
 3. `geth/bin/geth_checks.py`: what the tools call. `REGISTRY` describes every pipeline; `check_plan` is the
    plan check; `approve` fingerprints the plan; `gate` is the plan-diff gate the operator meets on every
    launch.
-4. `geth/bin/run_nfcore.sh`: the operator's only way to start a pipeline, with the gate before and the error
-   digest after.
+4. `geth/harness/run.py` and `geth/bin/run_nfcore.sh`: the operator, analyst and reporter, and the operator's
+   only way to start a pipeline, with the gate before and the error digest after.
 5. `geth/bin/collect_results.py` and `check_report.py`: what the reporter sees, and how its report is
    checked.
 6. A skill, e.g. `geth/skills/nfcore-rnaseq/SKILL.md`: what the planner is told about a pipeline.
@@ -44,30 +49,38 @@ site/
   examples/                worked site configurations: local machine, an SGE cluster with GPUs
 geth/
   geth                     the command line: plan, show, approve, run, status, report, list, stop, doctor, version, lab
-  main.nf                  the workflow: records, tools (processes), agents, bookkeeping, workflow block
-  nextflow.config          Geth's own settings, read from the environment (model, endpoint, folders)
-  bin/                     on the tasks' PATH (Nextflow adds a pipeline's bin/ automatically)
+  harness/                 the agents (Python, standard library only):
+    agent.py               the loop: tools, skills, final tools, refusal guard, trace
+    llm.py                 the model client: chat completions or the Responses API, retries, usage, budgets
+    plan.py, tools.py, ask.py   the planner, its tools, and its questions (ASK_USER, the stand-in)
+    run.py, report.py      the operator, the single-cell analyst and the reporter (geth run, geth report)
+    lab.py                 the lab's designer, judge, engineers and reviewers
+  jobs.nf                  the tools' scheduler jobs: the single-cell toolbox (SC_INSPECT, SC_ANALYSE)
+  nextflow.config          settings of those jobs, read from the environment (folders)
+  bin/                     the gates and launchers (on the jobs' PATH: Nextflow adds jobs.nf's bin/)
     geth_checks.py         the gates: registry, plan check, save-plan, approve, plan-diff gate, record
     run_nfcore.sh          RUN_NFCORE tool: one gated, resumable nf-core launch per call
     sc_downstream.py       the single-cell toolbox (inspect / run), executed in the CellTypist container
     sc_analyse.sh          SC_ANALYSE tool: one gated toolbox analysis per call
+    sc_job.sh              starts one toolbox job (inspect or analyse) through jobs.nf
     collect_results.py     ready-to-copy result tables for the reporter
     check_report.py        traces every number and link of the report to the facts
     geth_doctor.sh         installation checks (geth doctor)
     driver_slots.sh        driver slots (GETH_MAX_DRIVERS), stage time limits, the sandboxed() launcher
     stop_driver.sh         geth stop / geth lab stop: ends a run's drivers, processes and scheduler jobs
-    agent_sandbox.sh       runs an agent driver in a container (GETH_AGENT_SANDBOX, phase 12)
+    agent_sandbox.sh       runs an agent stage in a container (GETH_AGENT_SANDBOX, phase 12)
     env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
   completions/geth.fish    fish tab completion (loaded by env.fish)
   conf/                    configs added to nf-core runs: resource caps, legacy singularity engine
   schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release
   skills/                  planner skills: one SKILL.md per pipeline, plus sc-downstream
   references/              scripts that add entries to the reference catalogue
-  tests/                   unit tests of the gates and of the lab's bookkeeping (self-contained)
+  tests/                   unit tests of the gates, the agents (with a scripted model) and the lab (self-contained)
   lab/                     the EXPERIMENTAL lab (phase 11): not used by geth plan / geth run
     lab.sh                 geth lab: design, judge, show, list, build (arm B), build-c (arm C), stop
-    main.nf                designer, judge, engineer, reviewer agents and their tools
-    bin/                   lab_checks.py (design format), lab_inspect.py, lab_build.py (arm B/C bookkeeping),
+    jobs.nf                the lab tools' scheduler jobs: LAB_INSPECT, MAKE_SUBSET, TEST_STEP, LINT_PIPELINE,
+                           TEST_PIPELINE, and arm C's full run
+    bin/                   lab_job.sh (starts one of those jobs), lab_checks.py (design format), lab_inspect.py, lab_build.py (arm B/C bookkeeping),
                            lab_step_check.py (static check), lab_sandbox.sh and lab_nf_sandbox.sh (the
                            sandboxes for agent-written code), lab_h5ad.py, lab_subset_step.py
     skills/                sc-design-lab (design), sc-build-lab (Python steps), nf-build-lab (Nextflow)
@@ -85,11 +98,12 @@ person.
 
 | File | Written by | Content |
 |---|---|---|
-| `question.txt`, `data_dir.txt` | workflow (plan mode) | the request and the data folder |
-| `plan_pipeline.txt`, `plan_samplesheet.csv`, `plan_params.json`, `plan_rationale.txt` | `SAVE_PLAN` (`save-plan`) | the plan |
-| `plan_contrasts.csv`, `plan_profile.txt`, `plan_upstream.txt` | `SAVE_PLAN` | downstream pipelines only |
-| `plan_barcodes.csv` | `SAVE_PLAN` | multiplexed scrnaseq only: the Cell Ranger multi barcodes sheet |
-| `plan_check.txt` | `SAVE_PLAN` | the plan check result |
+| `question.txt`, `data_dir.txt` | planner stage | the request and the data folder |
+| `plan_pipeline.txt`, `plan_samplesheet.csv`, `plan_params.json`, `plan_rationale.txt` | `SUBMIT_PLAN` (`save-plan`) | the plan |
+| `plan_contrasts.csv`, `plan_profile.txt`, `plan_upstream.txt` | `SUBMIT_PLAN` | downstream pipelines only |
+| `plan_barcodes.csv` | `SUBMIT_PLAN` | multiplexed scrnaseq only: the Cell Ranger multi barcodes sheet |
+| `plan_check.txt` | `SUBMIT_PLAN` | the plan check result |
+| `plan_questions.md`, `plan_model.txt` | planner stage | the planner's questions and the answers; the model that planned (and its cost, if paid) |
 | `.checked/` | `CHECK_PLAN` | the last plan version that passed the check during planning (fallback) |
 | `APPROVED` | `geth approve` | approver, time, SHA-256 of every plan file |
 | `gate_state.json` | `record` | the last accepted attempt and the error that may justify the next change |
@@ -97,17 +111,18 @@ person.
 | `analysis_N/` | `sc_analyse.sh` | toolbox analyses: `design.submitted.txt`, `design.json`, `diagnostics.json`, `summary.txt`, figures, `processed.h5ad` |
 | `nfcore/` | `run_nfcore.sh` | launch folder of the nested nf-core run (its `.nextflow/` and log) |
 | `results/`, `work/` | nf-core | the pipeline's outputs and work folder |
-| `outcome.txt` | `SAVE_OUTCOME` | the operator's or analyst's structured outcome |
+| `outcome.txt` | `SUBMIT_OUTCOME` | the operator's or analyst's outcome, checked against the pipeline's log or the analysis |
 | `annotations.txt` | `SAVE_ANNOTATIONS` | single-cell cluster annotations |
-| `report.md`, `report_check.txt` | `FINALIZE_REPORT` | the checked report |
-| `geth_<mode>.log`, `geth_trace_<mode>.txt`, `.nextflow.log*`, `geth_work/` | Nextflow | Geth's own driver: log, task trace, work folder |
-| `.geth_<mode>.pid` | `geth` | present while a driver works on the run (`geth list`, `geth stop`): host, pid, driver slots |
+| `report.md`, `report_check.txt` | `SUBMIT_REPORT` | the checked report |
+| `geth_<stage>.log`, `harness_trace_<stage>.jsonl`, `.harness/` | the agents | log; every model answer and tool call (never the key); scratch files |
+| `geth_work/`, `.harness/jobs/` | Nextflow | the tools' scheduler jobs: work folder, one launch folder per job |
+| `.geth_<stage>.pid` | `geth` | present while a stage works on the run (`geth list`, `geth stop`): host, pid, driver slots |
 
 Because the folder holds the whole state, `geth run` resumes after an interruption: Nextflow `-resume`
 in `nfcore/`, attempt numbering continues, and the gate state persists.
 
-**Writing the report again.** `geth report` runs `main.nf --mode report`: the plan from the `plan_*` files,
-the outcome from `outcome.txt`, then only the reporter and `FINALIZE_REPORT`. No pipeline is launched and no
+**Writing the report again.** `geth report` runs the reporter alone (`harness.report`): the plan from the
+`plan_*` files, the outcome from `outcome.txt`, then the reporter and its checked `SUBMIT_REPORT`. No pipeline is launched and no
 attempt is used; the previous `report.md` and `report_check.txt` are kept as `report.<date>.*`.
 
 **Resume and input paths.** Nextflow's cache knows an input file by its path, size and date. Each attempt
@@ -125,10 +140,10 @@ folder. It appends `stopped by geth stop` to the stage's log, which `geth list` 
 
 ## Lifecycle of an analysis
 
-### Plan (`geth plan` → `main.nf --mode plan`)
+### Plan (`geth plan` → `harness.plan`)
 
-1. The CLI creates the run folder and starts Geth's workflow. The workflow block checks the site
-   settings, the model allowlist, and that `run_dir` lies under `GETH_RUNS_DIR`.
+1. The CLI creates the run folder and starts the planner stage. The stage checks the site settings, the
+   model allowlist (`llm.py`), and that `run_dir` lies under `GETH_RUNS_DIR`.
 2. The **planner** agent receives the question, the data folder and, for `--from`, the upstream run. It
    has these tools:
 
@@ -137,19 +152,21 @@ folder. It appends `stopped by geth stop` to the stage's log, which `geth list` 
    | `LIST_FILES` | `find`, depth 3, under `GETH_DATA_ROOT` only |
    | `READ_TEXT` | first 8 kB of a text file, or 8 decompressed lines of a `.gz`, under `GETH_DATA_ROOT` only |
    | `LIST_REFERENCES` | prints every catalogue `README.txt` |
-   | `SC_INSPECT` | per-cell QC distributions of an `.h5ad` (a job) |
+   | `INSPECT_READS` | read lengths (and the first bases) of a FASTQ, measured rather than guessed |
+   | `PIPELINE_OPTIONS` | the pinned release's parameter schema: its sections, a section's options, or a search |
+   | `ASK_USER` | questions to the scientist: in the terminal, or a stand-in answering from `--answers` (at most 2 rounds of 5) |
    | `CHECK_PLAN` | `geth_checks.py check-plan`; also saves passing versions to `.checked/` |
+   | `SC_INSPECT` | follow-up of a scrnaseq run only: per-cell QC distributions of an `.h5ad` (a job, through `jobs.nf`) |
 
    It also gets **skills**: one per pipeline. It must call `CHECK_PLAN` until it prints
    `PLAN CHECK: OK`, and fix or explain every `WARNING:` line (`plan_warnings()`: samples of the
    delivery's tables that appear nowhere in the plan; a 10x chemistry the delivery never states, or GEM-X
-   planned as v3). Warnings never block a plan.
-3. The planner answers with a `PlanProposal` record. The samplesheet, parameters and the second sheet
-   (`contrasts_lines`: contrasts, or the multiplexed samples) come back as **lists of lines**: JSON nested
-   in a text field was mangled by the structured-output step.
-4. `SAVE_PLAN` runs `geth_checks.py save-plan`. It re-checks the answer and writes the `plan_*` files.
-   If the final answer fails the check but a version in `.checked/` passed, it keeps the checked
-   version and says so in the rationale.
+   planned as v3; read checks such as primers or barcode read length). Warnings never block a plan.
+3. The planner submits with `SUBMIT_PLAN`. The samplesheet, parameters and the second sheet
+   (`contrasts_lines`: contrasts, or the multiplexed samples) are **lists of lines**. `SUBMIT_PLAN` runs
+   `geth_checks.py save-plan`, which re-checks the plan and writes the `plan_*` files; a refusal goes back
+   to the planner. If the planner ends without an accepted submission, the last version in `.checked/` is
+   used, and the rationale says so.
 
 ### Approve (`geth approve`)
 
@@ -157,12 +174,13 @@ folder. It appends `stopped by geth stop` to the stage's log, which `geth list` 
 `APPROVED`, with the SHA-256 of every plan file, and resets `gate_state.json`. Every later read of the approved plan (`approved_plan()`) re-hashes
 the files. A file edited after approval makes every gate call fail until a person approves again.
 
-### Run (`geth run` → `main.nf --mode run`)
+### Run (`geth run` → `harness.run`)
 
-1. The workflow reads the plan files into an `AnalysisPlan` record. It hands the record to the
-   **operator**, or to the **analyst** when the pipeline is `sc_downstream`.
-2. The operator's only tool is `RUN_NFCORE`, which runs `run_nfcore.sh`. Each call is one attempt, in a
-   new `attempt_N/`:
+1. The stage reads the approved `plan_*` files and gives them to the **operator**, or to the **analyst**
+   when the pipeline is `sc_downstream`.
+2. The operator's tool is `RUN_NFCORE`, which runs `run_nfcore.sh`. Called with only the pipeline, it runs
+   the approved plan as approved; after a failure, the operator passes in full only what it changes (the
+   whole samplesheet, or all the parameters). Each call is one attempt, in a new `attempt_N/`:
    1. Refuse run folders outside `GETH_RUNS_DIR`, and pipelines not in the registry.
    2. **Plan-diff gate** (`geth_checks.py gate`), described below. A refusal is reported as
       `STATUS: REFUSED`, and nothing is launched.
@@ -172,22 +190,23 @@ the files. A file edited after approval makes every gate call fail until a perso
       otherwise (a human genome needs large jobs whatever the read count).
    5. Per-pipeline runtime (`geth_checks.py runtime`): Nextflow version, Java, extra config,
       environment, TSV input, `--max_*` limits.
-   6. Launch from `nfcore/`, with `-resume`. Geth's own driver runs in the run folder, so a separate
-      launch folder keeps `-resume` from picking up the driver's session.
+   6. Launch from `nfcore/`, with `-resume`.
    7. Print a digest: status, outdir, warnings, or an error report extracted from the Nextflow log plus
       the failed task's stderr. Then `record` the attempt: `ok`, `check` or `nextflow`.
 
-   The tool **always exits 0**. In the Nextflow agent preview, a failing tool task kills the agent, so
-   failures are reported as text. The operator may call `RUN_NFCORE` at most 3 times; the launcher
-   refuses a 6th attempt in any case.
-3. `SAVE_OUTCOME` writes `outcome.txt` from the operator's `RunOutcome` record.
+   The tool **always exits 0**: a failure is text the operator can act on. The operator may call
+   `RUN_NFCORE` at most 3 times; the launcher refuses a 6th attempt in any case.
+3. `SUBMIT_OUTCOME` writes `outcome.txt`. It refuses a claim that the last launched attempt's log
+   contradicts (success without "Pipeline completed successfully", or failure with it). The number of
+   attempts is the number of `RUN_NFCORE` calls Geth saw, not the model's count.
 4. The **reporter** calls `COLLECT_RESULTS` (`collect_results.py`): ready-to-copy, rounded, labelled
    tables, so that the model never does arithmetic. It then writes the report.
-5. `FINALIZE_REPORT` runs `check_report.py`. Every number in the report must match a fact, at the
+5. `SUBMIT_REPORT` runs `check_report.py`. Every number in the report must match a fact, at the
    precision written and allowing for scales of 1, 100, 0.01, 10⁻³ and 10⁻⁶. Integers ≤ 20 are not
    checked: they are counts of samples, files or attempts. Facts are the collected results, the raw QC
    values, the plan, the question and the number of attempts. Links must appear in the facts.
-   Untraced numbers or links add a warning section to `report.md`.
+   Untraced numbers or links go back to the reporter **once**, to correct; after that the report is saved
+   with a warning section. A report the reporter writes as plain text counts as its submission.
 
 ### The plan-diff gate
 
@@ -218,12 +237,13 @@ parameters. Both cases are now unit tests.
 ### The single-cell path
 
 For `sc_downstream`, the **analyst** uses `SC_ANALYSE`, which runs `sc_analyse.sh` as a job in the
-CellTypist container:
+CellTypist container (`sc_job.sh` through `jobs.nf`):
 
 1. The first analysis must run the approved design unchanged.
 2. Exactly one revision may follow. It may change only tunable keys (`SC_TUNABLE`: QC thresholds,
    doublet rate or threshold, HVGs, neighbours, Leiden resolutions) and needs a `justification=` line
-   that cites a diagnostic (`SC_DIAGNOSTIC_TERMS`).
+   that cites a diagnostic (`SC_DIAGNOSTIC_TERMS`). A revision may name only the keys it changes:
+   `geth_checks.py sc-merge` applies it to the approved design.
 3. The input matrix, normalisation, marker panel and annotation model stay frozen.
 
 **CellBender after Cell Ranger multi.** nf-core runs CellBender on each library's raw matrix and on each
@@ -239,23 +259,32 @@ The toolbox prints **FLAGS**:
 - a cluster with less than 60% CellTypist agreement
 - a cluster with fewer than 10 cells
 
-The analyst must address each flag or explain why it needs no change. It then annotates every cluster
-and saves the annotations with `SAVE_ANNOTATIONS`. Annotations are a tool call rather than a record
-field, because the structured outcome dropped them.
+The analyst must address each flag or explain why it needs no change. It then annotates every cluster,
+saves the annotations with `SAVE_ANNOTATIONS`, and gives them with its `SUBMIT_OUTCOME`. A success claim must
+name an analysis that succeeded (`analysis_N/SUCCEEDED`): a refused or failed revision does not undo an
+earlier analysis.
 
 ## The agents
 
-| Agent | Tools | Skills | maxIterations | Returns |
+| Agent | Tools | Skills | Turns | Final tool |
 |---|---|---|---|---|
-| `planner` | `LIST_FILES`, `READ_TEXT`, `LIST_REFERENCES`, `CHECK_PLAN`, `SC_INSPECT` | all 14 | 25 | `PlanProposal` |
-| `operator` | `RUN_NFCORE` | none | 10 | `RunOutcome` |
-| `analyst` | `SC_ANALYSE`, `SAVE_ANNOTATIONS` | `sc-downstream` | 8 | `RunOutcome` |
-| `reporter` | `COLLECT_RESULTS` | none | 5 | Markdown (stdout) |
+| `planner` | `LIST_FILES`, `READ_TEXT`, `LIST_REFERENCES`, `INSPECT_READS`, `PIPELINE_OPTIONS`, `ASK_USER`, `CHECK_PLAN` (+ `SC_INSPECT` on a scrnaseq follow-up) | every pipeline skill (+ `sc-downstream` on a scrnaseq follow-up) | 25 | `SUBMIT_PLAN` |
+| `operator` | `RUN_NFCORE` | none | 10 | `SUBMIT_OUTCOME` |
+| `analyst` | `SC_ANALYSE`, `SAVE_ANNOTATIONS` | `sc-downstream` | 8 | `SUBMIT_OUTCOME` |
+| `reporter` | `COLLECT_RESULTS` | none | 6 | `SUBMIT_REPORT` |
 
-All agents use `openai/${params.model}` through the `agent` scope of `nextflow.config`: runner
-`langchain4j`, base URL and key from the environment, 600 s request timeout. Prompts name every field of
-the expected record, because models invent fields otherwise. Instructions state what success looks like
-("never claim success unless the tool printed STATUS: SUCCESS").
+The loop (`agent.py`) keeps the agents honest about what it cannot check itself:
+- a tool never kills the agent: any failure comes back as text;
+- the agent ends only when its final tool accepts the answer; when its turns run out, one last turn is
+  offered to call the final tool;
+- when a check refuses the same thing three times, the agent is told to stop resubmitting and to ask or
+  explain; at six, the loop ends;
+- every request, answer and tool call goes to `harness_trace_<stage>.jsonl` (never the API key).
+
+The model client (`llm.py`) speaks OpenAI-compatible chat completions, or the Responses API that GPT-6
+models need for tools with reasoning. It retries, and counts tokens and time. A paid planner model
+(`geth plan --model <name>`) needs its prices and a budget, and stops at the budget. Instructions state
+what success looks like ("never claim success unless the tool printed STATUS: SUCCESS").
 
 **Skills** are Markdown files with a YAML header (`name`, `description`). The planner loads the one it
 needs. A skill covers four things:
@@ -335,8 +364,9 @@ outdated one (nanoseq, eager).
 4. **Add its checks** to `EXTRA_CHECKS`. Write down the mistakes a planner could make that the schema
    does not catch, such as a control that is not a row of the sheet, or a mode that needs a parameter.
    Each check returns plain-English problems; the planner reads them.
-5. **Write the skill** `geth/skills/nfcore-<pipeline>/SKILL.md`. Then add it to the planner's `skills`
-   list, and the pipeline to the planner's instruction, in `main.nf`.
+5. **Write the skill** `geth/skills/nfcore-<pipeline>/SKILL.md` (the planner finds it by its folder), with
+   its section "Ask when the delivery does not say". Then add the pipeline to the planner's instruction in
+   `geth/harness/plan.py`.
 6. **Results** (optional): add a collector to `collect_results.py`. Without one, the report gets the
    generic summary: MultiQC general statistics and the results folders.
 7. **Unit tests** in `geth/tests/test_geth_checks.py`: a valid sheet passes, and each typical mistake
@@ -397,7 +427,10 @@ are often read-only in jobs.
 python3 geth/tests/test_geth_checks.py -v      # the gates: 40 tests, under a second, no site needed
 python3 geth/tests/test_collect_results.py -v  # result summaries and the report check
 python3 geth/tests/test_lab_build.py -v        # the lab's bookkeeping (arms B and C) and the shell quoting
-nextflow lint geth/main.nf geth/lab/main.nf
+python3 geth/tests/test_harness.py -v          # the agent loop and the planner's tools, with a scripted model
+python3 geth/tests/test_harness_run.py -v      # operator, analyst and reporter: outcome and report fences
+python3 geth/tests/test_harness_lab.py -v      # the lab's agents: design check, notes and review
+nextflow lint geth/jobs.nf geth/lab/jobs.nf
 for f in geth/geth geth/lab/lab.sh geth/bin/*.sh geth/lab/bin/*.sh bench/*.sh bench/lab/*.sh; do bash -n "$f"; done
 geth doctor                                    # with a site: also probes the agent sandbox
 ```
@@ -419,7 +452,10 @@ launch.
 | `bench/stage_public.sh` | Real-size public data: airway (GSE52778, 24 GB), PBMC 1k v3 (5 GB), GRCh38, CellTypist immune models. |
 | `bench/stage_deliveries.sh` | Seven realistic deliveries for the pipelines added in 1.4 (chipseq, atacseq, methylseq, ampliseq, nanoseq, eager, isoseq), built from nf-core test data. Files are renamed the way a facility would deliver them, with a free-text README and a sample table, and the traps are realistic: re-sequenced lanes, input controls shared per culture, facility IDs that are not valid sample names, a pooled Nanopore FASTQ. |
 | `bench/bench_plan.sh <tag> <repeats> <delivery>...` | Plan-only repeats, each plan scored by `eval_plan.py`. Nothing is approved or run. |
-| `bench/bench_run.sh <tag> <run>:<dataset>...` | Approves already-planned benchmark runs and runs them end to end, scored by `eval_run.py`. |
+| `bench/bench_run.sh <tag> <run>:<dataset>[:<planned run>]...` | Approves already-planned benchmark runs (or copies of another run's plan) and runs them end to end, scored by `eval_run.py`: success, honest outcome, report traced, pipeline and agent minutes. |
+| `bench/bench_report.sh <tag> <finished run>...` | The reporter alone, on copies of finished runs (results hard-linked): numbers traced, sections, minutes. |
+| `bench/stage_sparse.sh` | The same deliveries with a one-line README; `bench/facts/` holds what a stand-in scientist knows (`GETH_BENCH_TESTDATA=testdata_sparse GETH_BENCH_ANSWERS=yes`). |
+| `bench/stage_broken.sh <tag>` | A delivery no allowed fix can repair (one FASTQ cut short), for the operator's honesty. |
 | `bench/stage_chicken.sh` | A chicken germline delivery for sarek: three birds of DDBJ PRJDB17746, 2 million read pairs each, one bird on two lanes; plus the GRCg7b genome, known variants and VEP cache. |
 | `bench/stage_index_tests.sh` | Airway and PBMC subsets, used to test STAR index reuse quickly. |
 | `bench/snapshot.sh` | Freezes the last commit in `$GETH_WORK_ROOT/snapshots/<commit>`, so a long benchmark runs on fixed code while development goes on. A script that bash is executing must never be edited. |
@@ -439,7 +475,7 @@ automatically: use public data only.
 `geth lab` (in `geth/lab/`) tests whether agents can design, and later build, a coherent single-cell
 downstream analysis. It is **not for real analyses**. It is kept apart from Geth's workflow:
 
-- its own Nextflow workflow (`geth/lab/main.nf`) and command (`geth/lab/lab.sh`)
+- its own command (`geth/lab/lab.sh`), agents (`geth/harness/lab.py`) and jobs (`geth/lab/jobs.nf`)
 - its file tools only reach the benchmark folders (`GETH_LAB_DATA`, by default `$GETH_DATA_ROOT/testdata`),
   so the truth used for scoring (`$GETH_WORK_ROOT/lab_truth/`) stays out of reach
 - runs go to `$GETH_RUNS_DIR/lab/`, and every file it writes is marked EXPERIMENTAL
@@ -519,8 +555,9 @@ frozen project (`pipeline_c/`), in one sandboxed job that retries with more memo
 
 ## Agents in a container (phase 12)
 
-With `GETH_AGENT_SANDBOX=yes`, `sandboxed` in `geth/bin/driver_slots.sh` starts every agent driver through
-`geth/bin/agent_sandbox.sh`; this covers `geth plan` and `geth run`, and every `geth lab` stage. The wrapper:
+With `GETH_AGENT_SANDBOX=yes`, `sandboxed` in `geth/bin/driver_slots.sh` starts every agent stage through
+`geth/bin/agent_sandbox.sh`; this covers `geth plan`, `geth run` and `geth report`, and every `geth lab` stage.
+The jobs the agents' tools start (nf-core pipelines, toolbox and lab jobs) are launched from inside. The wrapper:
 - mounts, read-write, only the run folder, `NXF_HOME` and `GETH_AGENT_SANDBOX_RW`
 - mounts, read-only, Geth, this run's data folder (the driver's `--data_dir`, or `data_dir.txt`), the
   catalogue, the lab images, Java, the Nextflow launcher and the SGE client. Each folder is mounted at the
@@ -536,7 +573,12 @@ be a scheduler job. Every agent stage runs under `timeout` (`stage_limit`): a hu
 driver slot. The run folder's `.agent_home` records that the driver was sandboxed; `geth status` and
 `geth lab show` report it.
 
-## Lessons from the Nextflow agent preview (26.10.2, nf-agent 0.2.0)
+## Lessons from Nextflow's agent preview (Geth 1.x: Nextflow 26.10.2, nf-agent 0.2.0)
+
+Geth 1.x ran its agents on this preview. Geth 2.0 left it: the typed final answer took two thirds of the
+planning time and could not be checked by a tool, and the agents' tools needed one process each. What it
+taught still shapes the harness:
+
 
 - Record fields need concrete generic types: `List<String>`, not `List`.
 - Tool inputs cannot be `Path`. Pass absolute paths as `String`, and bind folders into containers
@@ -569,9 +611,8 @@ driver slot. The run folder's `.agent_home` records that the driver was sandboxe
   aligners' indexes (Salmon, Bowtie2, BWA, Bismark...) are still built by each run.
 - sarek is tested on livestock germline calling only (no GATK bundle for human, no somatic calling yet);
   mag without GTDB-Tk and CheckM2 databases; taxprofiler with Kraken2 and Bracken, not MetaPhlAn.
-- The single-cell analyst is lenient: in the benchmark it answered every flag but never chose to
-  revise a design.
-- The agent API is a preview, so expect changes with new Nextflow releases.
+- The single-cell analyst's revisions were refused on format until 2.0; it now revises when a flag calls
+  for it, once.
 - Agent-written analyses and pipelines exist only in the experimental lab (phase 11), on benchmark data.
   `geth plan` and `geth run` use the pinned, vetted pipelines and toolbox only.
 - In the agent sandbox, pulling a pipeline image that is not yet cached is untested.

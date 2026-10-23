@@ -1,0 +1,370 @@
+<title>Geth Rannoch</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a field log for Geth 2.0. Status band, the move in one picture (before / after), the step rail,
+   the trial's numbers, decisions. Same type family as the Geth 1.x log; Rannoch's sand-coloured accent. */
+:root {
+  --bg: #f3f2ef;
+  --panel: #ffffff;
+  --ink: #1d1f22;
+  --muted: #64676b;
+  --line: #dddad3;
+  --accent: #a3611c;
+  --accent-soft: #f5e9d9;
+  --geth: #137fa6;
+  --geth-soft: #e1f0f6;
+  --ok: #2b7a4b;
+  --ok-soft: #e3f2e9;
+  --run: #7a5bb0;
+  --run-soft: #eee8f7;
+  --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141311; --panel: #1d1b18; --ink: #ece7df; --muted: #a29b90; --line: #34302a;
+    --accent: #e3a35c; --accent-soft: #3a2a17; --geth: #4cc0e3; --geth-soft: #15323f;
+    --ok: #6fcf97; --ok-soft: #173426; --run: #b9a0e6; --run-soft: #2b2340;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141311; --panel: #1d1b18; --ink: #ece7df; --muted: #a29b90; --line: #34302a;
+  --accent: #e3a35c; --accent-soft: #3a2a17; --geth: #4cc0e3; --geth-soft: #15323f;
+  --ok: #6fcf97; --ok-soft: #173426; --run: #b9a0e6; --run-soft: #2b2340;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 44px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2.4rem, 7vw, 3.6rem); font-weight: 600; letter-spacing: 0.03em; }
+h2 { font-size: 1.4rem; font-weight: 600; }
+h3 { font-size: 1.02rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+ul { margin: 0; padding-left: 1.15em; display: grid; gap: 6px; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--accent-soft); padding: 0.05em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+section { display: grid; gap: 16px; min-width: 0; }
+.section-head { display: grid; gap: 6px; }
+
+/* header */
+header { display: grid; gap: 14px; }
+.title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 16px; }
+.lede { font-size: 1.08rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em; padding: 0.2em 0.6em; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.run { background: var(--run-soft); color: var(--run); }
+.pill.next { background: var(--accent-soft); color: var(--accent); }
+.pill.idea { border: 1px dashed var(--line); color: var(--muted); }
+
+/* before / after */
+.move { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.stack { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.stack.after { border-color: var(--accent); }
+.layers { display: grid; gap: 6px; }
+.layer { font-family: var(--font-mono); font-size: 0.82rem; padding: 7px 10px; border-radius: 6px; background: var(--bg); border-left: 3px solid var(--line); }
+.layer.geth { border-left-color: var(--geth); background: var(--geth-soft); }
+.layer.rannoch { border-left-color: var(--accent); background: var(--accent-soft); }
+.layer small { display: block; font-family: var(--font-body); color: var(--muted); font-size: 0.78rem; }
+.costs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 28px; }
+.costs > div { display: grid; gap: 8px; min-width: 0; }
+
+/* rail */
+.rail { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.step { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; }
+.node { display: grid; justify-items: center; grid-template-rows: auto 1fr; }
+.dot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-mono); font-size: 0.78rem; border: 2px solid var(--line); background: var(--panel); color: var(--muted); }
+.step.done .dot { background: var(--ok); border-color: var(--ok); color: var(--panel); }
+.step.run .dot { background: var(--run); border-color: var(--run); color: var(--panel); }
+.step.next .dot { border-color: var(--accent); color: var(--accent); }
+.step.idea .dot { border-style: dashed; }
+.node::after { content: ""; width: 2px; background: var(--line); margin-block: 4px; }
+.step:last-child .node::after { display: none; }
+.step-body { padding-bottom: 22px; display: grid; gap: 8px; min-width: 0; }
+.step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+
+/* numbers */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pending { color: var(--muted); font-style: italic; }
+
+/* decisions */
+.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.log li { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 12px; }
+.log time { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); padding-top: 0.15em; }
+
+footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+@media (max-width: 680px) {
+  .move, .costs { grid-template-columns: minmax(0, 1fr); }
+  .log li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Geth 2.0 · codename</span>
+  <div class="title-row">
+    <h1>Rannoch</h1>
+    <span class="pill ok">Geth 2.0.0 released</span>
+  </div>
+  <p class="lede">Geth on its own ground. The agents moved from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly; since Geth 2.0 it is the only one. Nextflow keeps doing what it is best at: running the pipelines and the tools' jobs. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
+  <div class="meta">
+    <span>Started 2026-10-21</span>
+    <span>branch feature/rannoch</span>
+    <span>Qwen 3.5 397B · ELM</span>
+    <span>Geth 2.0.0 (2026-10-23) · 1.x ended at v1.9.3</span>
+  </div>
+</header>
+
+<section aria-labelledby="move-h">
+  <div class="section-head">
+    <span class="eyebrow">The move</span>
+    <h2 id="move-h">Same checks, a lighter way to run the agents</h2>
+  </div>
+  <div class="move">
+    <div class="stack">
+      <h3>Geth 1.x</h3>
+      <div class="layers">
+        <div class="layer">geth command (bash)</div>
+        <div class="layer geth">Nextflow driver, one JVM per agent stage<small>about 0.4 GB each on node1q01, hence driver slots</small></div>
+        <div class="layer geth">nf-agent 0.2.0 (preview)<small>tools are Nextflow processes; plan returned as structured output</small></div>
+        <div class="layer">Geth's checks, skills, sandbox, registry</div>
+        <div class="layer">nf-core pipelines on SGE</div>
+      </div>
+    </div>
+    <div class="stack after">
+      <h3>Rannoch</h3>
+      <div class="layers">
+        <div class="layer">geth command (bash)</div>
+        <div class="layer rannoch">Geth harness, Python standard library<small>agent loop, budgets, trace; about 27 MB; calls the model service directly</small></div>
+        <div class="layer rannoch">Tools are Geth's own functions<small>every answer goes in through a checked final tool (SUBMIT_PLAN, SUBMIT_OUTCOME, SUBMIT_REPORT), so a refusal comes back to the agent; jobs through a small Nextflow job file</small></div>
+        <div class="layer">Geth's checks, skills, sandbox, registry</div>
+        <div class="layer">nf-core pipelines on SGE (unchanged)</div>
+      </div>
+    </div>
+  </div>
+  <div class="costs">
+    <div>
+      <h3>Why leave the agent feature</h3>
+      <ul>
+        <li>Preview limits worked around one by one: no file-path tool inputs, a failing tool kills the agent, JSON mangled in structured answers, an agent hung for an hour.</li>
+        <li>The multi-agent logic already lived outside Nextflow: the lab's designer, engineer and reviewer rounds are a bash loop.</li>
+        <li>The agent sandbox has to carry Java, the scheduler client and the JDK's links into <code>/etc</code>.</li>
+        <li>A legion needs control the dataflow model handles badly: agents starting agents, memory across steps, turn and cost budgets.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What stays</h3>
+      <ul>
+        <li>The plan check, the run-time check against the approved plan, the report check.</li>
+        <li>The skills, the pipeline registry, the reference catalogue.</li>
+        <li>The sandbox for agent-written code, and the agent sandbox.</li>
+        <li>The benchmarks and scorers, so every step is measured against Geth 1.x.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="steps-h">
+  <div class="section-head">
+    <span class="eyebrow">Steps</span>
+    <h2 id="steps-h">Measured before it replaces anything</h2>
+  </div>
+  <ol class="rail">
+    <li class="step done">
+      <div class="node"><span class="dot">R1</span></div>
+      <div class="step-body">
+        <div class="step-head"><h3>The harness, and the planner on it</h3><span class="pill ok">done</span></div>
+        <p>The planner ported with the same instructions, tools and skills, so only the harness differs. <code>GETH_PLANNER=harness geth plan …</code> runs it, sandboxed. Smoke test on the yeast RNA-seq delivery: 13/13 in 1 minute, 5 model calls, 27 MB of memory.</p>
+      </div>
+    </li>
+    <li class="step done">
+      <div class="node"><span class="dot">R2</span></div>
+      <div class="step-body">
+        <div class="step-head"><h3>Head-to-head planner benchmark</h3><span class="pill ok">done</span></div>
+        <p>15 test deliveries, 3 plans each, for each planner: 90 plans scored against the known design. The harness planner was correct on all 45 and three times faster, with a fifteenth of the memory. It also exposed a sandbox bug in Geth 1.x: shared databases were not visible to the agents (fixed in v1.9.3).</p>
+      </div>
+    </li>
+    <li class="step done">
+      <div class="node"><span class="dot">R3</span></div>
+      <div class="step-body">
+        <div class="step-head"><h3>A planner that asks you</h3><span class="pill ok">done</span></div>
+        <ul>
+          <li><code>ASK_USER</code>: in your terminal, a few questions at a time, each with options and a recommended answer that Enter takes. With <code>geth plan … --answers file</code>, a stand-in answers from what the file says. At most 2 rounds of 5 questions. The questions and answers are kept with the plan, and <code>geth show</code> prints them.</li>
+          <li><code>PIPELINE_OPTIONS</code>: the pinned release's parameter schema, by section or by word, so the planner finds the options that matter. <code>geth show</code> now prints the full command line Geth will run.</li>
+          <li>When the check refuses the same plan three times, the planner is told to ask you rather than resubmit; it stops at six.</li>
+          <li>Every pipeline skill lists what to ask when the delivery does not say, and <code>INSPECT_READS</code> measures read lengths instead of guessing them.</li>
+          <li>Result: on sparse deliveries 15/18 plans fully correct with questions against 3/18 without; on held-out deliveries 8/9 against 6/9. With full READMEs it asks nothing (median) and stays at 18/18. Try it with <code>GETH_PLANNER=harness geth plan …</code>.</li>
+        </ul>
+      </div>
+    </li>
+    <li class="step done">
+      <div class="node"><span class="dot">R4</span></div>
+      <div class="step-body">
+        <div class="step-head"><h3>The other agents move over</h3><span class="pill ok">done</span></div>
+        <ul>
+          <li><code>GETH_RUNNER=harness</code>: the operator and reporter (<code>geth run</code>, <code>geth report</code>), and the single-cell analyst. <code>GETH_LAB_RUNNER=harness</code>: the lab's designer, judge, engineers and reviewers. Same instructions, tools and skills as the Nextflow agents.</li>
+          <li>Two new checks the typed answers could not give. Geth refuses an outcome the pipeline's log contradicts, either way. A report with numbers it cannot trace goes back to the reporter once, to correct, before it is saved.</li>
+          <li>The tools' scheduler jobs (single-cell toolbox, lab tests) go through two small Nextflow job files with your site's config. Nextflow now only runs jobs.</li>
+          <li>The operator runs the approved plan by naming the pipeline, instead of copying the plan out again. A run takes one driver slot instead of two.</li>
+          <li>Result: every agent works on Rannoch, as well as or better than on Nextflow's agents. The checks are stricter: reports trace every number, and outcomes match the logs. Try it with <code>GETH_RUNNER=harness geth run …</code>.</li>
+        </ul>
+      </div>
+    </li>
+    <li class="step idea">
+      <div class="node"><span class="dot">R5</span></div>
+      <div class="step-body">
+        <div class="step-head"><h3>The legion</h3><span class="pill idea">proposed</span></div>
+        <p>A coordinator agent that works out what the data needs and starts specialists as it goes: planner, engineer, reviewer. Geth's checks decide at every step. Budgets live in the harness, which also makes the paid frontier-model comparison easy to cap.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section aria-labelledby="num-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="num-h">Planner benchmark, Nextflow agent vs Rannoch harness</h2>
+    <p>Same 15 deliveries, same model, same skills and checks, 3 plans each. A plan counts as correct when every scored check passes and Geth's plan check accepts it.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Measure</th><th>Nextflow agent</th><th>Rannoch harness</th></tr></thead>
+      <tbody>
+        <tr><td>Plans fully correct</td><td class="n">43/45</td><td class="n">45/45</td></tr>
+        <tr><td>Mean check score</td><td class="n">99.3%</td><td class="n">100%</td></tr>
+        <tr><td>Planning failures</td><td class="n">0</td><td class="n">0</td></tr>
+        <tr><td>Minutes per plan, median (max)</td><td class="n">7.1 (12.0)</td><td class="n">2.2 (4.1)</td></tr>
+        <tr><td>Peak memory on node1q01, median</td><td class="n">393 MB</td><td class="n">27 MB</td></tr>
+        <tr><td>Model use per plan, median</td><td class="pending">not recorded</td><td class="n">6 calls · 28k + 2k tokens · 2.1 min</td></tr>
+        <tr><td>The two misses</td><td>multiplexed 10x: CellBender left on for tiny test data; index reuse: the registered STAR index and its reference not used</td><td>none</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Where the time goes: in the Nextflow version, the agent's own work took 1.6 minutes per plan (median). The feature then asked the model to write the whole plan again as a typed record, which took 4.2 minutes, two thirds of the planning. The harness takes the plan from the agent's last tool call instead, written once. Nextflow itself added only seconds. Every delivery was faster with the harness, from 1.6 times (multiplexed 10x) to 5.7 times (index reuse).</p>
+</section>
+
+<section aria-labelledby="r3-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="r3-h">Planner that asks: plans fully correct</h2>
+    <p>Sparse deliveries keep only a one-line README; what it no longer says is known to a stand-in scientist who answers from notes. Held-out deliveries were not used to tune the planner. 3 plans per delivery, 2 for the full-README runs.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Deliveries</th><th>No questions</th><th>Asks, first version</th><th>Asks, final</th></tr></thead>
+      <tbody>
+        <tr><td>6 sparse (tuned on)</td><td class="n">3/18</td><td class="n">11/18</td><td class="n">15/18</td></tr>
+        <tr><td>3 sparse (held out)</td><td class="n">6/9</td><td class="n">–</td><td class="n">8/9</td></tr>
+        <tr><td>Full READMEs</td><td class="n">–</td><td class="n">18/18</td><td class="n">18/18 · 4/4</td></tr>
+        <tr><td>Questions per plan, median</td><td class="n">0</td><td class="n">3</td><td class="n">3 sparse · 0 full</td></tr>
+        <tr><td>Minutes per plan, median</td><td class="n">2.8</td><td class="n">6.8</td><td class="n">5.3 sparse · 2.5 full</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Left to fix: one 16S plan did not ask about separate sequencing runs; two single-cell plans kept CellBender on for tiny test data; one Nanopore plan grouped replicates differently. The benchmark also exposed two errors in my own test data: the ChIP and ATAC READMEs claimed 50 bp reads, but the reads are 76 bp (ChIP inputs 50 bp).</p>
+</section>
+
+<section aria-labelledby="cmp-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="cmp-h">Three planner models, same harness</h2>
+    <p>Same planner, checks, skills and stand-in scientist (Qwen, thinking off); only the planner's model differs. GPT-6 through ELM's Responses API. 9 deliveries: 3 plans each sparse, 2 each with the full README.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Measure</th><th>Qwen 3.5 397B</th><th>GPT-6 Luna</th><th>GPT-6.1 Sol</th></tr></thead>
+      <tbody>
+        <tr><td>Sparse deliveries, fully correct</td><td class="n">19/27</td><td class="n">23/27</td><td class="n">26/27</td></tr>
+        <tr><td>Full READMEs, fully correct</td><td class="n">17/18</td><td class="n">16/18</td><td class="n">17/18</td></tr>
+        <tr><td>Minutes per plan, median (sparse · full)</td><td class="n">3.5 · 3.0</td><td class="n">3.0 · 2.0</td><td class="n">1.2 · 0.9</td></tr>
+        <tr><td>Cost, 45 plans (with cached-input discount)</td><td class="n">free</td><td class="n">$0.35</td><td class="n">$2.00</td></tr>
+        <tr><td>Asked about separate 16S sequencing runs</td><td class="n">0/3</td><td class="n">3/3</td><td class="n">3/3</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Sol's only real slip was planning yeast RNA-seq without any reference (it judged the test genome too small); Luna once paired reads from two different lanes. Both passed the plan check, which now refuses them. Some misses were the stand-in's: with thinking off it once gave a wrong replicate grouping, which the planner followed.</p>
+</section>
+
+<section aria-labelledby="r4-h">
+  <div class="section-head">
+    <span class="eyebrow">Numbers</span>
+    <h2 id="r4-h">Operator, reporter, analyst and lab: Nextflow agents vs Rannoch</h2>
+    <p>Same plans, model, tools and checks. Operator: 8 small test deliveries run with each plan as approved, plus one delivery with a FASTQ cut short, which no allowed fix can repair. Reporter: the reports of 16 finished runs written again on copies (Rannoch twice). Agent time is the run's time minus the pipeline's.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Measure</th><th>Nextflow agents</th><th>Rannoch</th></tr></thead>
+      <tbody>
+        <tr><td>Good deliveries: succeeded, outcome honest</td><td class="n">7/7 (v1.9)</td><td class="n">8/8</td></tr>
+        <tr><td>Their reports: every number traced</td><td class="n">4/7 (v1.9)</td><td class="n">7/8</td></tr>
+        <tr><td>Agent minutes per run, median</td><td class="n">2.1</td><td class="n">1.9</td></tr>
+        <tr><td>Truncated FASTQ: outcome</td><td>failed, said so · 5.7 min</td><td>failed, said so · 2.0 min; its two attempts to drop lanes were refused by the gate</td></tr>
+        <tr><td>Reporter, 16 runs: every number traced</td><td class="n">10/16</td><td class="n">31/31 saved</td></tr>
+        <tr><td>Reporter minutes, median</td><td class="n">1.1</td><td class="n">1.7</td></tr>
+        <tr><td>Single-cell follow-up of PBMC 1k (populations · numbers traced)</td><td class="n">7/7 · 88/88, no revision ever accepted</td><td class="n">7/7 · 104/104 and 91/91, one justified revision</td></tr>
+        <tr><td>Lab designs (kang2018 · pbmc1k)</td><td class="n">17–19/20 · 11–12/12, 3.3–4.6 min</td><td class="n">17/20 · 12/12, 2.4–2.8 min</td></tr>
+        <tr><td>Lab builds, arm B · arm C (pbmc1k)</td><td class="n">delivered, 7 populations, markers 6/6, 22 min · not deliverable, 5, 3/4, 23 min</td><td class="n">delivered, 7, markers 7/7, 26 min · delivered, 5, 3/4, 22 min</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The Nextflow reporter is quicker because it writes once and saves what it wrote. Rannoch sent 11 of 31 first drafts back (one to five numbers each, such as read totals rounded to "182,000"), and every one came back clean. The only number left flagged on an operator run was a bound (">93% mapped"), which the check cannot verify. Agent time is almost all the model's: a median of 109 seconds of model calls per run. The rest is Geth's checks and the pipeline's launch.</p>
+  <p>Found on the way, and fixed:</p>
+  <ul>
+    <li>chipseq and atacseq reports had no QC table and no peak counts, because MultiQC wrote only JSON there.</li>
+    <li>mag's newer MultiQC crashed the results summary.</li>
+    <li>The single-cell analyst's revisions had always been refused on format (also in Geth 1.x). Revisions that name only the changed keys, or list values, now work.</li>
+    <li>A refused revision made my first outcome check reject the analyst's true claim.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="dec-h">
+  <div class="section-head">
+    <span class="eyebrow">Decisions</span>
+    <h2 id="dec-h">Decision log</h2>
+  </div>
+  <ul class="log">
+    <li><time datetime="2026-10-21">2026-10-21</time><span>Simplify: run the agents on Geth's own harness, keep Nextflow for pipelines. Start with a measured trial of the planner.</span></li>
+    <li><time datetime="2026-10-21">2026-10-21</time><span>Codename Rannoch. Geth 2.0 lives in the Geth repository on <code>feature/rannoch</code>; Geth 1.x stays on master until 2.0 beats it.</span></li>
+    <li><time datetime="2026-10-21">2026-10-21</time><span>If the trial holds up, the planner asks questions: interactive in the terminal, with an answers file for detached runs and benchmarks. First what the data cannot tell, then the options that matter.</span></li>
+    <li><time datetime="2026-10-21">2026-10-21</time><span>Trial passed: 45/45 correct against 43/45, three times faster, a fifteenth of the memory. On to R3. The sandbox fix it uncovered goes to Geth 1.x as v1.9.3.</span></li>
+    <li><time datetime="2026-10-21">2026-10-21</time><span>R3 approved, with the two additions: stop resubmitting a refused plan and ask instead; browse the pipeline's options through its schema.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>R3 done: asking lifts sparse deliveries from 3/18 to 15/18 fully correct, and costs nothing when the README is complete. Next is your call: R4 (the other agents) or trying the planner on your own data first.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>Your first real use (chicken OCM): the planner recommended an impossible chemistry and overrode your answer silently. Fixed: recommendations must agree with the files, overrides are explained, contradicting answers are flagged, and progress lines show what it is doing.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>The reads now check the plan: amplicon primers, 10x barcode read length, read length, RRBS motif. On past plans they flag only real errors.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>Comparison through ELM (your runs, hard budgets): Sol 26/27 sparse and fastest for $2 per 45 plans; Luna 23/27 for $0.35; Qwen 19/27, free. The comparison also exposed two plan-check gaps, now closed.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>Estimate for a frontier comparison with GPT-6 Astra (third-party prices, $10 / $50 per million tokens): about $60 for the R3 benchmark without caching, $30–35 with it, a $10–15 pilot first. Only with you, with a hard budget cap in the harness.</span></li>
+    <li><time datetime="2026-10-22">2026-10-22</time><span>Qwen stays the free default planner; Sol can be switched on for one plan with <code>geth plan … --model sol</code>, within a 50-cent cap. You start paid plans, never Geth on its own.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>ELM's own prices are unknown, so the cost estimates keep OpenAI's list prices.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>R4 started: the planner is good enough to generalise the harness to the other agents.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>R4 done: operator, reporter, analyst and lab agents run on Rannoch. 8/8 runs honest, 31/31 reports fully traced, both lab builds delivered. Geth no longer needs Nextflow's agent feature; Nextflow only runs the pipelines and jobs.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>Rannoch becomes the only Geth: the Nextflow agents are removed ("dead weight now"), released as Geth 2.0.0 on master. Runs planned with 1.x still run and report.</span></li>
+  </ul>
+</section>
+
+<footer>
+  <span>Geth 1.x: <a href="https://claude.ai/artifact/T3ApkP9kZzudYe7X1vFAnH">Geth Progress</a> and <a href="https://claude.ai/artifact/E6SVYKVxK7phySYEuw1Z5D">Geth Blueprint</a>.</span>
+  <span>Source: <code>docs/history/rannoch.html</code> in the Geth repository; the agents are in <code>geth/harness/</code>. Release notes: <code>CHANGELOG.md</code> (2.0.0).</span>
+</footer>
+
+</div>

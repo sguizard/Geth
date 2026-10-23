@@ -8,6 +8,11 @@ description: How to plan differential expression with nf-core/differentialabunda
 Use this pipeline for a **follow-up** analysis of a finished nf-core/rnaseq run (the upstream run).
 Pipeline name in the plan: `differentialabundance`.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The comparison: which condition is the reference and which the target.
+- Pairing or batches to block on (e.g. donor), and other covariates.
+
 ## Inputs from the upstream run (absolute paths)
 - `matrix`: `<upstream>/results/star_salmon/salmon.merged.gene_counts.tsv` (raw counts; DESeq2 needs counts).
 - `feature_length_matrix`: `<upstream>/results/star_salmon/salmon.merged.gene_lengths.tsv` (lets DESeq2 correct

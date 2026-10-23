@@ -9,6 +9,11 @@ Use this pipeline to assemble shotgun metagenomes and recover **metagenome-assem
 assembly (MEGAHIT/SPAdes, Flye for long reads), binning (MetaBAT2, MaxBin2, CONCOCT...), bin refinement
 and QC, taxonomy. For read-level "who is there" profiling use nf-core/taxprofiler instead.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The host organism whose reads should be removed, if any.
+- Which files are lanes or runs of the same sample, and which samples may be co-assembled (group).
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,run,group,short_reads_1,short_reads_2,short_reads_platform,long_reads,long_reads_platform`
 - `sample`: biological sample. `run`: optional; several runs/lanes of one sample = same `sample`, different `run`

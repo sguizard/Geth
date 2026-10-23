@@ -2,6 +2,9 @@
 # Geth: plan, approve and run nf-core analyses with LLM agents.
 #
 #   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
+#             [--answers <file>] [--model <name>] (the planner asks you its questions in the terminal, or
+#                                                 a stand-in answers them from what this file says; --model: a paid
+#                                                 planner model from the site settings, e.g. sol, within its budget)
 #   geth plan --from <run> "<question>" <name> follow-up analysis of a finished run (DE, single-cell downstream)
 #   geth show <name>                           print the plan (and its automatic check)
 #   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
@@ -20,8 +23,8 @@ runs="$GETH_RUNS_DIR"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
 
-self=$(readlink -f "${BASH_SOURCE[0]}")  # nf() changes folder: call this script back by its full path
-usage() { sed -n '2,15p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
+self=$(readlink -f "${BASH_SOURCE[0]}")  # agents() changes folder: call this script back by its full path
+usage() { sed -n '2,17p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
 version() {  # the VERSION file, plus the commit when Geth runs from a git clone
     local commit; commit=$(git -C "$GETH_HOME" rev-parse --short HEAD 2>/dev/null || true)
     echo "Geth $(cat "$GETH_HOME/VERSION" 2>/dev/null || echo unknown)${commit:+ (commit $commit)}"
@@ -32,21 +35,23 @@ run_dir_of() {
     echo "$runs/$1"
 }
 
-nf() {  # nf <run_dir> <mode> [extra args]
-    local d=$1 mode=$2; shift 2
-    local site=()
-    [ -n "${GETH_NF_CONFIG:-}" ] && site=(-c "$GETH_NF_CONFIG")  # executor, containers: the site's
+agents() {  # agents <run_dir> <stage> [args]: a stage of Geth's agents (geth/harness: plan, run, report)
+    local d=$1 stage=$2; shift 2
     cd "$d"
-    acquire_slots "$d" "$mode" "$([ "$mode" = run ] && echo 2 || echo 1)"  # a run also starts the pipeline's driver
-    local ro=() prev=
-    for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done  # a follow-up reads its upstream run
-    sandboxed "$d" "${ro[@]}" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/main.nf" -c "$GETH_HOME/geth/nextflow.config" "${site[@]}" \
-        --mode "$mode" --run_dir "$d" "$@" \
-        -w "$d/geth_work" -with-agent-trace -with-trace "$d/geth_trace_$mode.txt" -ansi-log false \
-        > "$d/geth_$mode.log" 2>&1
+    local ro=() prev= drivers=0
+    for a in "$@"; do [ "$prev" = --upstream_run ] && ro=(--ro "$a"); prev=$a; done
+    # No Nextflow driver for the agents: no slot, but a pid file (geth list, geth stop). A run still starts the
+    # pipeline's driver (or the single-cell toolbox's jobs), and so may a plan on a single-cell run (SC_INSPECT).
+    [ "$stage" = run ] && drivers=1
+    [ ${#ro[@]} -gt 0 ] && [ "$(cat "${ro[1]}/plan_pipeline.txt" 2>/dev/null)" = scrnaseq ] && drivers=1
+    acquire_slots "$d" "$stage" "$drivers"
+    local fg=()  # questions in the terminal: the agent must stay in the terminal's foreground to read it
+    for a in "$@"; do [ "$a" = terminal ] && fg=(--foreground); done
+    sandboxed "$d" "${ro[@]}" -- timeout "${fg[@]}" "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
+        python3 -m "harness.$stage" --run_dir "$d" "$@" > "$d/geth_$stage.log" 2>&1
     local rc=$?
-    explain_timeout $rc "$mode" "$d/geth_$mode.log"
-    rm -f "$d/.geth_$mode.pid"
+    explain_timeout $rc "$stage" "$d/geth_$stage.log"
+    rm -f "$d/.geth_$stage.pid"
     return $rc
 }
 
@@ -80,13 +85,15 @@ plan_parts() {  # extra plan parts for geth_checks.py (downstream analyses)
 check() {
     local d=$1
     mapfile -t parts < <(plan_parts "$d")
-    python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" "${parts[@]}"
+    python3 "$checks" check-plan "$(cat "$d/plan_pipeline.txt")" "$d/plan_samplesheet.csv" "$d/plan_params.json" "${parts[@]}" \
+        --run-dir "$d"
 }
 
 show() {
     local d=$1
     echo "Question : $(cat "$d/question.txt")"
     echo "Pipeline : nf-core/$(cat "$d/plan_pipeline.txt")"
+    [ -f "$d/plan_model.txt" ] && echo "Planned by: $(cat "$d/plan_model.txt")"
     [ -f "$d/plan_upstream.txt" ] && echo "Upstream : $(cat "$d/plan_upstream.txt")"
     [ -f "$d/plan_profile.txt" ] && echo "Profile  : $(cat "$d/plan_profile.txt")"
     echo; echo "Rationale:"; sed 's/^/  /' "$d/plan_rationale.txt"
@@ -100,13 +107,36 @@ show() {
         column -s, -t < "$d/plan_barcodes.csv" | sed 's/^/  /'
     fi
     echo; echo "Parameters (plan_params.json):"; sed "s#$GETH_DATA_ROOT/##g" "$d/plan_params.json" | sed 's/^/  /'; echo
+    if [ -s "$d/plan_questions.md" ]; then
+        echo; echo "Questions and answers (plan_questions.md):"; grep -E '^\*\*|^- answer:' "$d/plan_questions.md" | sed 's/^\*\*\(.*\)\*\*$/  Q: \1/; s/^- answer: /     A: /'
+    fi
+    echo; echo "Command line Geth will run:"; python3 "$checks" command "$d" | sed "s#$GETH_DATA_ROOT/##g; s/^/  /"
     echo; check "$d" || true
 }
 
 cmd=${1:-}; shift || true
 case "$cmd" in
     plan)
-        upstream_args=()
+        upstream_args=() answers= model=
+        args=()  # --answers <file> and --model <name> may come anywhere
+        while [ $# -gt 0 ]; do
+            if [ "$1" = --answers ]; then answers=$(readlink -f "${2:-}"); shift 2 || usage
+            elif [ "$1" = --model ]; then model=${2:-}; shift 2 || usage
+            else args+=("$1"); shift; fi
+        done
+        if [ -n "$model" ]; then  # a paid planner model, opt-in per plan: GETH_PLANNER_<NAME>_* in the site settings
+            [[ "$model" =~ ^[A-Za-z0-9_]+$ ]] || { echo "Model names use letters, digits and '_' (got '$model')." >&2; exit 1; }
+            up=${model^^}
+            for k in MODEL PRICES BUDGET_USD API REASONING BASE_URL API_KEY_VAR; do
+                v=GETH_PLANNER_${up}_$k
+                [ -n "${!v:-}" ] && export "GETH_PLANNER_$k=${!v}"
+            done
+            [ -n "${GETH_PLANNER_MODEL:-}" ] || { echo "No planner model '$model' in the site settings (GETH_PLANNER_${up}_MODEL)." >&2; exit 1; }
+            export GETH_PLANNER_BASE_URL=${GETH_PLANNER_BASE_URL:-$GETH_LLM_BASE_URL}
+            export GETH_PLANNER_API_KEY_VAR=${GETH_PLANNER_API_KEY_VAR:-$GETH_LLM_API_KEY_VAR}
+        fi
+        set -- "${args[@]}"
+        [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
         if [ "${1:-}" = "--from" ]; then
             [ $# -eq 4 ] || usage
             up=$(run_dir_of "$2"); shift 2
@@ -132,7 +162,14 @@ case "$cmd" in
         [ -e "$d" ] && { echo "Run '$2' already exists: choose another name." >&2; exit 1; }
         mkdir -p "$d"
         echo "Planning in $d ..."
-        nf "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
+        if [ -n "$answers" ]; then ask=file; cp "$answers" "$d/answers.txt"   # visible in the sandbox
+        elif [ -t 0 ] && [ -t 1 ]; then ask=terminal; echo "The planner may ask you a few questions here."
+        else ask=none; fi
+        ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
+        [ -n "${GETH_PLANNER_MODEL:-}" ] && echo "Planner model: $GETH_PLANNER_MODEL (paid: at most \$${GETH_PLANNER_BUDGET_USD:-?} for this plan)"
+        agents "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
+            --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
+            || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
         show "$d"
         echo; echo "Review the plan (edit the plan_* files if needed), then: geth approve $2"
         ;;
@@ -164,8 +201,8 @@ case "$cmd" in
             echo "Started in the background (pid $!). Follow it with: geth status $1   (log: $d/geth_run.out)"
             exit 0
         fi
-        echo "Running the approved plan in $d ..."
-        nf "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
+        echo "Running the approved plan in $d ... (follow it in $d/geth_run.log)"
+        agents "$d" run || { echo "Geth run failed: see $d/geth_run.log" >&2; exit 1; }
         "$self" status "$1"
         ;;
     report)
@@ -179,7 +216,7 @@ case "$cmd" in
             echo "Previous report kept as $(basename "$keep")"
         fi
         echo "Writing the report again from $d/results ..."
-        nf "$d" report || { echo "Report failed: see $d/geth_report.log" >&2; exit 1; }
+        agents "$d" report || { echo "Report failed: see $d/geth_report.log" >&2; exit 1; }
         "$self" status "$1"
         ;;
     status)

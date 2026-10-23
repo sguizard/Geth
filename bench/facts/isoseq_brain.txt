@@ -1,0 +1,4 @@
+PacBio Iso-Seq (full-length cDNA, Sequel) of human brain tissue from an Alzheimer's disease donor: one library,
+raw subreads (BAM with its .pbi index). The cDNA primer sequences are in primers.fasta.
+Reference: GRCh38 chromosome 19 and the Ensembl 104 annotation. I want the full-length transcripts and their
+structures on chromosome 19.

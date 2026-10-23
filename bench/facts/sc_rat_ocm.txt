@@ -1,0 +1,5 @@
+Single-cell RNA-seq of peripheral blood mononuclear cells (PBMCs) from four Wistar rats.
+10x Genomics GEM-X Universal 3' Gene Expression v4 with On-Chip Multiplexing (OCM): the cells of the four rats
+were loaded in one chip channel, each rat with its own OCM barcode, so all four rats are in one library,
+sequenced on six lanes. Barcodes: rat_1 OB1 (female), rat_2 OB2 (female), rat_3 OB3 (male), rat_4 OB4 (male).
+About 2,500 cells per rat. This is a small test: reads are subsampled and the reference is chromosome 6 only.

@@ -1,0 +1,7 @@
+16S rRNA gene amplicon sequencing, V4 region, of four soil samples: two control plots and two warmed plots.
+PCR primers: 515F (GTGYCAGCMGCCGCGGTAA) and 806R (GGACTACNVGGGTWTCTAAT); the primers are still in the reads.
+Samples (file names start with the facility's sample number):
+- 1: plot A, control, sequencing run run_2026_03.  2: plot B, control, run_2026_03.
+- 1a: plot C, warmed, run_2026_05.  2a: plot D, warmed, run_2026_05.
+Illumina MiSeq, paired-end. I want the taxonomic composition of each sample and a comparison of control and
+warmed plots.

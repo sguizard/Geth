@@ -755,6 +755,21 @@ class Multiplexed10x(unittest.TestCase):
         self.assertIn("the plan has 2 sample(s)", warnings)
         self.assertIn("GEM-X 3' is 10XV4", warnings)
 
+    def test_answer_contradicting_the_delivery_is_flagged(self):
+        # 10x_multi_chicken8: the scientist took the planner's recommended "v3/v3.1" for OCM libraries
+        run = tempfile.mkdtemp(prefix="geth_answers_")
+        try:
+            open(os.path.join(run, "plan_questions.md"), "w").write(
+                "# Questions to the scientist\n\n**Which 10x chemistry?**\n- answer: v3/v3.1 (Chromium Next GEM 3')\n")
+            warnings = gc.plan_warnings("scrnaseq", MULTI_SHEET, MULTI_PARAMS, BARCODES, run)
+            self.assertTrue(any("exists only with GEM-X Universal 3' v4" in w for w in warnings), warnings)
+            open(os.path.join(run, "plan_questions.md"), "w").write("**Which 10x chemistry?**\n- answer: GEM-X v4\n")
+            self.assertFalse(any("GEM-X Universal" in w for w in gc.plan_warnings("scrnaseq", MULTI_SHEET, MULTI_PARAMS, BARCODES, run)))
+            self.assertIn("multiplexed chemistries cannot be named",
+                          "\n".join(self.problems(MULTI_SHEET, dict(MULTI_PARAMS, protocol="10XV3"), BARCODES)))
+        finally:
+            shutil.rmtree(run)
+
     def test_plan_files_and_gate_keep_the_barcodes(self):
         run = Run("scrnaseq", MULTI_SHEET, json.dumps(MULTI_PARAMS))
         try:
@@ -797,6 +812,105 @@ class SitePrelude(unittest.TestCase):
     def test_nothing_to_do(self):
         self.assertEqual(gc.keep_prelude(self.FLAT.replace("process.beforeScript", "process.queue")), "")
         self.assertEqual(gc.keep_prelude("process.beforeScript = 'module load apptainer'\n"), "")
+
+
+class DataChecks(unittest.TestCase):
+    """Plan values the reads themselves can confirm or refute (warnings, not refusals)."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="geth_reads_")
+        gc._HEADS.clear()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def fastq(self, name, seqs):
+        path = os.path.join(self.dir, name)
+        with gzip.open(path, "wt") as fh:
+            for i, s in enumerate(seqs):
+                fh.write(f"@r{i}\n{s}\n+\n{'I' * len(s)}\n")
+        return path
+
+    def test_amplicon_primers_are_found_in_the_reads(self):
+        fwd, rev = "GTGYCAGCMGCCGCGGTAA", "GGACTACNVGGGTWTCTAAT"
+        r1 = self.fastq("s_R1.fastq.gz", ["GTGCCAGCAGCCGCGGTAA" + "ACGT" * 20] * 90 + ["T" * 99] * 10)
+        r2 = self.fastq("s_R2.fastq.gz", ["GGACTACAAGGGTATCTAAT" + "ACGT" * 20] * 100)
+        rows = [{"sample": "s", "fastq_1": r1, "fastq_2": r2}]
+        self.assertEqual(gc.data_warnings("ampliseq", rows, {"primer_fwd": fwd, "primer_rev": rev}), [])
+        wrong = gc.data_warnings("ampliseq", rows, {"primer_fwd": "AGAGTTTGATCMTGGCTCAG", "primer_rev": rev})
+        self.assertTrue(any("forward 0% of first reads" in w for w in wrong), wrong)
+        swapped = gc.data_warnings("ampliseq", [{"sample": "s", "fastq_1": r2, "fastq_2": r1}],
+                                   {"primer_fwd": fwd, "primer_rev": rev})
+        self.assertTrue(any("look swapped" in w for w in swapped), swapped)
+        skipped = gc.data_warnings("ampliseq", rows, {"primer_fwd": fwd, "primer_rev": rev, "skip_cutadapt": True})
+        self.assertTrue(any("still in the reads" in w for w in skipped), skipped)
+
+    def test_10x_chemistry_from_the_barcode_read_length(self):
+        rows = [{"sample": "s", "fastq_1": self.fastq("x_R1.fastq.gz", ["A" * 26] * 50)}]
+        self.assertTrue(any("as in v2" in w for w in gc.data_warnings("scrnaseq", rows, {"protocol": "10XV3", "aligner": "star"})))
+        self.assertEqual(gc.data_warnings("scrnaseq", rows, {"protocol": "10XV2", "aligner": "star"}), [])
+        self.assertEqual(gc.data_warnings("scrnaseq", rows, {"protocol": "auto", "aligner": "cellrangermulti"}), [])
+        long = [{"sample": "s", "fastq_1": self.fastq("y_R1.fastq.gz", ["A" * 150] * 50)}]  # 10x_multi_chicken: 150 bp
+        self.assertEqual(gc.data_warnings("scrnaseq", long, {"protocol": "10XV3", "aligner": "star"}), [])
+
+    def test_rrbs_motif_and_read_length(self):
+        rrbs = [{"sample": "m", "fastq_1": self.fastq("m_R1.fastq.gz", ["CGG" + "TTA" * 30, "TGG" + "TAT" * 30] * 40)}]
+        self.assertTrue(any("as in RRBS" in w for w in gc.data_warnings("methylseq", rrbs, {})))
+        self.assertEqual(gc.data_warnings("methylseq", rrbs, {"rrbs": True}), [])
+        chip = [{"sample": "ip", "fastq_1": self.fastq("ip_R1.fastq.gz", ["A" * 76] * 20)},
+                {"sample": "input", "fastq_1": self.fastq("in_R1.fastq.gz", ["A" * 50] * 20)}]
+        self.assertEqual(gc.data_warnings("chipseq", chip, {"read_length": 75}), [])
+        self.assertEqual(gc.data_warnings("chipseq", chip, {"read_length": 50}), [])  # inputs are 50 bp
+        self.assertTrue(any("read_length=100" in w for w in gc.data_warnings("chipseq", chip, {"read_length": 100})))
+
+
+class ComparisonFences(unittest.TestCase):
+    """Plans the GPT-6 comparison (2026-10-22) showed the check must refuse."""
+
+    def test_a_pair_must_be_mates(self):
+        # r5lunafull_atacseq_osmotic_1: lane 1's first reads with lane 2's second reads
+        self.assertEqual(gc.mate_of("ATAC01_S1_L001_R1_001.fastq.gz"), "ATAC01_S1_L001_R2_001.fastq.gz")
+        self.assertEqual(gc.mate_of("SRR6357070_1.fastq.gz"), "SRR6357070_2.fastq.gz")
+        self.assertIsNone(gc.mate_of("reads.fastq.gz"))
+        sheet = MISTRAL_SHEET.replace("SRR6357070_2.fastq.gz", "SRR6357071_2.fastq.gz", 1)
+        problems = gc.check_fastq_sheet("rnaseq", sheet, json.loads(MISTRAL_PARAMS))
+        self.assertTrue(any("is not the mate of fastq_1 'SRR6357070_1.fastq.gz'" in p for p in problems), problems)
+        self.assertFalse(any("is not the mate" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, json.loads(MISTRAL_PARAMS))))
+
+    def test_a_reference_is_required(self):
+        # r5solfull_bulk_yeast_1: only aligner=star_salmon, "rather than invented"
+        no_ref = {"aligner": "star_salmon"}
+        self.assertTrue(any("needs a reference" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, no_ref)))
+        self.assertFalse(any("needs a reference" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, json.loads(MISTRAL_PARAMS))))
+        self.assertFalse(any("needs a reference" in p for p in gc.check_fastq_sheet("rnaseq", MISTRAL_SHEET, {"genome": "R64-1-1"})))
+
+
+
+class ScRevision(unittest.TestCase):
+    """The analyst's revisions of r4b_sc_1 (2026-10-23), all refused on format before: a partial key=value
+    revision, a JSON design followed by justification=..., and a JSON list in a key=value line."""
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp()
+        self.approved = {"qc.min_genes": 200, "qc.max_pct_mt": 17.2, "doublets.method": "scrublet",
+                         "leiden.resolutions": [0.4, 0.8, 1.2], "leiden.chosen": 0.8, "markers.panel": ["CD3E", "MS4A1"]}
+        open(os.path.join(self.run, "plan_params.json"), "w").write(json.dumps(self.approved))
+
+    def tearDown(self):
+        shutil.rmtree(self.run)
+
+    def test_partial_revision_is_applied_to_the_approved_design(self):
+        merged = json.loads(gc.sc_merge(self.run, "qc.min_genes=150\njustification=Cells kept 81.0% < 85%"))
+        self.assertEqual(merged["qc.min_genes"], 150)
+        self.assertEqual(merged["leiden.resolutions"], [0.4, 0.8, 1.2])
+        self.assertEqual(merged["justification"], "Cells kept 81.0% < 85%")
+
+    def test_json_then_justification_and_json_lists_in_lines(self):
+        params = gc.parse_params(json.dumps(self.approved) + "\njustification=cells kept 81%")
+        self.assertEqual(params["justification"], "cells kept 81%")
+        self.assertEqual(gc.sc_value("leiden.resolutions", "[0.4, 0.8, 1.2]"), ([0.4, 0.8, 1.2], None))
+        self.assertEqual(gc.sc_value("markers.panel", '["CD3E", "CD4"]'), (["CD3E", "CD4"], None))
+        self.assertEqual(gc.sc_value("leiden.resolutions", "0.4,0.8"), ([0.4, 0.8], None))
 
 
 if __name__ == "__main__":

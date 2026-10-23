@@ -8,6 +8,11 @@ description: How to plan PacBio Iso-Seq long-read transcript analysis with nf-co
 Use this pipeline for **PacBio Iso-Seq** (full-length cDNA long reads) to build transcript models
 (CCS → primer removal → refine → mapping → TAMA collapse/merge). Not for short reads or Nanopore cDNA.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The cDNA primers (a primers file or the kit), and what the files are (subreads, CCS, HiFi).
+- The organism and reference, and the region of interest if not the whole genome.
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,seq_data,pbi,start_from`
 - `seq_data`: absolute path to the input file.

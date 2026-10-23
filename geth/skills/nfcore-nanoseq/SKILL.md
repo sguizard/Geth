@@ -9,6 +9,11 @@ Use this pipeline for **Oxford Nanopore** reads: demultiplexing, QC, alignment (
 and for cDNA/direct RNA: transcript quantification, differential expression, fusions, RNA modifications.
 Basecalling is not done: start from FASTQ (or BAM).
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- Whether the reads are demultiplexed and, if not, the barcode kit and which barcode is which sample.
+- DNA, cDNA or direct RNA; which libraries are replicates of the same sample.
+
 ## Samplesheet (CSV, header required)
 Columns: `group,replicate,barcode,input_file,fasta,gtf`
 - `group`: the condition or sample; replicates **share** the group, with `replicate` = 1, 2, ...

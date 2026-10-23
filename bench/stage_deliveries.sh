@@ -48,7 +48,8 @@ ChIP-seq of the transcription elongation factor Spt5 in budding yeast (Saccharom
 at two time points: 0 min and 15 min. Two independent cultures (biological replicates 1 and 2) per time
 point. From each culture we also sequenced the input DNA (no antibody), which is the control for that
 culture's ChIP samples. See samples.tsv.
-Illumina paired-end sequencing, 50 bp reads (subsampled to a few thousand read pairs for this test).
+Illumina paired-end sequencing, 76 bp reads for the ChIP libraries, 50 bp for the inputs (subsampled
+to a few thousand read pairs for this test).
 Reference genome (S. cerevisiae R64, Ensembl chromosome names) and gene annotation are in reference/.
 EOF
     tr '|' '\t' > "$d/samples.tsv" <<'EOF'
@@ -82,7 +83,7 @@ atacseq_osmotic() {
     cat > "$d/README.txt" <<'EOF'
 ATAC-seq of budding yeast (Saccharomyces cerevisiae) before (0 min) and 15 min after osmotic stress.
 Two biological replicates per time point (see samples.tsv). Library ATAC01 was sequenced on two lanes.
-Illumina paired-end sequencing, 50 bp reads (subsampled for this test). No input controls.
+Illumina paired-end sequencing, 76 bp reads (subsampled for this test). No input controls.
 Reference genome (S. cerevisiae R64, Ensembl chromosome names, mitochondrial genome included) and gene
 annotation are in reference/. We want accessible regions for each condition and their differences.
 EOF
