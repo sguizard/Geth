@@ -38,11 +38,54 @@ def table(header, rows):
     return "\n".join(out)
 
 
-def general_stats(outdir):
+def json_stats(path):
+    """MultiQC's general statistics from multiqc_data.json (some pipelines' MultiQC writes no
+    multiqc_general_stats.txt): (header, rows) like the text table, raw values, columns hidden in the report left out."""
+    with open(path) as fh:
+        d = json.load(fh)
+    data, heads = d.get("report_general_stats_data") or [], d.get("report_general_stats_headers") or []
+    if isinstance(data, dict):  # MultiQC 1.3x: keyed by module; older: parallel lists
+        pairs = [(data[k], heads.get(k) if isinstance(heads, dict) else None) for k in data]
+    else:
+        pairs = list(zip(data, heads))
+    columns, samples = [], {}
+    for module, head in pairs:
+        if not isinstance(module, dict) or not isinstance(head, dict):
+            continue
+        for key, h in head.items():
+            h = h if isinstance(h, dict) else {}
+            if not h.get("hidden"):
+                # the metric's name, not the report's title: the JSON holds raw values ("M Seqs" there is a count)
+                columns.append((id(module), key, f"{h.get('namespace', '')}: {key}".strip(": ")))
+        for sample, values in (module or {}).items():
+            samples.setdefault(sample, {}).update({(id(module), k): v for k, v in values.items()})
+    header = ["Sample"] + [title for _, _, title in columns]
+    rows = [[sample] + ["" if samples[sample].get((m, k)) is None else str(samples[sample][(m, k)]) for m, k, _ in columns]
+            for sample in sorted(samples)]
+    return header, rows
+
+
+def stats_tables(outdir):
+    """[(path, header, rows)]: MultiQC general-statistics tables, from the text files, or else from the JSON data."""
     files = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_general_stats.txt"), recursive=True))
-    if not files:
+    if files:
+        return [(path, *read_tsv(path)) for path in files]
+    tables = []
+    for path in sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_data.json"), recursive=True)):
+        try:
+            header, rows = json_stats(path)
+        except (ValueError, AttributeError, TypeError, KeyError):  # a format this does not know: no table
+            continue
+        if rows:
+            tables.append((path, header, rows))
+    return tables
+
+
+def general_stats(outdir):
+    tables = stats_tables(outdir)
+    if not tables:
         return {}
-    header, body = read_tsv(files[0])
+    _, header, body = tables[0]
     return {r[0]: {h: num(v) for h, v in zip(header[1:], r[1:])} for r in body}
 
 
@@ -296,20 +339,42 @@ def generic(run_dir, outdir, max_columns=8):
     """Pipelines without a dedicated summary: MultiQC general statistics as MultiQC reports them,
     and the results folders."""
     parts = []
-    files = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_general_stats.txt"), recursive=True))
-    for path in files[:3]:
-        header, body = read_tsv(path)
+    files = stats_tables(outdir)
+    for path, header, body in files[:3]:
         cols = [i for i in range(1, len(header))
                 if any(i < len(r) and num(r[i]) is not None for r in body)][:max_columns]
-        rows = [[r[0]] + [plain(num(r[i])) if i < len(r) else "n/a" for i in cols] for r in body]
-        parts.append(f"### MultiQC general statistics (`{os.path.relpath(path, outdir)}`)\n"
-                     "Values exactly as MultiQC reports them: check the MultiQC report for units "
-                     "(read totals are often in millions).\n\n"
+        rows = [[r[0]] + [plain(num(r[i])) if i < len(r) else "n/a" for i in cols] for r in body
+                if any(i < len(r) and num(r[i]) is not None for i in cols)]
+        units = ("Raw values from MultiQC's data (read totals are counts, not millions)." if path.endswith(".json") else
+                 "Values exactly as MultiQC reports them: check the MultiQC report for units "
+                 "(read totals are often in millions).")
+        parts.append(f"### MultiQC general statistics (`{os.path.relpath(path, outdir)}`)\n{units}\n\n"
                      + table(["Sample"] + [short_name(header[i]) for i in cols], rows))
     if not files:
         parts.append("### Quality control\nNo MultiQC general-statistics table found: see the MultiQC report.")
     folders = sorted(d for d in os.listdir(outdir) if os.path.isdir(os.path.join(outdir, d)) and d != "pipeline_info")
     parts.append("### Results folders\n" + ("\n".join(f"- `{d}/`" for d in folders) or "None."))
+    return parts
+
+
+def peaks(outdir):
+    """Peak calling (chipseq, atacseq): the peaks of each sample and the consensus peaks, counted here."""
+    rows, consensus = [], []
+    for path in sorted(glob.glob(os.path.join(outdir, "**", "*_peaks.*Peak"), recursive=True)):
+        if "/consensus/" not in path:
+            with open(path) as fh:
+                n = sum(1 for _ in fh)
+            name, kind = os.path.basename(path).rsplit("_peaks.", 1)
+            rows.append([name, kind, count(n), f"`{os.path.relpath(os.path.dirname(path), outdir)}/`"])
+    for path in sorted(glob.glob(os.path.join(outdir, "**", "consensus", "**", "*.boolean.txt"), recursive=True)):
+        with open(path) as fh:
+            n = sum(1 for _ in fh) - 1  # a header line
+        consensus.append([f"`{os.path.relpath(path, outdir)}`", count(n)])
+    parts = []
+    if rows:
+        parts.append("### Peaks per sample (lines of each peak file)\n" + table(["Sample", "Peak type", "Peaks", "Folder"], rows))
+    if consensus:
+        parts.append("### Consensus peaks (merged across samples)\n" + table(["File", "Peaks"], consensus))
     return parts
 
 
@@ -508,6 +573,8 @@ def collect(run_dir, pipeline):
     if pipeline == "differentialabundance":
         return "\n\n".join(parts + differentialabundance(run_dir, outdir))
     parts += {"rnaseq": rnaseq, "scrnaseq": scrnaseq, "mag": mag}.get(pipeline, generic)(run_dir, outdir)
+    if pipeline in ("chipseq", "atacseq"):
+        parts += peaks(outdir)
     reports = sorted(glob.glob(os.path.join(outdir, "multiqc", "**", "multiqc_report.html"), recursive=True))
     parts.append("MultiQC report: " + (f"`{reports[0]}`" if reports else "not found"))
     return "\n\n".join(parts)

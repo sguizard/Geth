@@ -9,6 +9,12 @@ Use this pipeline for **ancient (or degraded) DNA**: adapter removal and read me
 removal, DNA damage profiling, optional BAM filtering, sex determination, contamination estimates,
 genotyping, metagenomic screening.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- For every library: UDG treatment (none, half, full) and single- or double-stranded library.
+- The sequencer of every library (two-colour NextSeq/NovaSeq or four-colour HiSeq/MiSeq), single- or paired-end.
+- Which libraries belong to which individual or sample.
+
 ## Samplesheet (Geth converts it to eager's TSV; write it as CSV with exactly these columns)
 `Sample_Name,Library_ID,Lane,Colour_Chemistry,SeqType,Organism,Strandedness,UDG_Treatment,R1,R2,BAM`
 - `Sample_Name`: the individual/specimen. `Library_ID`: unique **across all samples**.

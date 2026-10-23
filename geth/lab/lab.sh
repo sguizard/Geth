@@ -16,7 +16,7 @@
 #   geth lab stop <name>                                           stop a lab run and its scheduler jobs
 #
 # The lab works only on benchmark data (GETH_LAB_DATA, default $GETH_DATA_ROOT/testdata) and writes to
-# $GETH_RUNS_DIR/lab/<name>.
+# $GETH_RUNS_DIR/lab/<name>. The agents: geth/harness/lab.py; their scheduler jobs: geth/lab/jobs.nf.
 source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)/env.sh" || exit 1
 set -euo pipefail
 export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
@@ -29,13 +29,20 @@ run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
     echo "$lab/$1"
 }
-lab_nf() {  # lab_nf <run_dir> <mode> <tag> [params...]: one lab stage, one driver slot
+lab_stage() {  # lab_stage <run_dir> <mode> <tag> [params...]: one lab stage, one driver slot (its jobs' Nextflow)
     local d=$1 mode=$2 tag=$3 rc
     shift 3
     acquire_slots "$d" "$tag" 1
-    sandboxed "$d" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
-        --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" \
-        -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1
+    if [ "$mode" = run_c ]; then  # no agent: the frozen arm C pipeline's full run, one scheduler job
+        local p=()
+        while [ $# -gt 0 ]; do case $1 in --lab_*|--data_file|--full_*) p+=("$1" "$2"); shift 2 ;; *) shift ;; esac; done
+        (cd "$d" && sandboxed "$d" -- timeout "$(stage_limit "$mode")" nextflow run "$GETH_HOME/geth/lab/jobs.nf" "${site[@]}" \
+            --task run_project --run_dir "$d" "${p[@]}" --out "$d/full_c_report.txt" \
+            -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1)
+    else
+        sandboxed "$d" -- timeout "$(stage_limit "$mode")" env PYTHONPATH="$GETH_HOME/geth" python3 -m harness.lab \
+            --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" > "$d/geth_$tag.log" 2>&1
+    fi
     rc=$?
     explain_timeout $rc "$mode" "$d/geth_$tag.log"
     rm -f "$d/.geth_$tag.pid"
@@ -84,12 +91,9 @@ case "$cmd" in
         [ -e "$d" ] && { echo "Lab run '$3' already exists: choose another name." >&2; exit 1; }
         mkdir -p "$d"
         cd "$d"
-        acquire_slots "$d" design 1
-        sandboxed "$d" -- timeout "$(stage_limit design)" nextflow run "$GETH_HOME/geth/lab/main.nf" -c "$GETH_HOME/geth/lab/nextflow.config" "${site[@]}" \
-            --mode design --question "$question" --data_dir "$data_dir" --run_dir "$d" --lab_skill "$skill" \
-            -w "$d/geth_work" -with-trace "$d/geth_trace_design.txt" -ansi-log false > "$d/geth_design.log" 2>&1 \
-            || { rm -f "$d/.geth_design.pid"; echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
-        rm -f "$d/.geth_design.pid"
+        echo "$data_dir" > "$d/data_dir.txt"
+        lab_stage "$d" design design --question "$question" --lab_skill "$skill" \
+            || { echo "Design failed: see $d/geth_design.log" >&2; exit 1; }
         show "$d"
         ;;
     show)
@@ -136,11 +140,11 @@ case "$cmd" in
         for round in 1 2; do
             rm -f "$d/build_spec.txt"  # every round must check its own spec
             build_state "$d" "engineer round $round"
-            lab_nf "$d" engineer "engineer_$round" --build_round "$round" --data_file "${data[0]}" --lab_skill "$skill" \
+            lab_stage "$d" engineer "engineer_$round" --build_round "$round" --data_file "${data[0]}" --lab_skill "$skill" \
                 || { build_state "$d" "failed: engineer round $round (see geth_engineer_$round.log)"; echo "Engineer round $round failed: see $d/geth_engineer_$round.log" >&2; exit 1; }
             [ -f "$d/build_spec.txt" ] || { build_state "$d" "failed: no checked spec after round $round"; echo "The engineer ended round $round without a checked spec." >&2; exit 1; }
             build_state "$d" "review round $round"
-            lab_nf "$d" review "review_$round" --build_round "$round" \
+            lab_stage "$d" review "review_$round" --build_round "$round" \
                 || { build_state "$d" "failed: review round $round (see geth_review_$round.log)"; echo "Review round $round failed: see $d/geth_review_$round.log" >&2; exit 1; }
             verdict=$(sed -n 's/^VERDICT: //p' "$d/review_$round.txt")
             [ "$verdict" = approve ] && break
@@ -182,7 +186,7 @@ case "$cmd" in
             letter=$(echo "$letter" | tr 'A-Y' 'B-Z')
         done
         cd "$d"
-        lab_nf "$d" judge judge || { echo "Judging failed: see $d/geth_judge.log" >&2; exit 1; }
+        lab_stage "$d" judge judge || { echo "Judging failed: see $d/geth_judge.log" >&2; exit 1; }
         show "$d"
         ;;
     build-c)
@@ -207,11 +211,11 @@ case "$cmd" in
         for round in 1 2; do
             rm -f "$d/build_spec_c.txt"
             build_state "$d" "engineer round $round"
-            lab_nf "$d" engineer_c "engineer_$round" --build_round "$round" "${tools[@]}" \
+            lab_stage "$d" engineer_c "engineer_$round" --build_round "$round" "${tools[@]}" \
                 || { build_state "$d" "failed: engineer round $round (see geth_engineer_$round.log)"; exit 1; }
             [ -f "$d/build_spec_c.txt" ] || { build_state "$d" "failed: no checked pipeline after round $round"; exit 1; }
             build_state "$d" "review round $round"
-            lab_nf "$d" review_c "review_$round" --build_round "$round" "${tools[@]}" \
+            lab_stage "$d" review_c "review_$round" --build_round "$round" "${tools[@]}" \
                 || { build_state "$d" "failed: review round $round (see geth_review_$round.log)"; exit 1; }
             verdict=$(sed -n 's/^VERDICT: //p' "$d/review_$round.txt")
             [ "$verdict" = approve ] && break
@@ -219,7 +223,7 @@ case "$cmd" in
         python3 "$GETH_HOME/geth/lab/bin/lab_build.py" freeze-c "$d" || { build_state "$d" "failed: could not freeze the project"; exit 1; }
         read -r cpus memory minutes < <(head -n 1 "$d/build_spec_c.txt" | tr -d '|')
         build_state "$d" "full run (review: $verdict)"
-        lab_nf "$d" run_c pipeline --full_cpus "$cpus" --full_memory "$memory" --full_minutes "$minutes" "${tools[@]}" && rc=0 || rc=$?
+        lab_stage "$d" run_c pipeline --full_cpus "$cpus" --full_memory "$memory" --full_minutes "$minutes" "${tools[@]}" && rc=0 || rc=$?
         rm -rf "$d/results" && [ -d "$d/full_c/results" ] && cp -r "$d/full_c/results" "$d/results"
         if [ $rc -eq 0 ]; then build_state "$d" "done (review: $verdict)"; else build_state "$d" "failed: full run (review: $verdict; see geth_pipeline.log)"; fi
         show_build "$d"

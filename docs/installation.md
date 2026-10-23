@@ -17,8 +17,8 @@ If someone in your team already installed Geth, you only need step 5 and the [us
 | Container engine | apptainer or singularity | Tested with apptainer 1.4.4. nf-core pipelines also run with docker or podman, but Geth's single-cell toolbox needs apptainer or singularity. |
 | Python | 3.9 or later | Standard library only. |
 | git | | To clone Geth. |
-| A language model | OpenAI-compatible API | The model must handle tool calls and JSON-schema output. Validated with Qwen3.5-397B-A17B. |
-| Internet access | from the machine that runs `geth` | For nf-core pipelines (GitHub), containers, the Nextflow `nf-agent` plugin (installed on first use) and the model endpoint. |
+| A language model | OpenAI-compatible API | The model must handle tool calls. Validated with Qwen3.5-397B-A17B; GPT-6 models work through the Responses API. |
+| Internet access | from the machine that runs `geth` | For nf-core pipelines (GitHub), containers and the model endpoint. |
 | Disk space | tens of GB per analysis | About 35 GB for a human bulk RNA-seq analysis of 8 samples while it runs. The `work/` folder can be deleted afterwards. |
 
 Optional:
@@ -30,10 +30,10 @@ Optional:
 - **A GPU** for CellBender (ambient RNA removal in single-cell RNA-seq). Without one, CellBender runs on
   CPUs, more slowly.
 
-**Where Geth runs on a cluster.** The `geth` command starts Nextflow drivers, and those submit jobs.
-Run Geth on a machine that can submit jobs, often a login node or an interactive session. Each driver
-is limited to 2 CPUs (`GETH_DRIVER_CPUS`). During an nf-core run, two drivers run at once: Geth's own
-and the pipeline's. All heavy work goes to the scheduler.
+**Where Geth runs on a cluster.** The `geth` command runs its agents (small Python processes) and starts
+Nextflow drivers, which submit jobs. Run Geth on a machine that can submit jobs, often a login node or an
+interactive session. Each driver is limited to 2 CPUs (`GETH_DRIVER_CPUS`); during an nf-core run, one driver
+runs: the pipeline's. All heavy work goes to the scheduler.
 
 ## 1. Get Geth
 
@@ -49,8 +49,8 @@ curl -s https://get.nextflow.io | bash      # creates ./nextflow
 mkdir -p ~/bin && mv nextflow ~/bin/        # any folder on your PATH
 ```
 
-Geth sets `NXF_VER=26.10.2`, so Nextflow downloads that exact version on first use. It also downloads
-the `nf-agent` plugin, which Nextflow 26.10.2 pins to version 0.2.0.
+Geth sets `NXF_VER=26.10.2`, so Nextflow downloads that exact version on first use (for Geth's own jobs;
+each nf-core pipeline gets the version it needs).
 
 ## 3. Give Geth access to a language model
 

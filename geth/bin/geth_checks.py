@@ -202,13 +202,14 @@ def parse_params(text):
     text = text.strip()
     if not text:
         return {}
-    if text.startswith("{"):
-        params = json.loads(text)
+    params, rest = {}, text
+    if text.startswith("{"):  # a JSON object, possibly followed by key=value lines (e.g. justification=...)
+        params, end = json.JSONDecoder().raw_decode(text)
         if not isinstance(params, dict):
             raise ValueError("params must be a JSON object")
-    else:
-        params = {}
-        for line in text.splitlines():
+        rest = text[end:]
+    if rest.strip():
+        for line in rest.splitlines():
             line = line.strip().rstrip(",")
             if not line:
                 continue
@@ -346,10 +347,31 @@ def check_star_index(pipeline, params):
     return problems
 
 
+# Pipelines that cannot run without a reference: what they accept instead of fasta+gtf (a planner once left
+# rnaseq without any reference, judging the delivery's test genome too small: the run would fail at launch).
+NEEDS_REFERENCE = {"rnaseq": ("fasta", "gtf"), "scrnaseq": ("fasta", "gtf"), "chipseq": ("fasta",),
+                   "atacseq": ("fasta",), "methylseq": ("fasta",), "sarek": ("fasta",)}
+
+
+def mate_of(name):
+    """The expected second-read file name of a first-read file, for the usual naming patterns (else None)."""
+    for one, two in (("_R1_", "_R2_"), ("_R1.", "_R2."), ("_1.f", "_2.f"), (".R1.", ".R2."), ("_r1.", "_r2.")):
+        if one in name:
+            i = name.rindex(one)
+            return name[:i] + two + name[i + len(one):]
+    return None
+
+
 def check_fastq_sheet(pipeline, sheet_text, params):
     problems = []
     if pipeline in ("rnaseq", "scrnaseq") and "genome" in params and ("fasta" in params or "gtf" in params):
         problems.append("set either 'genome' or 'fasta'/'gtf', not both")
+    needed = NEEDS_REFERENCE.get(pipeline)
+    if needed and not params.get("genome") and not all(params.get(k) for k in needed) \
+            and not any(k.endswith("_index") and params.get(k) for k in params):
+        problems.append(f"nf-core/{pipeline} needs a reference: set 'genome', or {' and '.join(repr(k) for k in needed)} "
+                        "(from the delivery or the reference catalogue). If none fits, say so in the rationale and "
+                        "ask the scientist")
 
     schema = load_schema(pipeline, "input")["items"]
     props, required = schema["properties"], schema.get("required", [])
@@ -362,6 +384,12 @@ def check_fastq_sheet(pipeline, sheet_text, params):
             problems.append(f"samplesheet: column '{col}' is not used by nf-core/{pipeline}")
     if not rows:
         problems.append("samplesheet has no rows")
+    for i, row in enumerate(rows, start=2):
+        f1, f2 = os.path.basename(row.get("fastq_1") or ""), os.path.basename(row.get("fastq_2") or "")
+        mate = mate_of(f1) if f1 and f2 else None
+        if mate and f2 != mate:
+            problems.append(f"samplesheet line {i}: fastq_2 '{f2}' is not the mate of fastq_1 '{f1}' "
+                            f"(expected '{mate}'): a pair must come from the same library and lane")
     seen = {}
     for i, row in enumerate(rows, start=2):
         for col, spec in props.items():
@@ -864,10 +892,17 @@ def sc_value(key, value):
         elif kind == "bool":
             v = value if isinstance(value, bool) else str(value).strip().lower() in ("true", "yes", "1")
             return v, None
-        elif kind == "list_float":
-            v = [float(x) for x in (value if isinstance(value, list) else str(value).split(",")) if str(x).strip()]
-        elif kind == "list_str":
-            v = [str(x).strip() for x in (value if isinstance(value, list) else str(value).split(",")) if str(x).strip()]
+        elif kind in ("list_float", "list_str"):
+            items = value
+            if not isinstance(value, list):  # "0.4,0.8" or "[0.4, 0.8]" (a key=value line holding a JSON list)
+                text = str(value).strip()
+                try:
+                    items = json.loads(text) if text.startswith("[") else text.split(",")
+                except ValueError:
+                    items = text.strip("[]").split(",")
+                items = items if isinstance(items, list) else [items]
+            items = [str(x).strip().strip("'\"") for x in items if str(x).strip()]
+            v = [float(x) for x in items] if kind == "list_float" else items
         else:
             v = str(value).strip()
     except (TypeError, ValueError):
@@ -1031,7 +1066,10 @@ def check_multiplexing(sheet_text, params, barcodes_text):
         problems.append("no VDJ data: set skip_cellrangermulti_vdjref=true (the pipeline would build a VDJ reference "
                         "it does not need, which fails for most species)")
     if params.get("protocol", "auto") != "auto":
-        problems.append("Cell Ranger detects the 10x chemistry itself: set protocol=auto")
+        problems.append("set protocol=auto: with Cell Ranger multi, protocol is passed to Cell Ranger as a fixed "
+                        "chemistry, and the multiplexed chemistries cannot be named that way (On-Chip Multiplexing "
+                        "is detected as \"Single Cell 3' v4 OCM\"; 10XV3 would force v3). Cell Ranger detects the "
+                        "chemistry itself. If the scientist named a kit, say in the rationale why it is not set")
     if evidence and not barcodes_text:
         problems.append("the delivery describes multiplexed libraries (" + "; ".join(evidence) + "): list each "
                         "library's samples in the second sheet (contrasts_lines)")
@@ -1099,7 +1137,109 @@ def sample_entries(texts):
     return list(dict.fromkeys(entries))
 
 
-def plan_warnings(pipeline, sheet_text, params, sheet2_text=""):
+# ---------------------------------------------------------------- what the reads say
+
+IUPAC = {"A": "A", "C": "C", "G": "G", "T": "T", "U": "T", "R": "[AG]", "Y": "[CT]", "S": "[CG]", "W": "[AT]",
+         "K": "[GT]", "M": "[AC]", "B": "[CGT]", "D": "[AGT]", "H": "[ACT]", "V": "[ACG]", "N": "[ACGT]"}
+_HEADS = {}
+
+
+def fastq_head(path, n=2000):
+    """The sequences of a FASTQ's first reads (cached: a plan is checked many times while planning)."""
+    if path not in _HEADS:
+        seqs = []
+        try:
+            opener = gzip.open if path.endswith(".gz") else open
+            with opener(path, "rt", errors="replace") as fh:
+                for i, line in enumerate(fh):
+                    if i % 4 == 1:
+                        seqs.append(line.strip().upper())
+                        if len(seqs) >= n:
+                            break
+        except (OSError, EOFError):
+            pass
+        _HEADS[path] = seqs
+    return _HEADS[path]
+
+
+def share(seqs, test):
+    return sum(1 for x in seqs if test(x)) / len(seqs) if seqs else None
+
+
+def data_warnings(pipeline, rows, params):
+    """When the reads themselves can say whether a plan value (often the scientist's answer) is right."""
+    warnings = []
+    def fq(key, most=8):  # the first file of each sample (mixed libraries differ: ChIP inputs vs IPs)
+        firsts = {}
+        for r in rows:
+            path = r.get(key) or ""
+            sample = r.get("sample") or r.get("Sample_Name") or path
+            if path.startswith("/") and sample not in firsts and os.path.isfile(path):
+                firsts[sample] = path
+        return list(firsts.values())[:most]
+    median_len = lambda path: (sorted(map(len, fastq_head(path))) or [0])[len(fastq_head(path)) // 2]
+    if pipeline == "ampliseq" and params.get("primer_fwd") and params.get("primer_rev"):
+        try:
+            fwd = re.compile("^" + "".join(IUPAC[c] for c in str(params["primer_fwd"]).upper()))
+            rev = re.compile("^" + "".join(IUPAC[c] for c in str(params["primer_rev"]).upper()))
+        except KeyError:
+            fwd = rev = None
+        r1, r2 = fq("fastq_1"), fq("fastq_2")
+        if fwd and r1:
+            at_fwd = min(share(fastq_head(f), fwd.match) for f in r1)
+            at_rev = min(share(fastq_head(f), rev.match) for f in r2) if r2 else None
+            swapped = r2 and share(fastq_head(r2[0]), fwd.match) > 0.3
+            if params.get("skip_cutadapt") in (True, "true"):
+                if at_fwd > 0.5:
+                    warnings.append(f"cutadapt is skipped, but the forward primer starts {at_fwd:.0%} of the reads: "
+                                    "the primers are still in the reads")
+            elif swapped:
+                warnings.append("the forward primer starts the second reads (fastq_2): primer_fwd and primer_rev, or "
+                                "fastq_1 and fastq_2, look swapped")
+            elif at_fwd < 0.3 or (at_rev is not None and at_rev < 0.3):
+                warnings.append(f"the primers start few reads (forward {at_fwd:.0%} of first reads"
+                                + (f", reverse {at_rev:.0%} of second reads" if at_rev is not None else "")
+                                + "; correct primers usually start most of them): check the sequences, or whether "
+                                "the primers were already removed (skip_cutadapt)")
+    if pipeline == "scrnaseq" and params.get("aligner", "simpleaf") not in ("cellranger", "cellrangermulti"):
+        protocol, r1 = str(params.get("protocol", "")).upper(), fq("fastq_1")
+        if r1 and protocol in ("10XV2", "10XV3", "10XV4"):
+            length = median_len(r1[0])
+            if protocol == "10XV2" and length == 28:
+                warnings.append("protocol=10XV2, but the barcode reads (fastq_1) are 28 bp, as in v3/v3.1 and "
+                                "GEM-X v4 (v2: 26 bp): check the chemistry")
+            elif protocol in ("10XV3", "10XV4") and length == 26:
+                warnings.append(f"protocol={protocol}, but the barcode reads (fastq_1) are 26 bp, as in v2 (v3 and "
+                                "GEM-X v4: 28 bp): check the chemistry")
+    if pipeline == "methylseq":
+        r1 = fq("fastq_1")
+        if r1:
+            rrbs_like = share(fastq_head(r1[0]), lambda x: x[:3] in ("CGG", "TGG"))
+            if params.get("rrbs") in (True, "true") and rrbs_like < 0.3:
+                warnings.append(f"rrbs=true, but only {rrbs_like:.0%} of the reads start with CGG/TGG (an RRBS "
+                                "library's MspI site): check the protocol")
+            elif params.get("rrbs") not in (True, "true") and rrbs_like > 0.6:
+                warnings.append(f"{rrbs_like:.0%} of the reads start with CGG/TGG, as in RRBS libraries, but rrbs "
+                                "is not set: check the protocol")
+    if pipeline in ("chipseq", "atacseq") and params.get("read_length"):
+        allowed = (50, 75, 100, 150, 200)
+        lengths = sorted({median_len(f) for f in fq("fastq_1")} - {0})
+        nearest = {min(allowed, key=lambda a: abs(a - L)) for L in lengths}
+        if nearest and int(float(params["read_length"])) not in nearest:
+            warnings.append(f"read_length={params['read_length']}, but the reads are {', '.join(f'{L} bp' for L in lengths)} "
+                            f"(nearest allowed: {', '.join(map(str, sorted(nearest)))})")
+    return warnings
+
+
+def scientist_answers(run_dir):
+    """The scientist's answers to the planner (plan_questions.md), as one text."""
+    path = os.path.join(run_dir or "", "plan_questions.md")
+    if not run_dir or not os.path.isfile(path):
+        return ""
+    return "\n".join(l[len("- answer:"):].strip() for l in open(path) if l.startswith("- answer:"))
+
+
+def plan_warnings(pipeline, sheet_text, params, sheet2_text="", run_dir=""):
     """Things a person should check before approving; they do not block the plan."""
     if REGISTRY.get(pipeline, {}).get("downstream") or REGISTRY.get(pipeline, {}).get("toolbox"):
         return []
@@ -1130,6 +1270,16 @@ def plan_warnings(pipeline, sheet_text, params, sheet2_text=""):
                             "it (GEM-X kits are 10XV4), or use Cell Ranger, which detects it (protocol=auto)")
         elif protocol.upper() == "10XV3" and GEMX.search(said):
             warnings.append("the delivery mentions GEM-X chemistry, but the plan sets protocol=10XV3: GEM-X 3' is 10XV4")
+    warnings += data_warnings(pipeline, rows, params)
+    # An answer of the scientist that the delivery itself rules out (10x_multi_chicken8: "v3/v3.1" for OCM data)
+    answers = scientist_answers(run_dir)
+    if pipeline == "scrnaseq" and answers and (sheet2_text or "").strip():
+        _, brows = parse_sheet(sheet2_text)
+        if any(b.get("ocm_ids") for b in brows) and re.search(r"\bv3(\.1)?\b|next ?gem", answers, re.I) \
+                and not re.search(r"gem-?x|\bv4\b", answers, re.I):
+            warnings.append("an answer gives a v3/v3.1 chemistry, but On-Chip Multiplexing (OB1-OB4) exists only with "
+                            "GEM-X Universal 3' v4: check the kit. The plan is not affected: Cell Ranger multi "
+                            "detects the chemistry (protocol=auto)")
     return warnings
 
 
@@ -1344,6 +1494,20 @@ def sc_gate(plan, params_text_or_dict, state):
     return out
 
 
+def sc_merge(run_dir, submitted_text):
+    """A revision of the single-cell design may name only the keys it changes (and justification=...): it is
+    applied to the approved design. A whole design, or text that does not parse (the gate says why), is kept."""
+    try:
+        submitted = parse_params(submitted_text)
+    except ValueError:
+        return submitted_text
+    required = {k for k, (_, _, _, req) in SC_MENU.items() if req}
+    if required <= set(submitted):
+        return submitted_text
+    approved = parse_params(read_text(os.path.join(run_dir, "plan_params.json")))
+    return json.dumps({**approved, **submitted}, indent=2)
+
+
 def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_text="", profile="", upstream=""):
     """Write the planner's proposal as plan_* files. If it fails the plan check but an earlier version
     passed CHECK_PLAN during planning, keep that checked version instead (and say so)."""
@@ -1377,7 +1541,7 @@ def save_plan(run_dir, pipeline, sheet_text, params_text, rationale, contrasts_t
         write(sheet2_file(pipeline), contrasts_text)
     result = "PLAN CHECK: OK" if not problems else f"PLAN CHECK: {len(problems)} problem(s)\n" + "\n".join(f"- {p}" for p in problems)
     if not problems and isinstance(params, dict):
-        result += "".join(f"\nWARNING: {w}" for w in plan_warnings(pipeline, sheet_text, params, contrasts_text))
+        result += "".join(f"\nWARNING: {w}" for w in plan_warnings(pipeline, sheet_text, params, contrasts_text, run_dir))
     write("plan_check.txt", result + ("\n(checked version used)" if note else ""))
     return result + ("\n(checked version used)" if note else "")
 
@@ -1459,6 +1623,7 @@ def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "check-plan":
         save_dir, argv = take(argv, "--save-checked")
+        run_dir, argv = take(argv, "--run-dir")  # for the warnings that read the scientist's answers
         extra, argv = parts(argv)
         pipeline = pipeline_name(argv[2])
         sheet_text = open(argv[3]).read()
@@ -1472,11 +1637,38 @@ def main(argv):
         if save_dir:
             save_checked(save_dir, pipeline, sheet_text, params, extra["contrasts_text"], extra["profile"])
         print("PLAN CHECK: OK")
-        for w in plan_warnings(pipeline, sheet_text, params, extra["contrasts_text"]):
+        for w in plan_warnings(pipeline, sheet_text, params, extra["contrasts_text"], save_dir or run_dir or ""):
             print(f"WARNING: {w}")
         return 0
     if cmd == "keep-prelude":  # keep-prelude < flat config: a config restoring the site's beforeScript (see above)
         sys.stdout.write(keep_prelude(sys.stdin.read()))
+        return 0
+    if cmd == "command":  # command <run_dir>: the nf-core command line of the plan, as Geth will launch it
+        run_dir = argv[2]
+        read = lambda f: read_text(os.path.join(run_dir, f)).strip()
+        pipeline = pipeline_name(read("plan_pipeline.txt"))
+        spec = REGISTRY.get(pipeline, {})
+        if spec.get("toolbox"):
+            print(f"(Geth's single-cell toolbox: the design in plan_params.json, run by sc_analyse.sh)")
+            return 0
+        try:
+            params = parse_params(read("plan_params.json"))
+        except ValueError as e:
+            print(f"(plan_params.json is not valid: {e})")
+            return 0
+        profiles = ",".join(p for p in (os.environ.get("GETH_NFCORE_PROFILE", ""), read("plan_profile.txt")) if p)
+        words = [f"nextflow run nf-core/{pipeline} -r {spec.get('revision', '?')}"]
+        if profiles:
+            words.append(f"-profile {profiles}")
+        words.append(f"--input {os.path.join(run_dir, 'plan_samplesheet.csv')}")
+        sheet2 = spec.get("second_sheet")
+        if sheet2 and read(sheet2["file"]):
+            words.append(f"--{sheet2['param']} {os.path.join(run_dir, sheet2['file'])}")
+        words.append(f"--outdir {os.path.join(run_dir, 'results')}")
+        for key, value in params.items():
+            value = json.dumps(value) if isinstance(value, (dict, list)) else str(value).lower() if isinstance(value, bool) else str(value)
+            words.append(f"--{key} {value if re.fullmatch(r'[\w./:,+=@-]+', value) else repr(value)}")
+        print(" \\\n    ".join(words))
         return 0
     if cmd == "sheet2":  # sheet2 <pipeline>: "<nf-core parameter> <file name>" of the plan's second sheet, if any
         spec = REGISTRY.get(pipeline_name(argv[2]), {}).get("second_sheet")
@@ -1493,6 +1685,9 @@ def main(argv):
         return 0
     if cmd == "approve":
         return approve(argv[2], argv[3] if len(argv) > 3 else getpass.getuser())
+    if cmd == "sc-merge":  # sc-merge <run_dir> <submitted design> <out>: a partial revision on the approved design
+        open(argv[4], "w").write(sc_merge(argv[2], open(argv[3]).read()))
+        return 0
     if cmd == "gate":
         extra, argv = parts(argv)
         problems = gate(argv[2], pipeline_name(argv[3]), open(argv[4]).read(), open(argv[5]).read(),

@@ -15,7 +15,9 @@ if [ "$n" -gt "$max_attempts" ]; then
 fi
 out="$run_dir/analysis_$n"
 mkdir -p "$out"
-cp "$design" "$out/design.submitted.txt"
+cp "$design" "$out/design.agent.txt"
+# A revision may name only the keys it changes: applied to the approved design.
+geth_checks.py sc-merge "$run_dir" "$out/design.agent.txt" "$out/design.submitted.txt"
 echo "ANALYSIS: $n"
 
 if ! geth_checks.py gate "$run_dir" sc_downstream "$sheet" "$out/design.submitted.txt" > "$out/gate.txt" 2>&1; then
@@ -33,6 +35,7 @@ h5ad=$(python3 -c 'import csv, sys; print(next(csv.DictReader(open(sys.argv[1]))
 export GETH_CACHE="$PWD/.cache"
 if sc_downstream.py run "$h5ad" "$out/design.json" "$out" > "$out/summary.txt" 2> "$out/stderr.txt"; then
     geth_checks.py record "$run_dir" analysis "$sheet" "$out/design.json" "$out/summary.txt"
+    touch "$out/SUCCEEDED"  # what an agent's success claim is checked against
     echo "STATUS: SUCCESS"
     echo "OUTDIR: $out"
     cat "$out/summary.txt"

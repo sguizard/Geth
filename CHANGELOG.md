@@ -2,6 +2,34 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 2.0.0 (2026-10-23), codename Rannoch
+
+**The agents run on Geth's own harness; Nextflow only runs the pipelines and the tools' jobs.** Geth 1.x's
+agents ran on Nextflow's preview `agent` feature; every agent was moved and measured against its Nextflow
+version first ([validation](docs/validation.md#geths-own-agent-harness-version-20-rannoch)).
+
+- **The planner asks you** what the delivery does not say (in the terminal, a few questions at a time with a
+  recommended answer; or a stand-in answering from `geth plan ... --answers notes.txt`). It browses the
+  pipeline's options, measures read lengths, and the plan check compares the plan with the reads (primers,
+  10x barcode read length, read length, RRBS motif). `geth show` prints the questions and answers and the
+  full command line. Planning is about three times faster.
+- **A paid planner model for one plan**, if the site defines it: `geth plan ... --model sol`, within a
+  budget the site sets; `geth show` says which model planned and what it cost.
+- **Outcomes are checked**: a run's claimed success or failure must match the pipeline's log (the
+  single-cell analyst's, the analysis it names).
+- **Reports are corrected before they are saved**: numbers that cannot be traced to the results go back to
+  the reporter once. In the benchmark, every saved report traced all its numbers (Nextflow version: 10/16).
+- The operator runs the approved plan without copying it; a run takes one driver slot instead of two, a plan
+  or a report none.
+- The single-cell analyst's revisions work: a revision may name only the keys it changes, and list values
+  are read as lists (every revision had been refused on format).
+- Results summary: MultiQC statistics from `multiqc_data.json` when the text table is missing (chipseq,
+  atacseq; MultiQC 1.3x), and peak counts for chipseq and atacseq.
+- The lab's agents run on the same harness; their jobs and the arm C full run go through `geth/lab/jobs.nf`.
+- **Removed:** `geth/main.nf`, `geth/lab/main.nf` (the Nextflow agents), `GETH_LLM_PROVIDER`, and the
+  `GETH_PLANNER` / `GETH_RUNNER` / `GETH_LAB_RUNNER` switches of the 2.0 preview. Runs planned with 1.x can
+  be run and reported with 2.0.
+
 ## 1.9.3 (2026-10-21)
 
 - **Agent sandbox: shared databases are visible.** A reference catalogue entry may point to a database

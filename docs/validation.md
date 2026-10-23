@@ -484,6 +484,26 @@ chromosome 6 reference.
 
 Only the plan check has been tested for CellPlex and Flex (unit tests); no full runs.
 
+## Geth's own agent harness (version 2.0, Rannoch)
+
+Version 2.0 moved every agent from Nextflow's agent preview to Geth's own harness. Each agent was compared
+with its Nextflow version on the same plans, data, model, tools and checks before the switch
+([Rannoch log](history/rannoch.html)).
+
+| Agent | Benchmark | Nextflow agents (1.9) | Geth 2.0 |
+|---|---|---|---|
+| Planner | 15 deliveries × 3 plans | 43/45 correct, 7.1 min per plan | 45/45 correct, 2.2 min per plan |
+| Planner, asking | 6 sparse deliveries × 3, a stand-in answers | (no questions) | 15/18 correct, against 3/18 without questions |
+| Operator | 8 test deliveries, plans as approved | 7/7 honest outcomes, 2.1 agent min | 8/8 honest outcomes, 1.9 agent min |
+| Operator | a FASTQ cut short (no allowed fix) | failed, said so, 5.7 min | failed, said so, 2.0 min; its attempts to drop lanes refused by the gate |
+| Reporter | 16 finished runs (2.0: twice) | 10/16 reports with every number traced | 31/31 |
+| Analyst | single-cell follow-up of PBMC 1k | 7/7 populations, no revision ever accepted | 7/7 populations, one justified revision |
+| Lab | designs (kang2018, pbmc1k); builds, arms B and C | 17–19/20, 11–12/12; arm C not deliverable | 17/20, 12/12; both builds delivered |
+
+The new reporter check (untraced numbers go back once) was needed for 11 of 31 first drafts; all came back
+clean. The benchmarks also found two gaps in the results summary (MultiQC data written only as JSON; a newer
+MultiQC format) and a format bug that had refused every revision by the single-cell analyst; all fixed.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or

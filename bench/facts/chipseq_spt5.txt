@@ -1,0 +1,7 @@
+ChIP-seq of the transcription elongation factor Spt5 in budding yeast, at two time points, 0 min and 15 min.
+Two independent cultures (biological replicates 1 and 2) per time point.
+- CHIP01: Spt5, 0 min, culture 1.  CHIP02: Spt5, 0 min, culture 2.
+- CHIP03: Spt5, 15 min, culture 1. CHIP04: Spt5, 15 min, culture 2.
+- INPUT01: input DNA (no antibody) of culture 1, the control for CHIP01 and CHIP03.
+- INPUT02: input DNA of culture 2, the control for CHIP02 and CHIP04.
+Illumina paired-end, 76 bp reads for the ChIP libraries, 50 bp for the inputs. Reference: S. cerevisiae R64 (Ensembl chromosome names).

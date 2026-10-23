@@ -1,0 +1,3 @@
+Whole-genome bisulfite sequencing (WGBS) of one sample, library WGBS-07: a standard directional bisulfite
+library (not PBAT, not RRBS, not enzymatic conversion). Sequenced on three lanes, single-end.
+I want per-CpG methylation levels.

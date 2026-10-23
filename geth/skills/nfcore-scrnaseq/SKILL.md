@@ -11,6 +11,13 @@ Use this pipeline for **single-cell / single-nucleus** RNA-seq from droplet prot
 a barcode): read every README, sample table and delivery report (HTML too). If they are, skip to
 "Multiplexed libraries" below: the plain samplesheet would count all the samples of a library as one sample.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The 10x kit and chemistry version exactly (v2, v3/v3.1, GEM-X v4), but only for STAR, simpleaf or kallisto.
+  Cell Ranger and Cell Ranger multi detect the chemistry (`protocol=auto`): do not ask for it then.
+- Whether several samples share a library (On-Chip Multiplexing, CellPlex/CMO, Flex) and, if so, which barcode is which sample.
+- Which libraries and lanes belong to which sample, and the expected number of cells.
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2,expected_cells`
 - `sample`: no spaces.
@@ -38,6 +45,9 @@ Signs in the delivery: **OCM** / on-chip multiplexing (library names with `10XOC
 **CellPlex** / CMO (`CMO301`–`CMO312`, "cell multiplexing oligo"); **Flex** / Fixed RNA Profiling / probe
 barcodes (`BC001`...). A sample table that lists more samples than there are FASTQ libraries is a sign too.
 - `aligner=cellrangermulti`, `protocol=auto`, `skip_cellrangermulti_vdjref=true` (unless there are VDJ reads).
+  `protocol=auto` is required: the pipeline's protocol values cannot name the multiplexed chemistries.
+- On-Chip Multiplexing (OB1-OB4) exists only with GEM-X Universal 3' v4: never suggest v2 or v3 for OCM data.
+  Flex (probe barcodes) is a probe-based chemistry of its own.
 - Samplesheet columns: `sample,fastq_1,fastq_2,feature_type` (`expected_cells` optional).
   `sample` is the **library** name (one name per physical library; its lanes are rows with the same name).
   `feature_type`: `gex` for gene-expression reads; CellPlex also has a `cmo` library (its own FASTQs, `cmo` rows).

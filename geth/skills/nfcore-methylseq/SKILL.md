@@ -8,6 +8,11 @@ description: How to plan DNA methylation (bisulfite, EM-seq, TAPS) analysis with
 Use this pipeline for **DNA methylation** sequencing: WGBS, RRBS, PBAT, EM-seq, TAPS. Alignment
 (Bismark or bwa-meth), deduplication, methylation extraction and QC.
 
+## Ask when the delivery does not say
+If the folder's text files do not tell you these, ask the scientist (ASK_USER, when you have it) before planning, in one round:
+- The protocol: standard directional bisulfite (WGBS), PBAT, non-directional, RRBS, EM-seq or TAPS.
+- Which files are the same library (lanes).
+
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2` (+ optional `genome`)
 - Several lanes/runs of one library: one row each, same `sample` (concatenated).

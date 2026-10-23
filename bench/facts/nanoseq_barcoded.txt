@@ -1,0 +1,4 @@
+Oxford Nanopore DNA sequencing (MinION, R9.4.1 flow cell) of the human KCMF1 locus: two replicate libraries of
+the same sample, multiplexed with the native barcoding kits EXP-NBD103/EXP-NBD104. Replicate 1 is barcode 06,
+replicate 2 is barcode 12. The reads are basecalled but NOT demultiplexed: everything is in one FASTQ file.
+Reference: the hg19 region around KCMF1. I want the reads aligned to it.

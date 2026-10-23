@@ -21,9 +21,9 @@ data folder + question
   reporter ---- writes report.md; every number and link is traced to the results
 ```
 
-Geth is built on Nextflow's [`agent`](https://www.nextflow.io) primitive (Nextflow 26.10). It works with
-any OpenAI-compatible model endpoint, including self-hosted ones, and runs on a single machine or a
-cluster.
+The agents run on Geth's own small harness (Python, standard library only) and talk to any
+OpenAI-compatible model endpoint, including self-hosted ones; Nextflow runs the pipelines. Geth runs on a
+single machine or a cluster.
 
 ## Quick start
 
@@ -113,9 +113,8 @@ Results so far are in [validation](docs/validation.md#geth-lab-arm-a-agents-desi
 
 ## Status
 
-Geth is research software. The Nextflow agent feature it builds on is a preview, so Geth pins the
-Nextflow version, and new Nextflow releases may need changes. Plans are a starting point for a person
-to review, not a replacement for scientific judgement.
+Geth is research software. Plans are a starting point for a person to review, not a replacement for
+scientific judgement.
 
 ## Contributing
 
@@ -126,7 +125,10 @@ holds tagged releases. Before opening a pull request, run the tests:
 python3 geth/tests/test_geth_checks.py
 python3 geth/tests/test_collect_results.py
 python3 geth/tests/test_lab_build.py
-nextflow lint geth/main.nf geth/lab/main.nf
+python3 geth/tests/test_harness.py
+python3 geth/tests/test_harness_run.py
+python3 geth/tests/test_harness_lab.py
+nextflow lint geth/jobs.nf geth/lab/jobs.nf
 ```
 
 The [developer guide](docs/developer-guide.md) explains the code and how to add a pipeline.
