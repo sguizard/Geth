@@ -52,7 +52,11 @@ class Project(unittest.TestCase):
                       self.problems(COUNT, dict(CELLS, pipeline="differentialabundance"))[0])
         self.assertIn("runs on sequencing data", self.problems(COUNT, dict(rnaseq, after=["count"]))[0])
         self.assertIn("no step above", self.problems(dict(CELLS, after=["later"]), COUNT)[0])
-        self.assertIn("must be an existing folder", self.problems(dict(rnaseq, data="/etc"))[0])
+        self.assertIn("is not a folder of the delivery", self.problems(dict(rnaseq, data="/etc"))[0])
+        os.makedirs(os.path.join(self.data, "RNA"))
+        doc = {"steps": [dict(rnaseq, data="RNA")]}
+        self.assertEqual(gp.check(self.p, doc)[0], [])  # relative: inside the delivery
+        self.assertEqual(doc["steps"][0]["data"], os.path.join(self.data, "RNA"))
 
     def test_what_geth_cannot_run_is_a_gap(self):
         self.assertIn("make this step a gap naming it", self.problems(dict(COUNT, pipeline="smrnaseq"))[0])

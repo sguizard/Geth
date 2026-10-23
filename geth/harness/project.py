@@ -112,20 +112,20 @@ STEP = {"type": "object", "required": ["id", "kind", "question"], "properties": 
     "nfcore": {"type": "string", "description": "kind gap: the nf-core pipeline that would do it, if any"}}}
 
 
-def clean(steps):
-    """The steps as the check reads them: no empty fields, after as a list."""
+def clean(steps, pdir):
+    """The steps as the check reads them: no empty fields, after as a list, data folders as absolute paths."""
     out = []
     for s in steps if isinstance(steps, list) else []:
         s = {k: v for k, v in (s if isinstance(s, dict) else {}).items() if v not in ("", None, [])}
         if isinstance(s.get("after"), str):
             s["after"] = [a.strip() for a in s["after"].split(",") if a.strip()]
         out.append(s)
-    return out
+    return gp.normalise(pdir, {"steps": out})["steps"]
 
 
 def check_steps_tool(pdir):
     def run(steps):
-        path = scratch(pdir, **{"steps.json": json.dumps({"steps": clean(steps)}, indent=2)})["steps.json"]
+        path = scratch(pdir, **{"steps.json": json.dumps({"steps": clean(steps, pdir)}, indent=2)})["steps.json"]
         return project_cli("check", pdir, path)
     return Tool("CHECK_STEPS", "Check a step list. Prints STEP CHECK: OK, or the problems, and notes such as the "
                 "size of a download.", {"type": "object", "required": ["steps"],
@@ -134,7 +134,7 @@ def check_steps_tool(pdir):
 
 def submit_steps_tool(pdir, proposed=False):
     def run(steps, rationale):
-        doc = {"steps": clean(steps), "rationale": str(rationale)}
+        doc = {"steps": clean(steps, pdir), "rationale": str(rationale)}
         path = scratch(pdir, **{"final_steps.json": json.dumps(doc, indent=2)})["final_steps.json"]
         result = project_cli("check", pdir, path)
         if result.startswith("STEP CHECK: OK"):
@@ -206,7 +206,7 @@ def decide_tool(pdir, step):
         if action == "revise":
             doc = gp.approved_doc(pdir, quiet=True) or {}
             started = [s["id"] for s in doc.get("steps", []) if gp.status(pdir, s) != "todo"]
-            new = {"steps": clean(steps), "rationale": str(rationale or reason)}
+            new = {"steps": clean(steps, pdir), "rationale": str(rationale or reason)}
             problems, notes = gp.check(pdir, new, started)
             if problems:
                 return gp.check_report_text(problems, notes)

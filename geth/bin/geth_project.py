@@ -207,10 +207,21 @@ def catalogue_entry(step):
 
 # ---------------------------------------------------------------- the step check
 
+def normalise(pdir, doc):
+    """Steps as Geth keeps them: a pipeline step's data folder as an absolute path (a relative one is inside the
+    delivery, e.g. RNA or fastq)."""
+    data_dir = read(os.path.join(pdir, "data_dir.txt")).strip()
+    for s in doc.get("steps") or [] if isinstance(doc, dict) else []:
+        data = str(s.get("data") or "").strip() if isinstance(s, dict) else ""
+        if data:
+            s["data"] = os.path.normpath(data if data.startswith("/") else os.path.join(data_dir, data))
+    return doc
+
+
 def check(pdir, doc, started=()):
     """Problems and notes of a step list. started: ids of steps already begun, which a revision must keep as is."""
     problems, notes, seen = [], [], {}
-    steps = doc.get("steps") if isinstance(doc, dict) else None
+    steps = normalise(pdir, doc).get("steps") if isinstance(doc, dict) else None
     if not isinstance(steps, list) or not steps:
         return ["no steps: give at least one step"], notes
     if len(steps) > MAX_STEPS:
@@ -255,7 +266,8 @@ def check(pdir, doc, started=()):
                                     "(only on reference steps)")
                 data = str(s.get("data") or data_dir)
                 if not (data.startswith(DATA_ROOT + "/") and os.path.isdir(data)):
-                    problems.append(f"{where}: data '{data}' must be an existing folder of the delivery")
+                    problems.append(f"{where}: data '{data}' is not a folder of the delivery ({data_dir}): give the "
+                                    "folder that holds this step's files (e.g. RNA), or leave data out for the whole delivery")
         elif kind == "reference":
             if after:
                 problems.append(f"{where}: a reference step builds on nothing (after must be empty)")
