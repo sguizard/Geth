@@ -35,7 +35,8 @@ Plan as few steps as the question needs:
 - a pipeline step for each kind of data in the delivery that the question needs (a delivery may hold several,
   e.g. RNA-seq and ATAC-seq: give each step its own data folder then, the one that holds that kind's README,
   sample table and reference, not only its reads);
-- a follow-up step only after the step it builds on;
+- a follow-up step only when the question asks for what it does (a comparison between conditions, cell types),
+  and only after the step it builds on: a question that asks to quantify, count or call needs no follow-up;
 - a reference step when a pipeline step needs a genome that the catalogue lacks: find it with FIND_GENOME and
   list it in that pipeline step's after;
 - a gap for every part of the question that no specialist does: what it is, the nf-core pipeline that would do
