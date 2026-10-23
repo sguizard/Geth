@@ -26,8 +26,12 @@ for src in "$@"; do
         cp -al "$s/results" "$d/results"
     fi
     rm -f "$d/report.md" "$d/report_check.txt" "$d/harness_trace_report.jsonl"
+    # timed from when the report has its driver slot (its pid file), not from when it started waiting for it
+    "$geth" report "$name" < /dev/null > /dev/null 2>&1 &
+    pid=$!
+    while kill -0 $pid 2>/dev/null && [ ! -f "$d/.geth_report.pid" ]; do sleep 1; done
     t0=$(date +%s)
-    "$geth" report "$name" < /dev/null > /dev/null 2>&1 && status=ok || status=failed
+    wait $pid && status=ok || status=failed
     t1=$(date +%s)
     python3 - "$d" "$src" "$status" "$(( t1 - t0 ))" <<'EOF' || echo "{\"run\": \"$name\", \"error\": \"scoring failed\"}"
 import json, os, re, sys

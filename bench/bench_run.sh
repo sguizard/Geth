@@ -25,8 +25,12 @@ for item in "$@"; do
         echo "{\"run\": \"$name\", \"error\": \"plan check failed: not approved\"}"
         continue
     fi
+    # timed from when the run has its driver slots (its pid file), not from when it started waiting for them
+    "$geth" run "$name" > /dev/null 2>&1 &
+    pid=$!
+    while kill -0 $pid 2>/dev/null && [ ! -f "$GETH_RUNS_DIR/$name/.geth_run.pid" ]; do sleep 2; done
     t0=$(date +%s)
-    "$geth" run "$name" > /dev/null 2>&1 || true
+    wait $pid
     t1=$(date +%s)
     python3 "$GETH_HOME/bench/eval_run.py" "$GETH_RUNS_DIR/$name" "$kind" 0 $(( t1 - t0 )) \
         || echo "{\"run\": \"$name\", \"error\": \"scoring failed\"}"
