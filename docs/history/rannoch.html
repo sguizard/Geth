@@ -125,14 +125,14 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <span class="eyebrow">Geth 2.0 · codename</span>
   <div class="title-row">
     <h1>Rannoch</h1>
-    <span class="pill ok">R4 done</span>
+    <span class="pill ok">Geth 2.0.0 released</span>
   </div>
-  <p class="lede">Geth on its own ground. The agents move from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly. Nextflow keeps doing what it is best at: running the pipelines. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
+  <p class="lede">Geth on its own ground. The agents moved from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly; since Geth 2.0 it is the only one. Nextflow keeps doing what it is best at: running the pipelines and the tools' jobs. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
   <div class="meta">
     <span>Started 2026-10-21</span>
     <span>branch feature/rannoch</span>
     <span>Qwen 3.5 397B · ELM</span>
-    <span>Geth 1.x: v1.9.3</span>
+    <span>Geth 2.0.0 (2026-10-23) · 1.x ended at v1.9.3</span>
   </div>
 </header>
 
@@ -157,7 +157,7 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
       <div class="layers">
         <div class="layer">geth command (bash)</div>
         <div class="layer rannoch">Geth harness, Python standard library<small>agent loop, budgets, trace; about 27 MB; calls the model service directly</small></div>
-        <div class="layer rannoch">Tools are Geth's own functions<small>the plan goes in through SUBMIT_PLAN, so a refused plan comes back to the agent</small></div>
+        <div class="layer rannoch">Tools are Geth's own functions<small>every answer goes in through a checked final tool (SUBMIT_PLAN, SUBMIT_OUTCOME, SUBMIT_REPORT), so a refusal comes back to the agent; jobs through a small Nextflow job file</small></div>
         <div class="layer">Geth's checks, skills, sandbox, registry</div>
         <div class="layer">nf-core pipelines on SGE (unchanged)</div>
       </div>
@@ -358,12 +358,13 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li><time datetime="2026-10-23">2026-10-23</time><span>ELM's own prices are unknown, so the cost estimates keep OpenAI's list prices.</span></li>
     <li><time datetime="2026-10-23">2026-10-23</time><span>R4 started: the planner is good enough to generalise the harness to the other agents.</span></li>
     <li><time datetime="2026-10-23">2026-10-23</time><span>R4 done: operator, reporter, analyst and lab agents run on Rannoch. 8/8 runs honest, 31/31 reports fully traced, both lab builds delivered. Geth no longer needs Nextflow's agent feature; Nextflow only runs the pipelines and jobs.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>Rannoch becomes the only Geth: the Nextflow agents are removed ("dead weight now"), released as Geth 2.0.0 on master. Runs planned with 1.x still run and report.</span></li>
   </ul>
 </section>
 
 <footer>
   <span>Geth 1.x: <a href="https://claude.ai/artifact/T3ApkP9kZzudYe7X1vFAnH">Geth Progress</a> and <a href="https://claude.ai/artifact/E6SVYKVxK7phySYEuw1Z5D">Geth Blueprint</a>.</span>
-  <span>Source: <code>docs/history/rannoch.html</code> in the Geth repository; the harness is in <code>geth/harness/</code>.</span>
+  <span>Source: <code>docs/history/rannoch.html</code> in the Geth repository; the agents are in <code>geth/harness/</code>. Release notes: <code>CHANGELOG.md</code> (2.0.0).</span>
 </footer>
 
 </div>
