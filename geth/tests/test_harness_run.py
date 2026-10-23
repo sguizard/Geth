@@ -175,6 +175,18 @@ class RunHarness(unittest.TestCase):
         self.assertEqual(submit(succeeded=True, outdir=os.path.join(self.d, "analysis_1")), "OUTCOME SAVED")
         self.assertIn("succeeded: true\nattempts: 2\n", self.outcome())
 
+    def test_the_approved_plan_runs_without_being_copied_and_a_text_report_is_submitted(self):
+        report = "# Summary\nA has 1234 reads.\n\n" + "## Caveats\nTest data only.\n" * 30
+        rc, client = self.go(
+            {"content": "", "tool_calls": [call("RUN_NFCORE", pipeline="rnaseq")]},
+            {"content": "", "tool_calls": [call("SUBMIT_OUTCOME", succeeded=False, outdir="none", changes_to_plan=[],
+                                                last_error="out of memory in FASTQC")]},
+            {"content": report})  # the reporter answers with the report itself
+        self.assertEqual(open(os.path.join(self.d, ".harness", "samplesheet.csv")).read(), "sample,fastq_1\nA,/data/a.fq.gz\n")
+        self.assertEqual(open(os.path.join(self.d, ".harness", "params.json")).read(), '{"genome": "R64"}\n')
+        self.assertEqual(open(os.path.join(self.d, "report.md")).read(), report.strip() + "\n")
+        self.assertEqual(client.usage["requests"], 3)  # no second writing of the report
+
     def test_outcome_txt_round_trip(self):
         outcome = {"succeeded": True, "attempts": 3, "outdir": "/r/results", "fixes_applied": ["a", "b"],
                    "annotations": [], "last_error": "none"}

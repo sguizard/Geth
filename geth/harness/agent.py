@@ -58,8 +58,11 @@ def skill_tool(skills):
 
 class Agent:
     def __init__(self, name, instruction, tools, client, skills=None, max_turns=25, trace_path=None, log=print,
-                 nudge_after=3, give_up_after=6, stuck_hint="", progress=None):
+                 nudge_after=3, give_up_after=6, stuck_hint="", progress=None, text_answer=None):
         self.name, self.client, self.max_turns, self.log = name, client, max_turns, log
+        # text_answer=(tool, argument, min_chars): a plain-text answer at least that long is handed to that tool,
+        # rather than asking the model to write it all again as a tool call (a reporter's report: one minute each)
+        self.text_answer = text_answer
         self.progress = progress  # optional: thinking(), before(name, args), after(name, output) for a person watching
         self.nudge_after, self.give_up_after, self.stuck_hint = nudge_after, give_up_after, stuck_hint
         self.tools = {t.name: t for t in tools}
@@ -115,6 +118,18 @@ class Agent:
             self.trace(event="answer", turn=turn, content=text, tool_calls=calls, usage=dict(self.client.usage))
             if text.strip():
                 self.log(f"[agent {self.name}] {text.strip()}")
+            if not calls and self.text_answer and len(text.strip()) >= self.text_answer[2]:
+                name, arg = self.text_answer[:2]
+                output = self.call_tool({"function": {"name": name, "arguments": {arg: text}}})[2]
+                self.log(f"[agent {self.name}]   → {name}(the answer's text)")
+                self.trace(event="tool", turn=turn, name=name, arguments={arg: "(the answer's text)"}, output=output,
+                           from_text=True)
+                if name in self.final and done(name, output):
+                    self.trace(event="end", turn=turn, usage=dict(self.client.usage))
+                    self.log(f"[agent {self.name}] done in {turn} turn(s); usage: {self.client.usage}")
+                    return output
+                messages.append({"role": "user", "content": f"Your answer was handed to {name}, which says:\n{output}"})
+                continue
             if not calls:
                 messages.append({"role": "user", "content": "Use your tools to continue. When your answer is "
                                  f"ready and checked, call {' or '.join(self.final)}."})

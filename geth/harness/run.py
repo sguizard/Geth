@@ -27,15 +27,16 @@ sys.path.insert(0, BIN)
 import check_report  # noqa: E402
 
 OPERATOR = '''You are Geth's pipeline operator. You execute a plan that a person has approved, using the
-RUN_NFCORE tool. First call it with the approved samplesheet and parameters exactly as given.
+RUN_NFCORE tool. First call it to run the approved plan as approved (only the pipeline name).
 If the tool reports STATUS: FAILED, change only what the error names and call RUN_NFCORE again:
 the run resumes where it stopped. Never change sample names, file assignments or the pipeline.
 If the tool reports STATUS: REFUSED, your change was not allowed: go back to the approved plan.
 Make at most 3 RUN_NFCORE calls. If the error cannot be fixed within these rules, stop and report it.
 Never claim success unless the tool printed STATUS: SUCCESS.'''
 
-OPERATOR_PROMPT = '''Execute the approved plan now: call RUN_NFCORE with its pipeline, samplesheet_csv, params_json,
-contrasts_csv and profile (pass empty strings where the plan has none). The approved plan:
+OPERATOR_PROMPT = '''Execute the approved plan now: call RUN_NFCORE with only its pipeline, which runs the approved plan
+exactly as approved. After a failure, pass in full only what you change (the whole samplesheet, or all the
+parameters); what you leave out stays as approved. The approved plan:
 pipeline: {pipeline}
 samplesheet_csv:
 {sheet}
@@ -123,18 +124,30 @@ def last_attempt(run_dir):
 
 
 def run_nfcore_tool(run_dir, calls):
-    def run(pipeline, samplesheet_csv, params_json, contrasts_csv="", profile=""):
+    def run(pipeline, samplesheet_csv="", params_json="", contrasts_csv="", profile=""):
+        """What the operator leaves out (or empty) is the approved plan's: no need to copy it to run it as approved."""
         calls.append(pipeline)
+        approved = lambda *names: next((read(run_dir, n) for n in names if os.path.isfile(os.path.join(run_dir, n))), "")
+        samplesheet_csv = samplesheet_csv if str(samplesheet_csv).strip() else approved("plan_samplesheet.csv")
+        params_json = params_json if str(params_json).strip() else approved("plan_params.json")
+        contrasts_csv = contrasts_csv if str(contrasts_csv).strip() else approved("plan_contrasts.csv", "plan_barcodes.csv")
+        profile = profile if str(profile).strip() else approved("plan_profile.txt")
+        if isinstance(params_json, dict):
+            params_json = json.dumps(params_json)
         p = scratch(run_dir, **{"samplesheet.csv": samplesheet_csv, "params.json": params_json, "contrasts.csv": contrasts_csv})
         result = subprocess.run(["bash", os.path.join(BIN, "run_nfcore.sh"), run_dir, pipeline, p["samplesheet.csv"],
                                  p["params.json"], p["contrasts.csv"], profile.strip()],
                                 capture_output=True, text=True, cwd=os.path.join(run_dir, ".harness"))
         return (result.stdout + result.stderr).strip()
+    params = string_params(pipeline="pipeline name",
+                           samplesheet_csv="only to change it: the whole samplesheet, CSV text (default: as approved)",
+                           params_json="only to change them: all the parameters, a JSON object (default: as approved)",
+                           contrasts_csv="only to change it: the whole second sheet (default: as approved)",
+                           profile="only to change it: the analysis profile (default: as approved)")
+    params["required"] = ["pipeline"]
     return Tool("RUN_NFCORE", "Launch the approved nf-core run (one gated, resumable attempt) and print a short "
-                "status digest: STATUS: SUCCESS, FAILED (with the error) or REFUSED (a change that was not allowed).",
-                string_params(pipeline="pipeline name", samplesheet_csv="the samplesheet, CSV text",
-                              params_json="the parameters, a JSON object", contrasts_csv="the second sheet, or ''",
-                              profile="analysis profile, or ''"), run, check=True)
+                "status digest: STATUS: SUCCESS, FAILED (with the error) or REFUSED (a change that was not allowed). "
+                "With only the pipeline, it runs the approved plan as approved.", params, run, check=True)
 
 
 def completed(attempt):
@@ -315,7 +328,7 @@ def main(argv=None):
 
     reporter = Agent("reporter", REPORTER, [collect_tool(a.run_dir),
                                             submit_report_tool(a.run_dir, plan["pipeline"], lambda: outcome.get("attempts", 0))],
-                     client, max_turns=6, trace_path=trace, log=log)
+                     client, max_turns=6, trace_path=trace, log=log, text_answer=("SUBMIT_REPORT", "report", 400))
     sheet2_part = f"second sheet:\n{plan['sheet2']}\n" if plan["sheet2"] else ""
     try:
         result = reporter.run(REPORTER_PROMPT.format(question=plan["question"], pipeline=plan["pipeline"], sheet=plan["sheet"],
