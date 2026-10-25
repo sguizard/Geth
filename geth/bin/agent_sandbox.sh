@@ -67,7 +67,7 @@ execd=$(getent services sge_execd 2>/dev/null | awk '{split($2, p, "/"); print p
 
 # Settings passed in through a file only you can read (never the key itself: that goes through APPTAINERENV_).
 key_var=${GETH_LLM_API_KEY_VAR:-GETH_LLM_API_KEY}
-key_var2=${GETH_PLANNER_API_KEY_VAR:-}  # Rannoch: a second model for the planner only (a person's comparison)
+key_var2=${GETH_MODEL_API_KEY_VAR:-${GETH_PLANNER_API_KEY_VAR:-}}  # a model a person chose for this command (--model)
 env_file=$(real "$run_dir")/.agent_home/sandbox.env
 umask 077
 sq() { local v=${1//\'/\'\\\'\'}; printf "'%s'" "$v"; }   # apptainer's env file reads single quotes, not \ escapes

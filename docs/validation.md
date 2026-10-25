@@ -516,6 +516,43 @@ interferon response in 9 of 10 cell types); the airway project from raw reads to
 known dexamethasone genes up, the same 650 DE genes as the hand-made baseline). Every project report traced all
 its numbers. The yeast DE step cannot work on its test reads (141 genes with 10 counts).
 
+## Paid models (versions 2.0 and 2.1)
+
+A site can define paid models that a person chooses for one command (`--model`, with a hard budget; see
+[configuration](configuration.md#language-model)). Two OpenAI models were compared with Qwen 3.5 through the
+reference site's gateway (Responses API), with the same harness, tools, skills, checks and scorers; only the
+agents' model differed. Costs are at OpenAI's list prices, with the cached-input discount.
+
+**Planner.** 9 deliveries: 3 plans each with a sparse README (a stand-in scientist on Qwen answers the
+planner's questions), 2 each with the full README.
+
+| Measure | Qwen 3.5 397B | GPT-6 Luna | GPT-6.1 Sol |
+|---|---|---|---|
+| Sparse deliveries, fully correct | 19/27 | 23/27 | 26/27 |
+| Full READMEs, fully correct | 17/18 | 16/18 | 17/18 |
+| Minutes per plan, median (sparse · full) | 3.5 · 3.0 | 3.0 · 2.0 | 1.2 · 0.9 |
+| Cost of the 45 plans | free | $0.35 | $2.00 |
+
+Sol once planned yeast RNA-seq without a reference, and Luna once paired reads from two lanes; the plan check
+now refuses both.
+
+**Lab.** Kang 2018 designs (arm A, with the skill) and PBMC 1k builds (arm B, from the same design for both
+models).
+
+| Measure | Qwen 3.5 397B | GPT-6.1 Sol |
+|---|---|---|
+| Kang 2018 designs | 16–19/20 (6 designs), 2–4 min | 19/20 every time (4), 1–2 min, $0.05 each |
+| PBMC builds approved by their reviewer | 2/2 | 2/4 (its reviewer, also Sol, held out twice) |
+| Populations found · cells kept | 7 · 82–96% | 6–7 · 79% |
+| Canonical markers in the top 50 (by test statistic) | 6/6 · 7/7 | 7/7 · 6/7 · 7/7 · 6/7 |
+| Build: minutes · cost | 22–26 · free | 10–19 · $0.19–0.53 |
+
+Sol's designs were the best the lab has seen (genotype-based doublets, paired pseudobulk per cell type, the
+lane-treatment confounding stated plainly). Its builds were as sound as Qwen's and faster, but its reviewer was
+stricter, and three of its four marker tables kept every gene, so sorting them by fold change shows noise
+first. Sol is worth its cost as a designer; as a builder it brought no clear gain. The whole lab comparison
+cost $1.79.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or
@@ -524,8 +561,8 @@ its numbers. The yeast DE step cannot work on its test reads (141 genes with 10 
 - A real analysis run from start to finish by someone other than its developers, with only this
   documentation. A first attempt (a multiplexed 10x delivery) led to version 1.9.
 - CellPlex and Flex libraries end to end (only their plan check is tested).
-- Other models, and other sites. The site configuration makes this possible; results are welcome. A
-  comparison with a paid frontier model on the lab benchmarks is planned.
+- Other models (beyond the paid-model comparison above), and other sites. The site configuration makes
+  this possible; results are welcome.
 - Language-model availability and rate limits under sustained use.
 - In the agent sandbox: pulling a pipeline image that is not yet in the cache.
 - The lab on other data than the two single-cell benchmarks (Kang 2018, PBMC 1k).
