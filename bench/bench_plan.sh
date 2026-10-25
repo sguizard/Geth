@@ -9,8 +9,8 @@
 # Rannoch R3: GETH_BENCH_TESTDATA=testdata_sparse plans the sparse deliveries (bench/stage_sparse.sh);
 # GETH_BENCH_ANSWERS=yes lets a stand-in scientist answer the planner from bench/facts/<delivery>.txt;
 # GETH_PLANNER_ASK=off plans without questions.
-# A paid planner model (GETH_PLANNER_MODEL, see geth/harness/llm.py) needs GETH_BENCH_BUDGET_USD: no plan starts
-# once the plans of this tag have spent it (each plan is also capped by GETH_PLANNER_BUDGET_USD).
+# A paid planner model (GETH_MODEL_MODEL, see geth/harness/llm.py) needs GETH_BENCH_BUDGET_USD: no plan starts
+# once the plans of this tag have spent it (each plan is also capped by GETH_MODEL_BUDGET_USD).
 set -uo pipefail
 [ -n "${GETH_RUNS_DIR:-}" ] || source "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
 
@@ -37,8 +37,8 @@ declare -A question=(
     [sc_rat_ocm]="Process these single-cell RNA-seq data into count matrices and give me a QC overview of the cells." )
 declare -A dataset=( [bulk_yeast]=bulk [sc_mouse_chr19]=sc )
 
-if [ -n "${GETH_PLANNER_MODEL:-}" ] && [ -z "${GETH_BENCH_BUDGET_USD:-}" ]; then
-    echo "GETH_PLANNER_MODEL is set: set GETH_BENCH_BUDGET_USD too (the most this benchmark may spend)" >&2; exit 1
+if [ -n "${GETH_MODEL_MODEL:-${GETH_PLANNER_MODEL:-}}" ] && [ -z "${GETH_BENCH_BUDGET_USD:-}" ]; then
+    echo "A chosen model is set (GETH_MODEL_MODEL): set GETH_BENCH_BUDGET_USD too (the most this benchmark may spend)" >&2; exit 1
 fi
 spent() {  # USD spent so far by the plans of this tag (from their recorded model usage)
     python3 -c 'import json, sys

@@ -54,6 +54,13 @@ A finished analysis can be the starting point of a follow-up:
   CellTypist toolbox. The agent designs the analysis from a fixed menu of steps and values, and never
   writes code.
 
+A bigger question can become a **project** (`geth legion`). A coordinator agent splits it into steps: one
+pipeline per data type in the delivery, their follow-ups, a genome download from Ensembl when the catalogue
+lacks the species, and gaps for what Geth cannot do (naming the nf-core pipeline that would). You approve the
+step list; every step is then planned, approved by you and run as above. After each step the coordinator
+decides whether the next ones still make sense, and at the end it writes one checked report that answers the
+question.
+
 The [pipelines page](pipelines.md) lists the supported pipelines and how well each one is validated.
 
 ## Why the agents can be trusted with this, and where they cannot
@@ -61,7 +68,8 @@ The [pipelines page](pipelines.md) lists the supported pipelines and how well ea
 Geth does not trust the model. It contains it.
 
 - **Agents never run arbitrary code.** They can only call a small set of tools: list or read files in the
-  data area, read the reference catalogue, check a plan, launch an approved plan, read the results. The one
+  data area, measure read lengths, read the reference catalogue, browse the pipeline's options, ask you a
+  question, check a plan, launch an approved plan, read the results. The one
   exception is the experimental lab (`geth lab build`, benchmark data only), where code written by agents
   runs in a sandbox with no network, no host files and no keys.
 - **Pipelines are pinned.** Each supported pipeline runs at one tested release, with parameters checked
@@ -73,9 +81,12 @@ Geth does not trust the model. It contains it.
   approved plan. Sample names, file assignments, contrasts and the pipeline are frozen. Any other change
   must be named by the previous error.
 - **Reports are checked.** Every number in the report must match a value in the results, and every link
-  must come from the results. Otherwise the report carries a visible warning.
+  must come from the results. What cannot be traced goes back to the reporter once; anything left makes the
+  report carry a visible warning.
 - **Models are allowlisted.** Geth refuses to start with a model that is not on the site's allowlist, which
-  protects a shared API key from accidental use of paid models.
+  protects a shared API key from accidental use of paid models. A site may define paid models that a person
+  chooses for one command (`--model`); each has prices and a budget, and a request that could cross the
+  budget is not sent.
 
 What Geth is **not**:
 
@@ -91,8 +102,8 @@ What Geth is **not**:
 
 - A Linux machine or cluster with Java, [Nextflow](https://www.nextflow.io) (26.10 or later), and
   apptainer or singularity (docker works for the nf-core pipelines).
-- An OpenAI-compatible language-model endpoint with a model that handles tool calls and structured output
-  well. Geth was developed and validated with **Qwen3.5-397B-A17B**. Mistral Small 4 did much worse in
+- An OpenAI-compatible language-model endpoint with a model that handles tool calls well. Geth was
+  developed and validated with **Qwen3.5-397B-A17B**. Mistral Small 4 did much worse in
   the same tests (see [validation](validation.md)).
 - Disk space: a human bulk RNA-seq analysis of 8 samples uses about 35 GB while it runs.
 
@@ -106,5 +117,5 @@ pipelines.
 ## Where to go next
 
 - [Installation](installation.md): install Geth and describe your site in one file.
-- [User guide](user-guide.md): your first analysis, step by step.
+- [User guide](user-guide.md): your first analysis, step by step, then follow-ups and projects.
 - [Developer guide](developer-guide.md): how it works inside, and how to add a pipeline.

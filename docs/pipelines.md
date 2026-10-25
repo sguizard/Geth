@@ -36,9 +36,11 @@ For every pipeline it has:
 | [taxprofiler](https://nf-co.re/taxprofiler/2.0.1) | 2.0.1 | Taxonomic profiling of shotgun metagenomes | validated with agents on test deliveries, with Kraken2 and Bracken. MetaPhlAn not tested |
 | [mag](https://nf-co.re/mag/5.5.0) | 5.5.0 | Metagenome assembly and binning | validated with agents on test deliveries, without GTDB-Tk and CheckM2 (no databases on the test site) |
 
-Results summaries in the report are tailored for rnaseq, scrnaseq, differentialabundance, mag (assemblies
-and bins) and the single-cell toolbox. For the other pipelines the report gives MultiQC's general
-statistics and points to the MultiQC report and results folders.
+Results summaries in the report are tailored for rnaseq, scrnaseq (with Cell Ranger multi and CellBender),
+differentialabundance, mag (assemblies and bins) and the single-cell toolbox; chipseq and atacseq add the
+peaks of each sample and the consensus peaks. For the other pipelines the report gives MultiQC's general
+statistics (from MultiQC's text table or, when a MultiQC writes only JSON, from its JSON data) and points to
+the MultiQC report and results folders.
 
 ## What each pipeline needs from you
 
@@ -76,8 +78,12 @@ without any action from you:
 ## Not supported (yet)
 
 - Pipelines outside this list. The planner says so in its rationale instead of forcing a pipeline that
-  does not fit.
-- Several organisms or unrelated experiments in one delivery: plan them separately.
+  does not fit. In a `geth legion` project, the coordinator reports such a step as a gap, naming the
+  nf-core pipeline that would do it, if one exists (or, with `--lab`, may make a single-cell
+  analysis that no pipeline does an experimental lab step).
+- Several organisms or unrelated experiments in one delivery: plan them separately. (Several data types
+  towards one question, such as RNA-seq and ATAC-seq of the same samples, are what `geth legion` is for:
+  one step per pipeline.)
 - Writing new pipelines. Geth plans and runs existing ones.
 
 To add a pipeline, see the [developer guide](developer-guide.md#adding-a-pipeline).

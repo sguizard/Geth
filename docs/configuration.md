@@ -10,8 +10,10 @@ source env.sh
   -> sources site/site.env   (or the file named by GETH_SITE_ENV)
   -> fills in defaults, resolves folders to their real paths, loads modules
   -> exports everything
-       |-- geth (the command) ...... adds -c $GETH_NF_CONFIG to Geth's own Nextflow run
-       |-- geth/nextflow.config .... reads the model, endpoint, key and folders from the environment
+       |-- geth/harness ............ the agents read the model, endpoint and key name from the environment
+       |-- geth/bin/sc_job.sh,
+       |   geth/lab/bin/lab_job.sh . add -c $GETH_NF_CONFIG to the tools' scheduler jobs (jobs.nf)
+       |-- geth/nextflow.config .... reads the folders from the environment, for those jobs
        `-- geth/bin/run_nfcore.sh .. adds the profile and configs below to each nf-core run
 ```
 
@@ -44,9 +46,10 @@ text, so `/home/me/geth` and its real location `/exports/home/me/geth` must not 
 | Variable | Default | Meaning |
 |---|---|---|
 | `GETH_LLM_BASE_URL` | **required** | OpenAI-compatible endpoint, e.g. `https://llm.example.org/v1` or `http://localhost:8000/v1`. |
-| `GETH_LLM_MODEL` | **required** | Model used by every agent, e.g. `Qwen/Qwen3.5-397B-A17B-FP8`. |
+| `GETH_LLM_MODEL` | **required** | Model used by every agent, unless a person chooses another for one command (`--model`, below), e.g. `Qwen/Qwen3.5-397B-A17B-FP8`. |
 | `GETH_LLM_ALLOWED_MODELS` | `$GETH_LLM_MODEL` | Space- or comma-separated allowlist. Geth refuses to start with any other model. |
 | `GETH_LLM_API_KEY_VAR` | `GETH_LLM_API_KEY` | Name of the environment variable that holds the key. Export the key in your shell profile. |
+| `GETH_MODEL_<NAME>_MODEL` | none | A model a person may choose for one command with `--model <name>`: `geth plan`, `geth legion new` (the coordinator), and `geth lab` (with `--budget <USD>`, a total for the command). With it: `_PRICES` ("input,cached input,output", USD per million tokens), `_BUDGET_USD` (the most one agent stage may spend; a request that would cross it is not sent), and optionally `_API` (`responses` for OpenAI GPT-6 models, which need it for tools with reasoning), `_REASONING`, `_BASE_URL` and `_API_KEY_VAR` (default: the site's model service and key). `GETH_PLANNER_<NAME>_*` (the 2.0.0 name) is read too. |
 
 `env.sh` unsets `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `ANTHROPIC_API_KEY`, so no tool can pick up
 another provider's key by accident.
@@ -62,13 +65,14 @@ another provider's key by accident.
 | `GETH_NFCORE_CONFIG` | none | Extra config for every nf-core run, applied last, so it wins. Use it for resource limits, queues, or anything your profile lacks. |
 | `GETH_MODULES` | none | Environment modules to load, e.g. `"java/21 apptainer/1.4"`. |
 | `GETH_DRIVER_CPUS` | `2` | CPUs that each Nextflow driver JVM may use. Outside scheduler jobs, `env.sh` sets `NXF_OPTS` (`-Xmx4g`, active processor count). |
+| `GETH_DOWNLOAD_SUBMIT` | none (on this machine) | How a project's reference step downloads a genome (`geth/references/stage_ensembl.sh`): a command that runs the script and waits for it, e.g. `qsub -sync y -q <transfer queue> -P <project> -cwd -j y -l h_rt=02:00:00 -v GETH_HOME=$GETH_HOME`. Pass `GETH_HOME` only, never the whole environment (`-V`): it holds the API key. |
 | `GETH_MAX_DRIVERS` | `0` (no limit) | Nextflow drivers allowed at once on this machine: a run uses 1 (the pipeline's), a lab stage 1 (its jobs'), a plan none (1 for a single-cell follow-up); `geth report` none. A command that would exceed it waits for a free slot. On a shared login node, set it so that drivers × `GETH_DRIVER_CPUS` stays within your allowance. |
 
 ### Lab (experimental)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GETH_LAB_DATA` | `$GETH_DATA_ROOT/testdata` | The only folders the lab's agents may read (`:`-separated). |
+| `GETH_LAB_DATA` | `$GETH_DATA_ROOT/testdata` | The only folders the lab's agents may read (`:`-separated). A `geth legion` project allowed to use the lab (`--lab`) adds its lab step's own input folder. |
 | `GETH_LAB_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_lab_sc_8ead628d7c7c6607.sif` | The pinned image agent-written code runs in (arms B and C): scanpy 1.11.5, celltypist 1.7.1, pydeseq2 0.5.4, harmonypy 0.0.10, scikit-image, scikit-misc, from Seqera Containers (`oras://community.wave.seqera.io/library/python_scanpy_celltypist_pydeseq2_pruned:8ead628d7c7c6607`). |
 | `GETH_LAB_MODELS` | `$GETH_REFERENCES/celltypist_immune_v2` | CellTypist models copied into each step's sandbox. |
 
@@ -85,8 +89,6 @@ that holds only deliveries (not the whole `GETH_WORK_ROOT`), and plan each analy
 | `GETH_AGENT_TIMEOUT` | `2h` | Time limit for a planning, design or review stage (`timeout` syntax: `30m`, `2h`). |
 | `GETH_ENGINEER_TIMEOUT` | `4h` | Time limit for a lab engineer stage. |
 | `GETH_RUN_TIMEOUT` | `72h` | Time limit for `geth run` (the whole pipeline run, retries included). |
-| `GETH_MODEL_<NAME>_MODEL` | none | A model a person may choose for one command with `--model <name>`: `geth plan`, `geth legion new` (the coordinator), and `geth lab` (with `--budget <USD>`, a total for the command). With it: `_PRICES` ("input,cached input,output", USD per million tokens), `_BUDGET_USD` (the most one agent stage may spend; a request that would cross it is not sent), and optionally `_API` (`responses` for OpenAI GPT-6 models, which need it for tools with reasoning), `_REASONING`, `_BASE_URL` and `_API_KEY_VAR` (default: the site's model service and key). `GETH_PLANNER_<NAME>_*` (the 2.0.0 name) is read too. |
-| `GETH_DOWNLOAD_SUBMIT` | none (on this machine) | How a project's reference step downloads a genome (`geth/references/stage_ensembl.sh`): a command that runs the script and waits for it, e.g. `qsub -sync y -q <transfer queue> -P <project> -cwd -j y -l h_rt=02:00:00 -v GETH_HOME=$GETH_HOME`. Pass `GETH_HOME` only, never the whole environment (`-V`): it holds the API key. |
 | `GETH_STOP_GRACE` | `120` | Seconds `geth stop` gives the Nextflow drivers to cancel their scheduler jobs before it ends them. |
 | `GETH_AGENT_IMAGE` | `$GETH_WORK_ROOT/geth/containers/geth_agent_54cf9ab304820814.sif` | The image the agents run in: Python 3.12 and the usual command-line tools (`oras://community.wave.seqera.io/library/python_findutils_coreutils_gawk_pruned:54cf9ab304820814`). |
 
@@ -118,14 +120,20 @@ for an SGE site.
 |---|---|---|
 | `GETH_BENCH_DIR` | `$GETH_WORK_ROOT/bench` | Benchmark results (`bench/*.sh`). |
 | `GETH_BASELINES_DIR` | `$GETH_WORK_ROOT/baselines` | Baseline runs without agents (`bench/baseline*.sh`). |
+| `GETH_PLANNER_ASK` | `file` with `--answers`, else `terminal` in a terminal, else `none` | Who answers the agents' questions in `geth plan` and `geth legion new`: `terminal`, `file`, `none` (the agent proceeds on its assumptions), or `off` (no questions at all). Benchmarks set it. |
+| `GETH_BENCH_TESTDATA`, `GETH_BENCH_ANSWERS`, `GETH_BENCH_BUDGET_USD` | `testdata`, `no`, none | `bench/bench_plan.sh`: the deliveries' folder (`testdata_sparse` for the sparse ones), a stand-in answering from `bench/facts/`, and the most a benchmark with a chosen model may spend. |
 
 ## Geth's own jobs: `GETH_NF_CONFIG`
 
 Most of Geth's tools are tiny and run inside the agents' stage: listing files, checks, launching nf-core. The
-nf-core pipelines submit their own jobs. Two tools are real jobs, started through `geth/jobs.nf`: the single-cell toolbox's inspection
-(16 GB) and analysis (4 CPUs, 32 GB, up to 4 h) steps. They run in a container
-(`depot.galaxyproject.org/singularity/celltypist:1.7.1`), so they need apptainer or singularity.
-`GETH_NF_CONFIG` tells Nextflow how to run them.
+nf-core pipelines submit their own jobs. A few tools are real jobs:
+
+- the single-cell toolbox's inspection (16 GB) and analysis (4 CPUs, 32 GB, up to 4 h), through `geth/jobs.nf`,
+  in a container (`depot.galaxyproject.org/singularity/celltypist:1.7.1`), so they need apptainer or singularity;
+- the lab's inspection, subsets, step tests, pipeline lint and tests, and arm C's full run, through `geth/lab/jobs.nf`.
+
+`GETH_NF_CONFIG` tells Nextflow how to run them. (A `geth legion` reference download is not a Nextflow job: it
+runs as `GETH_DOWNLOAD_SUBMIT` says.)
 
 **One machine** (`site/examples/local.config`):
 
@@ -201,4 +209,6 @@ nextflow run nf-core/<pipeline> -r <pinned revision>
 - **Data confinement.** The file-listing and file-reading tools refuse paths outside `GETH_DATA_ROOT`. The
   launcher refuses run folders outside `GETH_RUNS_DIR`. Single-cell annotation models must come from the
   reference catalogue: they are Python pickles, so loading one runs code.
-- **Model allowlist.** Every entry point checks the model against `GETH_LLM_ALLOWED_MODELS`.
+- **Model allowlist.** The site's model must be in `GETH_LLM_ALLOWED_MODELS`, or no agent starts. Another
+  model is used only when a person chooses it for one command (`--model`), only if the site defines it
+  (`GETH_MODEL_<NAME>_*`), and only within its budget: a request that could cross the budget is not sent.

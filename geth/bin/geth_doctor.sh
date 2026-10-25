@@ -82,7 +82,7 @@ if [ "${GETH_AGENT_SANDBOX:-no}" = yes ]; then
             || warn "agent image" "$GETH_AGENT_IMAGE not found: the lab image is used instead (pull the agent image, docs/installation.md)"
         probe="$GETH_RUNS_DIR/.doctor_probe"
         mkdir -p "$probe/data" && echo "$probe/data" > "$probe/data_dir.txt"   # a run sees only its own data
-        # A real sandbox, as an agent driver gets it: Java, Nextflow and the scheduler inside; the other runs hidden.
+        # A real sandbox, as an agent stage gets it: Java, Nextflow and the scheduler inside; the other runs hidden.
         out=$("$GETH_HOME/geth/bin/agent_sandbox.sh" "$probe" -- bash -c '
             command -v java >/dev/null && echo java || echo no-java
             nextflow -version >/dev/null 2>&1 && echo nextflow || echo no-nextflow
@@ -98,7 +98,7 @@ if [ "${GETH_AGENT_SANDBOX:-no}" = yes ]; then
                 || bad "sandbox: jobs" "the scheduler does not answer from inside the sandbox"
         fi
     fi
-else ok "agent sandbox" "off (GETH_AGENT_SANDBOX=yes runs the agents' drivers in a container)"
+else ok "agent sandbox" "off (GETH_AGENT_SANDBOX=yes runs the agents in a container)"
 fi
 echo
 

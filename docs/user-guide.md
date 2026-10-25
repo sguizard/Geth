@@ -167,7 +167,7 @@ geth status my_analysis      # outcome, attempts, report check
 geth list                    # all your analyses and where they stand
 ```
 
-`geth status` also says whether the agents ran in their sandbox (`agents' driver: in the agent sandbox`), on
+`geth status` also says whether the agents ran in their sandbox (`agents: in the agent sandbox`), on
 sites that use one.
 
 **What happens during the run:**
@@ -316,6 +316,16 @@ and continues, stops, or proposes new steps, which you approve before anything r
 it writes `report.md` in the project folder (`$GETH_RUNS_DIR/projects/my_project`): the answer to your
 question from the steps' reports, every number checked against the steps' results. `geth legion list` shows
 all projects; `geth legion stop my_project` stops the project and its running step.
+
+Good to know about projects:
+
+- `geth legion run my_project --detach` runs it in the background; follow it with `geth legion show my_project`
+  (the log is `log.md` in the project folder).
+- `--answers notes.txt` (with `new` and `run`) lets a stand-in answer the agents' questions from your notes, as
+  in [step 2](#step-2-ask-for-a-plan); `geth legion new ... --model sol` uses a paid coordinator model, if your
+  site defines one.
+- If the coordinator stops the project (for example because a step's data look too thin) and you disagree,
+  `geth legion run my_project --overrule` goes on with the approved steps. Your name is recorded in the log.
 
 **The lab, on request.** With `geth legion new ... --lab`, a gap on a count matrix (`.h5ad`, from a
 single-cell step or delivered) may become a **lab step**: lab agents design the analysis, you approve the design

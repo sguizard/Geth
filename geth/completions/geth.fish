@@ -121,3 +121,19 @@ complete -c geth -n '__geth_lab_at stop 0' -a '(__geth_lab_runs active)'
 complete -c geth -n '__geth_lab_at design 0' -a '(__fish_complete_directories (commandline -ct) "benchmark data folder")'
 complete -c geth -n '__geth_lab_at design 3' -l no-skill -d 'Designer without the best-practice skill'
 complete -c geth -n '__geth_lab_at show 0' -a '(__geth_lab_runs)'
+complete -c geth -n '__geth_at lab 0' -a judge -d 'A judge agent writes the best of several designs'
+complete -c geth -n '__geth_at lab 0' -a build -d 'Arm B: engineer and reviewer build a design'
+complete -c geth -n '__geth_at lab 0' -a build-c -d 'Arm C: the engineer writes the whole Nextflow pipeline'
+for c in build build-c
+    complete -c geth -n "__geth_lab_at $c 0" -a '(__geth_lab_runs)'
+end
+complete -c geth -n '__geth_lab_at build 2' -l no-skill -d 'Engineer without the coding skill'
+complete -c geth -n '__fish_seen_subcommand_from lab' -l model -d 'A model the site defines (e.g. sol), with --budget' -x
+complete -c geth -n '__fish_seen_subcommand_from lab' -l budget -d 'The most this command may spend (USD)' -x
+
+# geth legion: options of new, approve and run
+complete -c geth -n '__fish_seen_subcommand_from legion; and __fish_seen_subcommand_from new' -l model -d 'Coordinator model from the site settings' -x
+complete -c geth -n '__fish_seen_subcommand_from legion; and __fish_seen_subcommand_from new run' -l answers -d 'Answers file for the agents' -r
+complete -c geth -n '__geth_legion_at approve 1' -l yes -d 'Approve without the prompt'
+complete -c geth -n '__geth_legion_at approve 1' -l lab -d "Approve a lab step's design (its step id)" -x
+complete -c geth -n '__geth_legion_at run 1' -l yes -d "Approve each step's plan as planned (benchmark data only)"

@@ -74,7 +74,7 @@ show_build() {
     echo "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     echo "State    : $(cat "$d/build_state.txt" 2>/dev/null || echo -)"
-    echo "Agents   : $([ -d "$d/.agent_home" ] && echo "driver in the agent sandbox" || echo "driver not sandboxed") (agent-written code always runs in the lab sandbox)"
+    echo "Agents   : $([ -d "$d/.agent_home" ] && echo "in the agent sandbox" || echo "not sandboxed") (agent-written code always runs in the lab sandbox)"
     if [ -f "$d/build_spec_c.txt" ]; then
         echo; echo "== pipeline (written by the agent): $(cd "$d/project" 2>/dev/null && ls main.nf bin/*.py 2>/dev/null | tr '\n' ' ')"
         echo "   full run: $(head -n 1 "$d/build_spec_c.txt") (cpus | memory GB | minutes)"
