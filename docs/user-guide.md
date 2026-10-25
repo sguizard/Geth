@@ -286,6 +286,43 @@ disagree is labelled "uncertain".
 The annotation model must match your tissue and species. Available models are listed at
 <https://www.celltypist.org/models>; ask for one to be added to the catalogue if needed.
 
+## The legion: several analyses towards one question
+
+When a question needs more than one analysis, ask the legion for a **project**. The coordinator agent reads the
+delivery and proposes the steps; each step is then done by the usual agents, and you approve as usual.
+
+```bash
+geth legion new /path/to/my_data "Which genes differ between the mutant and the wild type?" my_project
+geth legion show my_project        # the steps and the coordinator's rationale
+geth legion approve my_project
+geth legion run my_project         # stops whenever a step's plan needs you
+```
+
+A step is one of:
+
+- **a pipeline** on part of the delivery (a delivery may hold several kinds of data, e.g. RNA-seq and
+  ATAC-seq: one step each);
+- **a follow-up** on a finished step: differential expression after RNA-seq, cell types after single-cell;
+- **a reference download**, when the catalogue has no genome for your species: the genome and annotation of
+  the current Ensembl release, checked against Ensembl before you approve (`geth legion show` gives the
+  download size), then downloaded as a job and added to the catalogue;
+- **a gap**: something the question needs that no Geth pipeline does. The coordinator says what it is, which
+  nf-core pipeline would do it if one exists (for example nf-core/smrnaseq for microRNAs), and what the
+  finished steps hand over to it. Nothing is improvised.
+
+`geth legion run` plans the next step and stops: `geth show my_project-<step>`, `geth approve
+my_project-<step>`, then `geth legion run my_project` again. After each step the coordinator reads its report
+and continues, stops, or proposes new steps, which you approve before anything runs. When every step is done,
+it writes `report.md` in the project folder (`$GETH_RUNS_DIR/projects/my_project`): the answer to your
+question from the steps' reports, every number checked against the steps' results. `geth legion list` shows
+all projects; `geth legion stop my_project` stops the project and its running step.
+
+**The lab, on request.** With `geth legion new ... --lab`, a gap on a count matrix (`.h5ad`, from a
+single-cell step or delivered) may become a **lab step**: lab agents design the analysis, you approve the design
+(`geth lab show my_project-<step>-design`, then `geth legion approve my_project --lab <step>`), and they write,
+test and run the code in a sandbox. This is EXPERIMENTAL: the results come from agent-written code, and the
+report says so. Without `--lab`, such a step stays a gap.
+
 ## Managing your analyses
 
 - `geth list` shows every analysis and its state: planned, approved, running, succeeded or failed.

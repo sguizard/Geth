@@ -34,19 +34,19 @@ class LabHarness(unittest.TestCase):
         self.env = {k: os.environ.get(k) for k in ("GETH_RUNS_DIR", "GETH_REFERENCES", "GETH_LAB_DATA")}
         os.environ.update(GETH_RUNS_DIR=self.runs, GETH_REFERENCES=os.path.join(self.root, "refs"),
                           GETH_LAB_DATA=os.path.join(self.root, "testdata"))
-        self.saved = lab.Client, lab.job
+        self.saved = lab.model_client, lab.job
         self.jobs = []
         lab.job = lambda run_dir, task, *params: self.jobs.append((task, params)) or f"{task}: done"
 
     def tearDown(self):
-        lab.Client, lab.job = self.saved
+        lab.model_client, lab.job = self.saved
         for k, v in self.env.items():
             os.environ.pop(k, None) if v is None else os.environ.update({k: v})
         shutil.rmtree(self.root)
 
     def go(self, mode, *replies, **args):
         client = FakeClient(*replies)
-        lab.Client = lambda *a, **k: client
+        lab.model_client = lambda *a, **k: client
         argv = ["--mode", mode, "--run_dir", self.d, "--data_dir", self.data]
         for k, v in args.items():
             argv += [f"--{k}", v]

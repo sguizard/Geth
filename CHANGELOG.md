@@ -2,6 +2,21 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 2.1.0 (2026-10-25), the legion
+
+- **`geth legion new / show / approve / run / list / stop`**: a project, several analyses towards one question. A
+  coordinator agent reads the delivery and proposes the steps (pipelines, follow-ups, an Ensembl genome download
+  when the catalogue lacks the species, gaps naming the nf-core pipeline that would fill them, and with `--lab`
+  the experimental lab); you approve them, and every step's plan, as before. After each step it reads the report
+  and continues, stops, or proposes new steps; at the end it writes the project report, number-checked against
+  every step. `--overrule` lets you go on when it stops.
+- Reference downloads run where the site allows them (`GETH_DOWNLOAD_SUBMIT`; on Eddie the staging queue).
+- `geth lab ... --model <name> --budget <USD>`: the lab's agents with a model you choose, within a total.
+  The budget is a hard cap: a request that could cross it is not sent.
+- The operator can browse the pipeline's options, and may change an option that the error names (e.g. DESeq2's
+  `nsub` -> `deseq2_vst_nsub`).
+- `stage_ensembl.sh` finds annotations named with Ensembl Genomes' release (yeast).
+
 ## 2.0.1 (2026-10-23)
 
 - **`geth run` of a differential expression follow-up works in the agent sandbox.** The run's launch-time plan

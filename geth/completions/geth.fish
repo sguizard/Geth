@@ -14,6 +14,17 @@ function __geth_lab_at --argument-names cmd n  # the same for `geth lab <cmd>`
     test (count $t) -ge 3; and test "$t[2]" = lab; and test "$t[3]" = "$cmd"; and test (math (count $t) - 3) -eq $n
 end
 
+function __geth_legion_at --argument-names cmd n  # the same for `geth legion <cmd>`
+    set -l t (__geth_tokens)
+    test (count $t) -ge 3; and test "$t[2]" = legion; and test "$t[3]" = "$cmd"; and test (math (count $t) - 3) -eq $n
+end
+
+function __geth_projects  # project names (geth legion)
+    for d in $GETH_RUNS_DIR/projects/*/
+        basename $d
+    end
+end
+
 function __geth_plan_from  # true when completing the upstream run of `geth plan --from`
     set -l t (__geth_tokens)
     test (count $t) -eq 3; and test "$t[2]" = plan; and test "$t[3]" = --from
@@ -55,7 +66,7 @@ function __geth_lab_runs --argument-names want  # lab run names, with their arm 
     end
 end
 
-set -l __geth_commands plan show approve run status report list stop doctor version lab
+set -l __geth_commands plan show approve run status report list stop doctor version lab legion
 complete -c geth -f
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a plan -d 'Planner agent writes a plan'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a show -d 'Print a plan and its check'
@@ -68,6 +79,22 @@ complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a stop -
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a doctor -d 'Check the installation'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a version -d "Print Geth's version"
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a lab -d 'EXPERIMENTAL agent-designed analyses'
+complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a legion -d 'A project: several analyses towards one question'
+
+# geth legion new <data_dir> "<question>" <name> [--lab]   |   show / approve / run / stop <name>   |   list
+complete -c geth -n '__geth_at legion 0' -a new -d 'The coordinator proposes the steps'
+complete -c geth -n '__geth_at legion 0' -a show -d 'The steps and where each stands'
+complete -c geth -n '__geth_at legion 0' -a approve -d 'Approve the steps (or a lab design: --lab <step>)'
+complete -c geth -n '__geth_at legion 0' -a run -d 'Run the next steps'
+complete -c geth -n '__geth_at legion 0' -a list -d 'All projects and where they stand'
+complete -c geth -n '__geth_at legion 0' -a stop -d 'Stop a project and its running step'
+complete -c geth -n '__geth_legion_at new 0' -a '(__fish_complete_directories (commandline -ct) "data folder")'
+complete -c geth -n '__geth_legion_at new 3' -l lab -d 'Allow the EXPERIMENTAL lab for what no pipeline does'
+for c in show approve run stop
+    complete -c geth -n "__geth_legion_at $c 0" -a '(__geth_projects)'
+end
+complete -c geth -n '__geth_legion_at run 1' -l overrule -d "Go on although the coordinator stopped"
+complete -c geth -n '__geth_legion_at run 1' -l detach -d 'Keep running after you log out'
 
 # geth plan <data_dir> "<question>" <name>   |   geth plan --from <run> "<question>" <name>
 complete -c geth -n '__geth_at plan 0' -a '(__fish_complete_directories (commandline -ct) "data folder")'

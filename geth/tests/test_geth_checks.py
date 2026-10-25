@@ -913,5 +913,19 @@ class ScRevision(unittest.TestCase):
         self.assertEqual(gc.sc_value("leiden.resolutions", "0.4,0.8"), ([0.4, 0.8], None))
 
 
+
+class ToolOptions(unittest.TestCase):
+    """r5b_yeast-diffexp (2026-10-23): DESeq2's vst failed on tiny test data with "less than 'nsub' rows"; the
+    parameter that sets it is deseq2_vst_nsub, which the error does not name in full."""
+    ERROR = ("Error executing process > 'NFCORE_DIFFERENTIALABUNDANCE:...:DESEQ2_DIFFERENTIAL (RAP1_vs_wt)'\n"
+             "error in evaluating the argument 'x' in selecting a method for function 'assay': less than 'nsub' rows")
+
+    def test_the_tool_and_its_option(self):
+        self.assertTrue(gc.names_tool_option("deseq2_vst_nsub", self.ERROR))
+        self.assertFalse(gc.names_tool_option("deseq2_vs_method", self.ERROR))   # "a method": too common
+        self.assertFalse(gc.names_tool_option("limma_nsub", self.ERROR))         # another tool
+        self.assertFalse(gc.names_tool_option("deseq2_vst_nsub", "less than 'nsub' rows"))  # no tool named
+
+
 if __name__ == "__main__":
     unittest.main()

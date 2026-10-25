@@ -70,3 +70,21 @@ sandboxed() {  # sandboxed <run_dir> [--ro <folder>]... -- <command...>: in the 
         "$@"
     fi
 }
+
+use_model() {  # use_model <name> [<budget USD>]: a model a person chose for this command (--model), within a budget
+    # The site defines it as GETH_MODEL_<NAME>_* (or GETH_PLANNER_<NAME>_*, the Geth 2.0.0 name): MODEL, PRICES,
+    # BUDGET_USD, and optionally API, REASONING, BASE_URL, API_KEY_VAR. Exported as GETH_MODEL_* for the agents.
+    local name=$1 budget=${2:-} up k v w
+    [[ "$name" =~ ^[A-Za-z0-9_]+$ ]] || { echo "Model names use letters, digits and '_' (got '$name')." >&2; return 1; }
+    up=${name^^}
+    for k in MODEL PRICES BUDGET_USD API REASONING BASE_URL API_KEY_VAR; do
+        v=GETH_MODEL_${up}_$k; w=GETH_PLANNER_${up}_$k
+        if [ -n "${!v:-}" ]; then export "GETH_MODEL_$k=${!v}"
+        elif [ -n "${!w:-}" ]; then export "GETH_MODEL_$k=${!w}"; fi
+    done
+    [ -n "${GETH_MODEL_MODEL:-}" ] || { echo "No model '$name' in the site settings (GETH_MODEL_${up}_MODEL)." >&2; return 1; }
+    [ -n "$budget" ] && export GETH_MODEL_BUDGET_USD=$budget
+    export GETH_MODEL_BASE_URL=${GETH_MODEL_BASE_URL:-$GETH_LLM_BASE_URL}
+    export GETH_MODEL_API_KEY_VAR=${GETH_MODEL_API_KEY_VAR:-$GETH_LLM_API_KEY_VAR}
+    unset GETH_PLANNER_MODEL  # one chosen model at a time
+}
