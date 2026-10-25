@@ -15,7 +15,10 @@ base=https://ftp.ensembl.org/pub/release-$release
 dest=$GETH_REFERENCES/${species}_${assembly}_ens${release}
 fasta=$Species.$assembly.dna.primary_assembly.fa.gz
 curl -fsI "$base/fasta/$species/dna/$fasta" > /dev/null || fasta=$Species.$assembly.dna.toplevel.fa.gz
-gtf=$Species.$assembly.$release.gtf.gz
+# The annotation of the release; species imported from Ensembl Genomes (e.g. yeast) carry that site's release
+# number in the file name instead (Saccharomyces_cerevisiae.R64-1-1.63.gtf.gz in Ensembl 116).
+gtf=$(curl -fsSL "$base/gtf/$species/" | grep -oE "$Species\.$assembly\.[0-9]+\.gtf\.gz" | sort -u | head -n 1)
+[ -n "$gtf" ] || { echo "No annotation (GTF) for $species $assembly in $base/gtf/$species/" >&2; exit 1; }
 mkdir -p "$dest"
 cd "$dest"
 dest=$(pwd -P)  # the real path: the catalogue README records it for the agents

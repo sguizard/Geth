@@ -211,6 +211,30 @@ class Progress(unittest.TestCase):
             os.remove(out.name)
 
 
+class Budget(unittest.TestCase):
+    """A paid model's budget is a hard cap: the next request's input plus its longest answer must fit in it."""
+
+    def test_a_request_that_could_cross_the_budget_is_not_sent(self):
+        from harness.llm import Client, ModelError
+        env = {"GETH_MODEL_MODEL": "paid", "GETH_MODEL_BASE_URL": "http://localhost:1", "GETH_MODEL_PRICES": "2,0.2,10",
+               "GETH_MODEL_BUDGET_USD": "0.10", "GETH_MODEL_API_KEY_VAR": "TEST_KEY", "TEST_KEY": "x"}
+        saved = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            client = Client("GETH_MODEL")
+            small = [{"role": "user", "content": "x" * 4000}]           # ~1,000 tokens: $0.002 of input
+            self.assertAlmostEqual(client._room(small, None), 9800, delta=10)  # $0.098 left: ~9,800 output tokens
+            client.usage["usd"] = 0.0995
+            with self.assertRaises(ModelError):                          # room for 50 tokens only: not sent
+                client._room(small, None)
+            client.usage["usd"] = 0.0
+            with self.assertRaises(ModelError):                          # 200,000 tokens of input: $0.40
+                client._room([{"role": "user", "content": "x" * 800000}], None)
+        finally:
+            for k, v in saved.items():
+                os.environ.pop(k, None) if v is None else os.environ.update({k: v})
+
+
 class ResponsesApi(unittest.TestCase):
     """OpenAI's Responses API (GPT-6 refuses tools with reasoning in chat completions: the pilots of 2026-10-22)."""
 

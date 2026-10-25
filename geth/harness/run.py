@@ -20,8 +20,8 @@ import subprocess
 import sys
 
 from .agent import Agent, Tool, load_skills, string_params
-from .llm import Client, ModelError
-from .tools import GETH_HOME, sc_job, scratch
+from .llm import ModelError, model_client
+from .tools import GETH_HOME, pipeline_options, sc_job, scratch
 
 BIN = os.path.join(GETH_HOME, "geth", "bin")
 sys.path.insert(0, BIN)
@@ -30,7 +30,8 @@ import check_report  # noqa: E402
 OPERATOR = '''You are Geth's pipeline operator. You execute a plan that a person has approved, using the
 RUN_NFCORE tool. First call it to run the approved plan as approved (only the pipeline name).
 If the tool reports STATUS: FAILED, change only what the error names and call RUN_NFCORE again:
-the run resumes where it stopped. Never change sample names, file assignments or the pipeline.
+the run resumes where it stopped. When the error names a tool's option, find the parameter that sets it
+with PIPELINE_OPTIONS (search for the option's name); never invent a parameter name. Never change sample names, file assignments or the pipeline.
 If the tool reports STATUS: REFUSED, your change was not allowed: go back to the approved plan.
 Make at most 3 RUN_NFCORE calls. If the error cannot be fixed within these rules, stop and report it.
 Never claim success unless the tool printed STATUS: SUCCESS.'''
@@ -292,7 +293,7 @@ def main(argv=None):
     plan = load_plan(a.run_dir)
     single_cell = plan["pipeline"] == "sc_downstream"
     try:
-        client = Client()
+        client = model_client()
     except ModelError as e:
         sys.exit(f"Geth: {e}")
     log = lambda m: print(m, flush=True)
@@ -312,7 +313,8 @@ def main(argv=None):
                           client, skills=skills, max_turns=8, trace_path=trace, log=log)
             prompt = ANALYST_PROMPT.format(params=plan["params"])
         else:
-            agent = Agent("operator", OPERATOR, [run_nfcore_tool(a.run_dir, calls), submit_outcome_tool(a.run_dir, outcome, calls)],
+            agent = Agent("operator", OPERATOR, [run_nfcore_tool(a.run_dir, calls), pipeline_options(),
+                                                 submit_outcome_tool(a.run_dir, outcome, calls)],
                           client, max_turns=10, trace_path=trace, log=log)
             prompt = OPERATOR_PROMPT.format(**{k: plan[k] or "''" for k in ("pipeline", "sheet", "params", "sheet2", "profile")})
         try:  # a gate refusal is a check's refusal: the same one again and again ends the loop

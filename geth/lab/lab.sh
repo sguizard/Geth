@@ -14,6 +14,9 @@
 #   geth lab build-c <design run> <name>                           arm C: the engineer writes the whole Nextflow
 #                                                                  pipeline; its driver runs only in the sandbox
 #   geth lab stop <name>                                           stop a lab run and its scheduler jobs
+#   --model <name> --budget <USD>   (design, judge, build, build-c) the agents use a model the site defines
+#                                   (e.g. sol), within this total for the whole command; the stage that would
+#                                   exceed it is not started
 #
 # The lab works only on benchmark data (GETH_LAB_DATA, default $GETH_DATA_ROOT/testdata) and writes to
 # $GETH_RUNS_DIR/lab/<name>. The agents: geth/harness/lab.py; their scheduler jobs: geth/lab/jobs.nf.
@@ -23,7 +26,7 @@ export GETH_LAB_DATA=${GETH_LAB_DATA:-$GETH_DATA_ROOT/testdata}
 lab=$GETH_RUNS_DIR/lab
 source "$GETH_HOME/geth/bin/driver_slots.sh"
 
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 banner() { echo "*** Geth lab: EXPERIMENTAL, not for real analyses ***" >&2; }
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
@@ -40,10 +43,27 @@ lab_stage() {  # lab_stage <run_dir> <mode> <tag> [params...]: one lab stage, on
             --task run_project --run_dir "$d" "${p[@]}" --out "$d/full_c_report.txt" \
             -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1)
     else
+        if [ -n "${GETH_MODEL_MODEL:-}" ]; then  # a chosen model: this stage gets what is left of the budget
+            local left
+            left=$(python3 -c 'import sys; print(f"{float(sys.argv[1]) - sum(float(l.split()[1]) for l in open(sys.argv[2])) if __import__("os").path.isfile(sys.argv[2]) else float(sys.argv[1]):.4f}")' \
+                "$lab_budget" "$d/model_spend.txt")
+            if ! python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) > 0.01 else 1)' "$left"; then
+                echo "Budget spent: \$$lab_budget for this command on $GETH_MODEL_MODEL (see $d/model_spend.txt); $tag not started." | tee "$d/geth_$tag.log" >&2
+                rm -f "$d/.geth_$tag.pid"
+                return 1
+            fi
+            export GETH_MODEL_BUDGET_USD=$left
+        fi
         sandboxed "$d" -- timeout "$(stage_limit "$mode")" env PYTHONPATH="$GETH_HOME/geth" python3 -m harness.lab \
             --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" > "$d/geth_$tag.log" 2>&1
     fi
     rc=$?
+    if [ -n "${GETH_MODEL_MODEL:-}" ] && [ "$mode" != run_c ]; then  # what this stage spent, for the next
+        python3 -c 'import json, sys
+lines = [l for l in open(sys.argv[1], errors="replace") if l.startswith("Model usage:")]
+print(sys.argv[2], json.loads(lines[-1].split(":", 1)[1]).get("usd", 0) if lines else 0, sys.argv[3])' \
+            "$d/geth_$tag.log" "$tag" "$GETH_MODEL_MODEL" >> "$d/model_spend.txt"
+    fi
     explain_timeout $rc "$mode" "$d/geth_$tag.log"
     rm -f "$d/.geth_$tag.pid"
     return $rc
@@ -81,6 +101,21 @@ show() {
 
 cmd=${1:-}; shift || true
 banner
+# --model <name> --budget <USD>: a model chosen for this command, within a total budget (see the usage above)
+lab_args=() lab_model= lab_budget=
+while [ $# -gt 0 ]; do
+    case $1 in
+        --model) lab_model=${2:-}; shift 2 || usage ;;
+        --budget) lab_budget=${2:-}; shift 2 || usage ;;
+        *) lab_args+=("$1"); shift ;;
+    esac
+done
+set -- "${lab_args[@]}"
+if [ -n "$lab_model" ]; then
+    [ -n "$lab_budget" ] || { echo "--model $lab_model needs --budget <USD>: the most this command may spend." >&2; exit 1; }
+    use_model "$lab_model" "$lab_budget" || exit 1
+    echo "Lab agents: $GETH_MODEL_MODEL, at most \$$lab_budget for this command." >&2
+fi
 site=()
 [ -n "${GETH_NF_CONFIG:-}" ] && site=(-c "$GETH_NF_CONFIG")
 case "$cmd" in

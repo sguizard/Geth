@@ -504,6 +504,17 @@ The new reporter check (untraced numbers go back once) was needed for 11 of 31 f
 clean. The benchmarks also found two gaps in the results summary (MultiQC data written only as JSON; a newer
 MultiQC format) and a format bug that had refused every revision by the single-cell analyst; all fixed.
 
+## Projects (version 2.1, R5)
+
+The coordinator's step lists were scored on 7 deliveries with a known right answer, 3 projects each: 16/21 fully
+right in the first series, 21/21 after its misses became check rules (no download when the delivery brings its
+genome, one folder per pipeline that keeps its README, a pipeline needs reads) and one instruction (no follow-up
+the question does not ask for). Median 1.1 minutes per project plan. Projects run end to end: a yeast genome
+downloaded on the staging queue and used by the next step; a PBMC subset counted, stopped by the coordinator as
+too thin, then run on with `--overrule`; a Kang 2018 lab step designed, built and run (pseudobulk DESeq2, the
+interferon response in 9 of 10 cell types). Every project report traced all its numbers. The yeast DE step
+cannot work on its test reads (141 genes with 10 counts), and the airway project stopped on a full scratch quota.
+
 ## Not yet tested
 
 - Messy deliveries beyond the test sets: inconsistent file names, missing metadata, several organisms or

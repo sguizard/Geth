@@ -14,7 +14,7 @@ import sys
 
 from .agent import Agent, load_skills
 from .ask import FileAnswerer, Nobody, TerminalAsker, TerminalProgress, ask_tool
-from .llm import Client, ModelError
+from .llm import ModelError, model_client
 from .tools import (GETH_HOME, check_plan, checks, inspect_reads, list_files, list_references, pipeline_options,
                     read_text, sc_inspect, submit_plan)
 
@@ -112,8 +112,9 @@ def main(argv=None):
     upstream = (f"{a.upstream_run} (nf-core/{open(os.path.join(a.upstream_run, 'plan_pipeline.txt')).read().strip()} "
                 f"results in {a.upstream_run}/results)" if a.upstream_run else "none (this is a new analysis of sequencing data)")
     try:
-        site = Client()  # the site's model: the stand-in scientist always uses it
-        client = Client("GETH_PLANNER") if os.environ.get("GETH_PLANNER_MODEL") else site
+        site = model_client(site=True)  # the site's model: the stand-in scientist always uses it
+        chosen = model_client()  # a model a person chose for this plan (geth plan --model), else the site's
+        client = chosen if chosen.model != site.model or chosen.budget else site
     except ModelError as e:
         sys.exit(f"Geth: {e}")
     if client is not site:
