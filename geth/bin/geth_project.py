@@ -241,6 +241,8 @@ def normalise(pdir, doc):
         data = str(s.get("data") or "").strip() if isinstance(s, dict) else ""
         if data:
             s["data"] = os.path.normpath(data if data.startswith("/") else os.path.join(data_dir, data))
+        if isinstance(s, dict) and s.get("nfcore"):  # a pipeline's bare name: smrnaseq, not nf-core/smrnaseq
+            s["nfcore"] = str(s["nfcore"]).strip().replace("nf-core/", "")
     return doc
 
 
@@ -430,7 +432,7 @@ def show(pdir):
         kind = s.get("kind")
         what = {"pipeline": f"nf-core/{s.get('pipeline')}" if s.get("pipeline") != "sc_downstream" else "single-cell toolbox",
                 "reference": f"download {s.get('species')} {s.get('assembly')} (Ensembl {s.get('release')})",
-                "gap": "GAP: no specialist" + (f" (nf-core/{s.get('nfcore')} would)" if s.get("nfcore") else ""),
+                "gap": "GAP: no specialist" + (f" (nf-core/{str(s.get('nfcore')).replace('nf-core/', '')} would)" if s.get("nfcore") else ""),
                 "lab": "lab: agents write the analysis (EXPERIMENTAL)"}.get(kind, kind)
         after = f", after {', '.join(s.get('after') or [])}" if s.get("after") else ""
         run = f"   run: {os.path.basename(step_run(pdir, s['id']))}" if kind in ("pipeline", "lab") else ""
