@@ -20,6 +20,13 @@ STEPS = ("qc", "doublets", "normalisation", "feature_selection", "dimensionality
 ISGS = ("ISG15", "IFI6", "MX1", "IFIT1", "IFIT2", "IFIT3", "OAS1", "IFI44L", "ISG20", "LY6E", "IFITM3", "RSAD2", "STAT1")
 
 
+
+def cell_unit(unit):
+    """Does a statistics line's unit of replication say cells (not donors, samples or pseudobulks)?"""
+    import re as _re
+    u = unit.lower()
+    return bool(_re.search(r"\bcells?\b", u)) and not _re.search(r"donor|sample|individual|patient|pseudobulk|subject", u)
+
 def read(run_dir, name):
     path = os.path.join(run_dir, name)
     if not os.path.isfile(path):
@@ -71,7 +78,9 @@ def score(run_dir, dataset):
             "de_paired_by_donor": any(has(l.split("|")[3], r"donor", r"individual", r"patient") for l in stats if l.count("|") == 4),
             "de_per_cell_type": has(de_text, r"cell[ _-]?type", r"per cluster", r"each cluster"),
             "multiple_testing": has(stats_text, r"\bbh\b", r"benjamini", r"\bfdr\b", r"padj", r"adjusted"),
-            "no_cell_level_condition_test": not any(has(l, r"stim|ifn|interferon|condition|ctrl") and has(l.split("|")[1], r"\bcells?\b") for l in stats if l.count("|") == 4),
+            # cells as the unit of replication; a minimum number of cells per donor is not that
+            "no_cell_level_condition_test": not any(has(l, r"stim|ifn|interferon|condition|ctrl") and cell_unit(l.split("|")[1])
+                                                    for l in stats if l.count("|") == 4),
             "expects_interferon_genes": has(expected, r"interferon[- ]stimulated", r"\bISGs?\b") or sum(g in expected.upper() for g in ISGS) >= 2,
             "expects_cell_types": sum(has(expected, p) for p in (r"monocyte", r"\bT cells?\b|\bCD4\b|\bCD8\b", r"\bB cells?\b", r"\bNK\b")) >= 3,
         })
