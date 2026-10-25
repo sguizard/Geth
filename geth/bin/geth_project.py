@@ -335,7 +335,7 @@ def check(pdir, doc, started=()):
                 problems.append(f"{where}: Geth runs {nf}: make this step a pipeline step")
         elif kind == "lab":
             if not lab:
-                problems.append(f"{where}: this project does not allow the lab (geth project new ... --lab): make it a gap")
+                problems.append(f"{where}: this project does not allow the lab (geth legion new ... --lab): make it a gap")
             analyses = [u for u in ups if u.get("kind") == "pipeline"]
             single = glob.glob(os.path.join(data_dir, "*.h5ad"))
             if analyses and not (len(analyses) == 1 and gc.pipeline_name(str(analyses[0].get("pipeline"))) in H5AD_STEPS):
@@ -384,7 +384,7 @@ def approved_doc(pdir, quiet=False):
         return load(path)
     if quiet:
         return None
-    raise ValueError("the project's steps are not approved (or changed since): geth project approve " + os.path.basename(pdir))
+    raise ValueError("the project's steps are not approved (or changed since): geth legion approve " + os.path.basename(pdir))
 
 
 def status(pdir, step):
@@ -443,9 +443,9 @@ def show(pdir):
     print("\n" + (read(os.path.join(pdir, "steps_check.txt")).strip() or "Not checked yet."))
     record = load(os.path.join(pdir, "APPROVED"))
     print("Approved by " + record["approved_by"] + " on " + record["approved_at"] if approved_doc(pdir, quiet=True)
-          else "Not approved: geth project approve " + os.path.basename(pdir))
+          else "Not approved: geth legion approve " + os.path.basename(pdir))
     if os.path.isfile(os.path.join(pdir, "steps.proposed.json")):
-        print("The coordinator proposes new steps (steps.proposed.json): review them, then geth project approve.")
+        print("The coordinator proposes new steps (steps.proposed.json): review them, then geth legion approve.")
 
 
 # ---------------------------------------------------------------- the run
@@ -458,7 +458,7 @@ def geth(*args, quiet=False, env=None):
 
 def coordinate(pdir, mode, step=""):
     """The coordinator agent at a decision point (sandboxed, like every agent stage)."""
-    return geth("project", "_coordinate", os.path.basename(pdir), mode, step)
+    return geth("legion", "_coordinate", os.path.basename(pdir), mode, step)
 
 
 def download(pdir, step):
@@ -531,7 +531,7 @@ def run(pdir, answers="", auto=False):
             if state == "waiting for approval":
                 if not auto:
                     log(pdir, f"step {sid}: planned, waiting for you: geth show {run_name}; geth approve {run_name}; "
-                        f"then geth project run {name}")
+                        f"then geth legion run {name}")
                     return 2
                 geth("approve", run_name, "--yes", quiet=True)
                 state = status(pdir, step)
@@ -549,8 +549,8 @@ def run(pdir, answers="", auto=False):
                 log(pdir, f"step {sid}: {state}")
             action = review(pdir, step)
             if action == "revise":
-                log(pdir, f"the coordinator proposes new steps after {sid}: geth project show {name}; "
-                    f"geth project approve {name}; then geth project run {name}")
+                log(pdir, f"the coordinator proposes new steps after {sid}: geth legion show {name}; "
+                    f"geth legion approve {name}; then geth legion run {name}")
                 return 3
             stopped = action == "stop"
     if not os.path.isfile(os.path.join(pdir, "report.md")):
@@ -622,7 +622,7 @@ def lab_step(pdir, step, steps, auto):
     if state == "waiting for approval":
         if not auto:
             log(pdir, f"step {step['id']}: the lab's design waits for you: geth lab show {os.path.basename(design)}; "
-                f"geth project approve {os.path.basename(pdir)} --lab {step['id']}; then geth project run {os.path.basename(pdir)}")
+                f"geth legion approve {os.path.basename(pdir)} --lab {step['id']}; then geth legion run {os.path.basename(pdir)}")
             return "waiting"
         approve_lab(pdir, step["id"], "benchmark (automatic)")
         state = status(pdir, step)

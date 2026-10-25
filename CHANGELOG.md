@@ -2,9 +2,9 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
-## Unreleased (2.1.0, on feature/legion): projects
+## 2.1.0 (2026-10-25), the legion
 
-- **`geth project new / show / approve / run / list / stop`**: several analyses towards one question. A
+- **`geth legion new / show / approve / run / list / stop`**: a project, several analyses towards one question. A
   coordinator agent reads the delivery and proposes the steps (pipelines, follow-ups, an Ensembl genome download
   when the catalogue lacks the species, gaps naming the nf-core pipeline that would fill them, and with `--lab`
   the experimental lab); you approve them, and every step's plan, as before. After each step it reads the report

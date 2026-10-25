@@ -125,14 +125,14 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
   <span class="eyebrow">Geth 2.0 · codename</span>
   <div class="title-row">
     <h1>Rannoch</h1>
-    <span class="pill ok">R5 built</span>
+    <span class="pill ok">Geth 2.1.0 released</span>
   </div>
   <p class="lede">Geth on its own ground. The agents moved from Nextflow's preview <code>agent</code> feature to Geth's own small harness, which talks to the model service directly; since Geth 2.0 it is the only one. Nextflow keeps doing what it is best at: running the pipelines and the tools' jobs. The goal is a legion of agents that takes raw data to curated results, asking you what the data cannot tell.</p>
   <div class="meta">
     <span>Started 2026-10-21</span>
     <span>branch feature/rannoch</span>
     <span>Qwen 3.5 397B · ELM</span>
-    <span>Geth 2.0.0 (2026-10-23) · 1.x ended at v1.9.3</span>
+    <span>Geth 2.1.0 (2026-10-25) · 2.0.0 on 2026-10-23 · 1.x ended at v1.9.3</span>
   </div>
 </header>
 
@@ -234,9 +234,9 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li class="step done">
       <div class="node"><span class="dot">R5</span></div>
       <div class="step-body">
-        <div class="step-head"><h3>The legion: projects</h3><span class="pill ok">built</span></div>
+        <div class="step-head"><h3>The legion: projects</h3><span class="pill ok">released</span></div>
         <ul>
-          <li><code>geth project new / approve / run</code>: a coordinator agent turns a question into steps. A step is a pipeline, a follow-up, an Ensembl genome download, a gap, or (with <code>--lab</code>) the lab. Each pipeline step is an ordinary run: you approve its plan as before.</li>
+          <li><code>geth legion new / approve / run</code>: a coordinator agent turns a question into steps. A step is a pipeline, a follow-up, an Ensembl genome download, a gap, or (with <code>--lab</code>) the lab. Each pipeline step is an ordinary run: you approve its plan as before.</li>
           <li>The coordinator plans, reviews each finished step (continue, stop, or propose new steps for you to approve) and writes the project report, number-checked against every step. It never runs anything itself, and <code>--overrule</code> lets you go on when it stops.</li>
           <li>Gaps are named, never improvised: the nf-core catalogue (145 pipelines) tells which one would do it, e.g. nf-core/smrnaseq for microRNAs.</li>
           <li><code>--model</code> and <code>--budget</code> for the lab, so you can try Sol there with a hard cap: a request that would cross the budget is not sent.</li>
@@ -400,7 +400,8 @@ footer { font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; borde
     <li><time datetime="2026-10-23">2026-10-23</time><span>R4 started: the planner is good enough to generalise the harness to the other agents.</span></li>
     <li><time datetime="2026-10-23">2026-10-23</time><span>R4 done: operator, reporter, analyst and lab agents run on Rannoch. 8/8 runs honest, 31/31 reports fully traced, both lab builds delivered. Geth no longer needs Nextflow's agent feature; Nextflow only runs the pipelines and jobs.</span></li>
     <li><time datetime="2026-10-23">2026-10-23</time><span>Rannoch becomes the only Geth: the Nextflow agents are removed ("dead weight now"), released as Geth 2.0.0 on master. Runs planned with 1.x still run and report.</span></li>
-    <li><time datetime="2026-10-23">2026-10-23</time><span>R5 (projects): you approve every step's plan; gaps are reported, the lab only with <code>--lab</code>; command <code>geth project</code>. Sol for the lab: you run it, with a hard budget per command.</span></li>
+    <li><time datetime="2026-10-23">2026-10-23</time><span>R5 (projects): you approve every step's plan; gaps are reported, the lab only with <code>--lab</code>; command <code>geth project</code> (renamed <code>geth legion</code> at release). Sol for the lab: you run it, with a hard budget per command.</span></li>
+    <li><time datetime="2026-10-25">2026-10-25</time><span>Released as Geth 2.1.0. You renamed the command <code>geth legion</code>: "You deserve the honours after all."</span></li>
   </ul>
 </section>
 

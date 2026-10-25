@@ -1,4 +1,4 @@
-"""geth project: the coordinator agent, at the project's three decision points.
+"""geth legion: the coordinator agent, at the project's three decision points.
 
     python3 -m harness.project --run_dir <project dir> --mode plan [--ask terminal|file|none|off] [--answers <file>]
     python3 -m harness.project --run_dir <project dir> --mode review --step <id>

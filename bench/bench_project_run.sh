@@ -23,16 +23,16 @@ declare -A question=(
     [bulk_de]="Which genes change expression when these airway smooth muscle cells are treated with dexamethasone?" )
 
 {
-trap 'echo "Interrupted: stopping ${name:-} ..." >&2; [ -n "${name:-}" ] && "$geth" project stop "$name" >&2; exit 130' INT TERM
+trap 'echo "Interrupted: stopping ${name:-} ..." >&2; [ -n "${name:-}" ] && "$geth" legion stop "$name" >&2; exit 130' INT TERM
 for item in "$@"; do
     IFS=: read -r name scenario <<< "$item"
     lab=(); [ "$scenario" = kang_lab ] && lab=(--lab)
     p=$GETH_RUNS_DIR/projects/$name
     t0=$(date +%s)
-    [ -d "$p" ] || "$geth" project new "${data[$scenario]}" "${question[$scenario]}" "$name" "${lab[@]}" < /dev/null > /dev/null 2>&1
-    "$geth" project approve "$name" --yes > /dev/null 2>&1
+    [ -d "$p" ] || "$geth" legion new "${data[$scenario]}" "${question[$scenario]}" "$name" "${lab[@]}" < /dev/null > /dev/null 2>&1
+    "$geth" legion approve "$name" --yes > /dev/null 2>&1
     t1=$(date +%s)
-    "$geth" project run "$name" --yes < /dev/null > "$p/bench_run.out" 2>&1; rc=$?
+    "$geth" legion run "$name" --yes < /dev/null > "$p/bench_run.out" 2>&1; rc=$?
     t2=$(date +%s)
     python3 - "$p" "$scenario" "$rc" "$(( t1 - t0 ))" "$(( t2 - t1 ))" <<'PY' || echo "{\"run\": \"$name\", \"error\": \"scoring failed\"}"
 import json, os, sys

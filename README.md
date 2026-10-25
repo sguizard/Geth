@@ -47,6 +47,14 @@ Then follow up on a finished run, for example with differential expression:
 geth plan --from my_experiment "Which genes change with the treatment? Pair samples by donor." my_experiment_de
 ```
 
+Or let the legion split a bigger question into steps (pipelines, follow-ups, a genome download when needed),
+each one planned, approved and run as above, with one report at the end:
+
+```bash
+geth legion new /data/my_experiment "Which genes change with the treatment, and in which cell types?" my_project
+geth legion approve my_project && geth legion run my_project   # stops whenever a step's plan needs you
+```
+
 ## What it runs
 
 | Analysis | Pipeline | Status |

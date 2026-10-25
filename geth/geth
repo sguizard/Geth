@@ -15,7 +15,7 @@
 #   geth stop <name>                           stop a planning or a run, and its scheduler jobs (geth run resumes it)
 #   geth doctor                                check the installation and the site configuration
 #   geth version                               print Geth's version
-#   geth project new|show|approve|run|list|stop  several analyses towards one question (geth project for details)
+#   geth legion new|show|approve|run|list|stop  a project: several analyses towards one question (geth legion)
 #   geth lab ...                               EXPERIMENTAL agent-designed analyses (not for real analyses)
 source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)/env.sh" || exit 1
 set -euo pipefail
@@ -127,30 +127,30 @@ project_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._]+$ ]] || { echo "Project names may only use letters, digits, '.' and '_'." >&2; exit 1; }
     echo "$runs/projects/$1"
 }
-project_usage() {
+legion_usage() {
     cat >&2 <<'USAGE'
-geth project: several analyses towards one question. The coordinator agent proposes the steps and you approve
-them; each pipeline step is an ordinary Geth run, named <project>-<step> (geth show / approve / status it).
+geth legion: a project, several analyses towards one question. The coordinator agent proposes the steps and
+you approve them; each pipeline step is an ordinary Geth run, named <project>-<step> (geth show / approve it).
 
-  geth project new <data_dir> "<question>" <name> [--lab] [--answers <file>] [--model <name>]
+  geth legion new <data_dir> "<question>" <name> [--lab] [--answers <file>] [--model <name>]
                                       the coordinator reads the delivery and proposes the steps
                                       (--lab: allow the EXPERIMENTAL lab, agents writing the analysis code,
                                       for what no pipeline does)
-  geth project show <name>            the steps, where each stands, the coordinator's rationale
-  geth project approve <name> [--yes] approve the steps (or the coordinator's revised steps)
-  geth project approve <name> --lab <step> [--yes]   approve a lab step's design (geth lab show it first)
-  geth project run <name> [--answers <file>] [--detach] [--overrule]
+  geth legion show <name>            the steps, where each stands, the coordinator's rationale
+  geth legion approve <name> [--yes] approve the steps (or the coordinator's revised steps)
+  geth legion approve <name> --lab <step> [--yes]   approve a lab step's design (geth lab show it first)
+  geth legion run <name> [--answers <file>] [--detach] [--overrule]
                                       run the next steps; it stops when a step's plan needs your approval
                                       (geth show / geth approve <name>-<step>): run it again to continue.
                                       --overrule: go on with the approved steps although the coordinator
                                       stopped the project (or proposed other steps)
-  geth project list                   all projects and where they stand
-  geth project stop <name>            stop the project and its running step
+  geth legion list                   all projects and where they stand
+  geth legion stop <name>            stop the project and its running step
 USAGE
     exit 1
 }
 
-project() {  # project <subcommand> ...: see project_usage
+legion() {  # legion <subcommand> ...: see legion_usage (a project: several analyses towards one question)
     local sub=${1:-} p rc
     shift || true
     case "$sub" in
@@ -159,12 +159,12 @@ project() {  # project <subcommand> ...: see project_usage
             while [ $# -gt 0 ]; do
                 case $1 in
                     --lab) lab=true; shift ;;
-                    --answers) answers=$(readlink -f "${2:-}"); shift 2 || project_usage ;;
-                    --model) model=${2:-}; shift 2 || project_usage ;;
+                    --answers) answers=$(readlink -f "${2:-}"); shift 2 || legion_usage ;;
+                    --model) model=${2:-}; shift 2 || legion_usage ;;
                     *) args+=("$1"); shift ;;
                 esac
             done
-            [ ${#args[@]} -eq 3 ] || project_usage
+            [ ${#args[@]} -eq 3 ] || legion_usage
             local data_dir question=${args[1]}
             data_dir=$(readlink -f "${args[0]}"); p=$(project_dir_of "${args[2]}")
             [ -d "$data_dir" ] || { echo "No such folder: $data_dir" >&2; exit 1; }
@@ -187,18 +187,18 @@ project() {  # project <subcommand> ...: see project_usage
             GETH_LOG_SUFFIX=_plan agents "$p" project --mode plan --ask "$ask" ${answers:+--answers "$p/answers.txt"} \
                 || { echo "Planning the project failed: see $p/geth_project_plan.log" >&2; exit 1; }
             python3 "$project_py" show "$p"
-            echo; echo "Review the steps, then: geth project approve ${args[2]}"
+            echo; echo "Review the steps, then: geth legion approve ${args[2]}"
             ;;
         show|status)
-            [ $# -eq 1 ] || project_usage
+            [ $# -eq 1 ] || legion_usage
             python3 "$project_py" show "$(project_dir_of "$1")"
             ;;
         approve)
-            [ $# -ge 1 ] || project_usage
+            [ $# -ge 1 ] || legion_usage
             p=$(project_dir_of "$1"); shift
             local lab_step= yes=no
             while [ $# -gt 0 ]; do
-                case $1 in --lab) lab_step=${2:-}; shift 2 || project_usage ;; --yes) yes=yes; shift ;; *) project_usage ;; esac
+                case $1 in --lab) lab_step=${2:-}; shift 2 || legion_usage ;; --yes) yes=yes; shift ;; *) legion_usage ;; esac
             done
             if [ -n "$lab_step" ]; then  # a lab step's design (EXPERIMENTAL): read it first with geth lab show
                 "$GETH_HOME/geth/lab/lab.sh" show "$(basename "$p")-$lab_step-design"
@@ -215,22 +215,22 @@ project() {  # project <subcommand> ...: see project_usage
             else python3 "$project_py" approve "$p" "$(whoami)"; fi
             ;;
         run)
-            [ $# -ge 1 ] || project_usage
+            [ $# -ge 1 ] || legion_usage
             p=$(project_dir_of "$1"); shift
             [ -d "$p" ] || { echo "No project named '$(basename "$p")'." >&2; exit 1; }
             local detach=no extra=()
             while [ $# -gt 0 ]; do
                 case $1 in
                     --detach) detach=yes; shift ;;
-                    --answers) extra+=(--answers "$(readlink -f "${2:-}")"); shift 2 || project_usage ;;
+                    --answers) extra+=(--answers "$(readlink -f "${2:-}")"); shift 2 || legion_usage ;;
                     --yes) extra+=(--auto-approve); shift ;;  # benchmarks only: approve each step's plan as planned
                     --overrule) extra+=(--overrule "$(whoami)"); shift ;;  # you overrule the coordinator's stop
-                    *) project_usage ;;
+                    *) legion_usage ;;
                 esac
             done
             if [ "$detach" = yes ]; then
                 setsid nohup "$self" project run "$(basename "$p")" "${extra[@]}" > "$p/project_run.out" 2>&1 < /dev/null &
-                echo "Started in the background (pid $!). Follow it with: geth project show $(basename "$p")   (log: $p/log.md)"
+                echo "Started in the background (pid $!). Follow it with: geth legion show $(basename "$p")   (log: $p/log.md)"
                 exit 0
             fi
             driver_alive "$p/.geth_driver.pid" && { echo "Project '$(basename "$p")' is already running." >&2; exit 1; }
@@ -240,11 +240,11 @@ project() {  # project <subcommand> ...: see project_usage
             exit $rc
             ;;
         list)
-            [ $# -eq 0 ] || project_usage
+            [ $# -eq 0 ] || legion_usage
             python3 "$project_py" list "$runs/projects"
             ;;
         stop)
-            [ $# -eq 1 ] || project_usage
+            [ $# -eq 1 ] || legion_usage
             p=$(project_dir_of "$1")
             "$GETH_HOME/geth/bin/stop_driver.sh" "$p"
             local r
@@ -258,7 +258,7 @@ project() {  # project <subcommand> ...: see project_usage
             for r in "$runs/$(basename "$p")"-* "$runs/lab/$(basename "$p")"-*; do [ -d "$r" ] && ro+=(--step_run "$r"); done
             GETH_LOG_SUFFIX=_$mode${step:+_$step} agents "$p" project --mode "$mode" ${step:+--step "$step"} "${ro[@]}"
             ;;
-        *) project_usage ;;
+        *) legion_usage ;;
     esac
 }
 
@@ -410,8 +410,8 @@ case "$cmd" in
     lab)
         exec "$GETH_HOME/geth/lab/lab.sh" "$@"
         ;;
-    project)
-        project "$@"
+    legion)
+        legion "$@"
         ;;
     *) usage ;;
 esac

@@ -26,14 +26,14 @@ declare -A question=(
     [kang_lab]="Which genes respond to interferon-beta in each immune cell type of these PBMCs?" )
 
 {
-trap 'echo "Interrupted: stopping ${name:-} ..." >&2; [ -n "${name:-}" ] && "$geth" project stop "$name" >&2; exit 130' INT TERM
+trap 'echo "Interrupted: stopping ${name:-} ..." >&2; [ -n "${name:-}" ] && "$geth" legion stop "$name" >&2; exit 130' INT TERM
 for scenario in "$@"; do
     [ -n "${question[$scenario]:-}" ] || { echo "unknown scenario: $scenario" >&2; continue; }
     lab=(); [ "$scenario" = kang_lab ] && lab=(--lab)
     for i in $(seq 1 "$repeats"); do
         name=${tag}_${scenario}_$i
         t0=$(date +%s)
-        "$geth" project new "${data[$scenario]}" "${question[$scenario]}" "$name" "${lab[@]}" < /dev/null > /dev/null 2>&1 \
+        "$geth" legion new "${data[$scenario]}" "${question[$scenario]}" "$name" "${lab[@]}" < /dev/null > /dev/null 2>&1 \
             && status=ok || status=failed
         t1=$(date +%s)
         p=$GETH_RUNS_DIR/projects/$name

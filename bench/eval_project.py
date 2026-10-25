@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score a project's steps (geth project new) against the known right steps of its scenario.
+"""Score a project's steps (geth legion new) against the known right steps of its scenario.
 
 Usage: eval_project.py <project_dir> <scenario>  -> one JSON line
 Scenarios (bench/bench_project.sh):

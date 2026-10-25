@@ -475,13 +475,13 @@ launch.
 Results are appended as JSON lines to `$GETH_BENCH_DIR/<tag>.jsonl`. Benchmarks approve plans
 automatically: use public data only.
 
-## Projects (geth project)
+## The legion: projects (geth legion)
 
 A project is a list of steps towards one question, in `$GETH_RUNS_DIR/projects/<name>/`. Geth's agents never
 run a step themselves: `geth_project.py` (no model) checks and runs them, and the coordinator
 (`harness/project.py`) only decides, at three points.
 
-1. **Plan** (`geth project new`): the coordinator reads the delivery with the planner's read-only tools, plus
+1. **Plan** (`geth legion new`): the coordinator reads the delivery with the planner's read-only tools, plus
    `LIST_CAPABILITIES` (generated from the registry and the skills), `SEARCH_NFCORE` and `FIND_GENOME`
    (Ensembl's REST API). It ends with `SUBMIT_STEPS`. Each step has an `id`, a `kind`, its own `question` and
    `after` (the ids of earlier steps it builds on):
@@ -494,7 +494,7 @@ run a step themselves: `geth_project.py` (no model) checks and runs them, and th
    - `lab`: only when the project was created with `--lab`, from one scrnaseq or sc_downstream step's count
      matrix, or from a delivery that is one `.h5ad`.
    At most 8 steps. `steps_check.txt` holds the result; `APPROVED` the approver and the SHA-256 of `steps.json`.
-2. **Run** (`geth project run`, `geth_project.py run`): the steps in order. A pipeline step is planned with
+2. **Run** (`geth legion run`, `geth_project.py run`): the steps in order. A pipeline step is planned with
    `geth plan` (or `--from` its upstream step's run) into `<project>-<step>`; the runner stops (exit 2) until a
    person approves that plan; then `geth run`. A reference step runs `stage_ensembl.sh` through
    `GETH_DOWNLOAD_SUBMIT`. A lab step links the count matrix and a README into `lab_<step>/`, adds it to

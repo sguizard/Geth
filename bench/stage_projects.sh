@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deliveries for the project benchmark (geth project, R5), in $GETH_DATA_ROOT/testdata:
+# Deliveries for the project benchmark (geth legion, R5), in $GETH_DATA_ROOT/testdata:
 #   project_multiomics_yeast  RNA-seq (RNA/) and ATAC-seq (ATAC/) of yeast in one delivery: two independent steps
 #   project_yeast_noref       the yeast RNA-seq without its reference: Ensembl's yeast genome must be staged first
 #   project_smallrna          human small-RNA (miRNA) reads, which no Geth pipeline handles: a gap (nf-core/smrnaseq)
