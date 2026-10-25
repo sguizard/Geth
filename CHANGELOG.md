@@ -2,6 +2,11 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 2.1.1 (2026-10-25)
+
+- `geth legion run --detach` starts the project: the background run called the command by its old name, and with
+  options it does not take (`--yes`, `--answers` and `--overrule` were lost).
+
 ## 2.1.0 (2026-10-25), the legion
 
 - **`geth legion new / show / approve / run / list / stop`**: a project, several analyses towards one question. A

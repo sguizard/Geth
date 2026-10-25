@@ -218,18 +218,18 @@ legion() {  # legion <subcommand> ...: see legion_usage (a project: several anal
             [ $# -ge 1 ] || legion_usage
             p=$(project_dir_of "$1"); shift
             [ -d "$p" ] || { echo "No project named '$(basename "$p")'." >&2; exit 1; }
-            local detach=no extra=()
+            local detach=no extra=() again=()  # extra: for geth_project.py; again: the options as typed, for --detach
             while [ $# -gt 0 ]; do
                 case $1 in
                     --detach) detach=yes; shift ;;
-                    --answers) extra+=(--answers "$(readlink -f "${2:-}")"); shift 2 || legion_usage ;;
-                    --yes) extra+=(--auto-approve); shift ;;  # benchmarks only: approve each step's plan as planned
-                    --overrule) extra+=(--overrule "$(whoami)"); shift ;;  # you overrule the coordinator's stop
+                    --answers) extra+=(--answers "$(readlink -f "${2:-}")"); again+=(--answers "$(readlink -f "${2:-}")"); shift 2 || legion_usage ;;
+                    --yes) extra+=(--auto-approve); again+=(--yes); shift ;;  # benchmarks only: approve each step's plan as planned
+                    --overrule) extra+=(--overrule "$(whoami)"); again+=(--overrule); shift ;;  # you overrule the coordinator's stop
                     *) legion_usage ;;
                 esac
             done
             if [ "$detach" = yes ]; then
-                setsid nohup "$self" project run "$(basename "$p")" "${extra[@]}" > "$p/project_run.out" 2>&1 < /dev/null &
+                setsid nohup "$self" legion run "$(basename "$p")" "${again[@]}" > "$p/project_run.out" 2>&1 < /dev/null &
                 echo "Started in the background (pid $!). Follow it with: geth legion show $(basename "$p")   (log: $p/log.md)"
                 exit 0
             fi
