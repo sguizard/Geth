@@ -512,8 +512,9 @@ genome, one folder per pipeline that keeps its README, a pipeline needs reads) a
 the question does not ask for). Median 1.1 minutes per project plan. Projects run end to end: a yeast genome
 downloaded on the staging queue and used by the next step; a PBMC subset counted, stopped by the coordinator as
 too thin, then run on with `--overrule`; a Kang 2018 lab step designed, built and run (pseudobulk DESeq2, the
-interferon response in 9 of 10 cell types). Every project report traced all its numbers. The yeast DE step
-cannot work on its test reads (141 genes with 10 counts), and the airway project stopped on a full scratch quota.
+interferon response in 9 of 10 cell types); the airway project from raw reads to the textbook result (all 7
+known dexamethasone genes up, the same 650 DE genes as the hand-made baseline). Every project report traced all
+its numbers. The yeast DE step cannot work on its test reads (141 genes with 10 counts).
 
 ## Not yet tested
 
