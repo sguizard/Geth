@@ -13,7 +13,7 @@ If someone in your team already installed Geth, you only need step 5 and the [us
 |---|---|---|
 | Linux with bash | | Developed on Rocky/RHEL 9. macOS is untested. |
 | Java | 17 or later | Tested with 21. Needed by Nextflow. |
-| Nextflow | 26.10.2 | Any recent launcher works: Geth pins the version it runs (`NXF_VER`). The `agent` feature needs 26.10 or later. |
+| Nextflow | 26.10.2 | Any recent launcher works: Geth pins the version it runs (`NXF_VER`), for its own jobs (written with typed processes) and for each nf-core pipeline. |
 | Container engine | apptainer or singularity | Tested with apptainer 1.4.4. nf-core pipelines also run with docker or podman, but Geth's single-cell toolbox needs apptainer or singularity. |
 | Python | 3.9 or later | Standard library only. |
 | git | | To clone Geth. |
@@ -70,6 +70,11 @@ Use a strong model. Geth's agents plan whole analyses, and the validation result
 **Qwen3.5-397B-A17B**. Geth refuses to start with any model that is not in `GETH_LLM_ALLOWED_MODELS`. If
 your key could also reach paid models, the allowlist keeps Geth on the ones you chose.
 
+A site may also offer a stronger, paid model for one command at a time (`geth plan --model sol`,
+`geth legion new --model sol`, `geth lab ... --model sol --budget 0.50`). Each such model is defined in the
+site file with its prices and a budget, and Geth never sends a request that could cross the budget
+([configuration](configuration.md#language-model)).
+
 ## 4. Describe your site
 
 Copy the template, or the example closest to your setup, to `site/site.env`. This file is not committed
@@ -91,13 +96,17 @@ Then edit it. You need to make four decisions:
 2. **Which model.** Set `GETH_LLM_BASE_URL`, `GETH_LLM_MODEL` and `GETH_LLM_ALLOWED_MODELS`, and set
    `GETH_LLM_API_KEY_VAR` if your key is in another variable.
 3. **How jobs run.**
-   - `GETH_NF_CONFIG` is a Nextflow config for Geth's own tasks.
+   - `GETH_NF_CONFIG` is a Nextflow config for Geth's own jobs: the single-cell toolbox's steps and the
+     lab's tests.
    - `GETH_NFCORE_PROFILE` is the profile given to every nf-core pipeline: your nf-core institutional
      profile, or simply `apptainer`, `singularity` or `docker`.
-   - On a cluster, the simplest config for Geth's own tasks includes your institutional profile, like
+   - On a cluster, the simplest config for Geth's own jobs includes your institutional profile, like
      `site/examples/eddie.config` does.
 4. **GPU.** Set `GETH_GPU=yes` if CellBender can use a GPU. On SGE you also need a small config that sends
    GPU tasks to the right queue (example: `site/examples/eddie-gpu.config`).
+5. **Genome downloads in projects.** `geth legion` can download a missing genome from Ensembl. On a cluster
+   where downloads must run on a transfer queue, set `GETH_DOWNLOAD_SUBMIT` to the command that submits
+   one and waits for it (see [configuration](configuration.md#nextflow-and-jobs)).
 
 [Configuration](configuration.md) explains each setting and gives a Slurm example.
 
@@ -118,8 +127,8 @@ source /path/to/Geth/env.fish
 
 `env.fish` runs `env.sh` in bash and copies the result into fish, so the site file stays a bash file and
 both shells get the same settings. It also loads tab completion for `geth`: commands, run names (with
-their pipeline), lab runs (with their arm), and options such as `--from`, `--yes`, `--detach` and
-`--no-skill`.
+their pipeline), projects, lab runs (with their arm), and options such as `--from`, `--answers`, `--yes`,
+`--detach`, `--model` and `--lab`.
 
 ## 6. Fill the reference catalogue
 
@@ -214,7 +223,7 @@ The [user guide](user-guide.md) explains each step.
 
 ## 9. Optional: contain the agents
 
-To run the agents' drivers in a container, which sees only each run, its data and the reference catalogue
+To run the agents in a container, which sees only each run, its data and the reference catalogue
 ([configuration](configuration.md#agents-container-and-time-limits)), pull the small agent image once, on a
 machine with internet access (on a cluster, a transfer or staging queue):
 

@@ -346,7 +346,7 @@ def main(argv=None):
               f"The run's outcome:\n\n```\n{read(a.run_dir, 'outcome.txt')}```\n")
         write(a.run_dir, "report_check.txt", "REPORT CHECK: no report was written\n")
     print(read(a.run_dir, "report_check.txt").strip() or "No report was saved.", flush=True)
-    print(f"Model usage: {json.dumps({k: round(v, 1) for k, v in client.usage.items()})}", flush=True)
+    print(f"Model usage: {json.dumps({k: round(v, 4 if k == 'usd' else 1) for k, v in client.usage.items()})}", flush=True)
     return 0 if (a.report_only or outcome.get("succeeded")) and result else 1
 
 

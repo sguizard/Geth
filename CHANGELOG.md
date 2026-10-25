@@ -2,6 +2,23 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 2.1.2 (2026-10-25)
+
+- **The documentation matches the code again.** Projects (`geth legion`) are in the introduction, installation
+  and user guide (`--detach`, `--answers`, `--model`, `--overrule`); the configuration page describes how 2.x
+  loads its settings, the chosen-model settings (`GETH_MODEL_<NAME>_*`), `GETH_DOWNLOAD_SUBMIT`,
+  `GETH_PLANNER_ASK` and the benchmark variables; the developer guide covers the coordinator, the model budget
+  and the project benchmarks; validation has the paid-model comparison (planner and lab).
+- In the agent sandbox, a model chosen with `--model` that has its own key variable
+  (`GETH_MODEL_<NAME>_API_KEY_VAR`) now gets its key: the sandbox read only the 2.0.0 name.
+- Fish completion: `geth legion new / approve / run` options, `geth lab judge / build / build-c`, `--model` and
+  `--budget`.
+- The lab and run stages print their cost to 4 decimals (`model_spend.txt` had rounded it to 10 cents).
+- `site.env.example` and the Eddie example use the `GETH_MODEL_SOL_*` names (the 2.0.0 names still work) and
+  state the driver slots of 2.x; `geth status` and `geth lab show` say "agents: in the agent sandbox".
+- Benchmarks: `bench_plan.sh` reads the chosen model's 2.1 name; the lab design scorer no longer takes a
+  minimum number of cells per donor for cells as the unit of replication.
+
 ## 2.1.1 (2026-10-25)
 
 - `geth legion run --detach` starts the project: the background run called the command by its old name, and with

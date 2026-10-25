@@ -48,7 +48,8 @@ site/
   site.env.example         documented template of the site configuration (copy to site/site.env)
   examples/                worked site configurations: local machine, an SGE cluster with GPUs
 geth/
-  geth                     the command line: plan, show, approve, run, status, report, list, stop, doctor, version, lab
+  geth                     the command line: plan, show, approve, run, status, report, list, stop, doctor, version,
+                           legion, lab
   harness/                 the agents (Python, standard library only):
     agent.py               the loop: tools, skills, final tools, refusal guard, trace
     llm.py                 the model client: chat completions or the Responses API, retries, usage, budgets
@@ -73,12 +74,13 @@ geth/
     agent_sandbox.sh       runs an agent stage in a container (GETH_AGENT_SANDBOX, phase 12)
     env_export.sh          env.fish helper: what env.sh changes in the environment, as NUL-separated records
   completions/geth.fish    fish tab completion (loaded by env.fish)
-  conf/                    configs added to nf-core runs: resource caps, legacy singularity engine
+  conf/                    configs added to nf-core runs: resource caps (test, production), legacy singularity engine
   schemas/                 <pipeline>-<release>.params.json / .input.json, verbatim from each release;
                            nfcore_catalogue.tsv: every nf-core pipeline (name, release, description), for gaps
   skills/                  planner skills: one SKILL.md per pipeline, plus sc-downstream
   references/              scripts that add entries to the reference catalogue
-  tests/                   unit tests of the gates, the agents (with a scripted model) and the lab (self-contained)
+  tests/                   unit tests of the gates, the agents (with a scripted model), projects and the lab
+                           (self-contained)
   lab/                     the EXPERIMENTAL lab (phase 11): not used by geth plan / geth run
     lab.sh                 geth lab: design, judge, show, list, build (arm B), build-c (arm C), stop
     jobs.nf                the lab tools' scheduler jobs: LAB_INSPECT, MAKE_SUBSET, TEST_STEP, LINT_PIPELINE,
@@ -96,7 +98,7 @@ spikes/                    the first feasibility experiments (frozen)
 ## The run folder
 
 Everything about one analysis lives in `$GETH_RUNS_DIR/<name>`. Geth never writes elsewhere, apart from
-Nextflow's cache. The files below are the interface between the CLI, the agents, the gates and the
+Nextflow's cache (and, for a project's reference step, the reference catalogue). The files below are the interface between the CLI, the agents, the gates and the
 person.
 
 | File | Written by | Content |
@@ -272,9 +274,12 @@ earlier analysis.
 | Agent | Tools | Skills | Turns | Final tool |
 |---|---|---|---|---|
 | `planner` | `LIST_FILES`, `READ_TEXT`, `LIST_REFERENCES`, `INSPECT_READS`, `PIPELINE_OPTIONS`, `ASK_USER`, `CHECK_PLAN` (+ `SC_INSPECT` on a scrnaseq follow-up) | every pipeline skill (+ `sc-downstream` on a scrnaseq follow-up) | 25 | `SUBMIT_PLAN` |
-| `operator` | `RUN_NFCORE` | none | 10 | `SUBMIT_OUTCOME` |
+| `operator` | `RUN_NFCORE`, `PIPELINE_OPTIONS` | none | 10 | `SUBMIT_OUTCOME` |
 | `analyst` | `SC_ANALYSE`, `SAVE_ANNOTATIONS` | `sc-downstream` | 8 | `SUBMIT_OUTCOME` |
 | `reporter` | `COLLECT_RESULTS` | none | 6 | `SUBMIT_REPORT` |
+| `coordinator` (projects) | plan: the planner's read-only tools, `ASK_USER`, `LIST_CAPABILITIES`, `SEARCH_NFCORE`, `FIND_GENOME`, `CHECK_STEPS`; review: `READ_STEP`; summary: `READ_STEP` | none | 30, 12, 12 | `SUBMIT_STEPS`, `DECIDE`, `SUBMIT_REPORT` |
+
+The lab's agents (designer, judge, engineers, reviewer) are described [below](#the-lab-experimental-phase-11).
 
 The loop (`agent.py`) keeps the agents honest about what it cannot check itself:
 - a tool never kills the agent: any failure comes back as text;
@@ -285,8 +290,11 @@ The loop (`agent.py`) keeps the agents honest about what it cannot check itself:
 - every request, answer and tool call goes to `harness_trace_<stage>.jsonl` (never the API key).
 
 The model client (`llm.py`) speaks OpenAI-compatible chat completions, or the Responses API that GPT-6
-models need for tools with reasoning. It retries, and counts tokens and time. A paid planner model
-(`geth plan --model <name>`) needs its prices and a budget, and stops at the budget. Instructions state
+models need for tools with reasoning. It retries, and counts tokens, cost and time. A model a person chooses
+for one command (`--model <name>`: `geth plan`, `geth legion new`, `geth lab`; `model_client()` reads
+`GETH_MODEL_*`, set by `use_model` in `driver_slots.sh`) needs its prices and a budget. Before each request,
+`_room()` estimates its input cost and caps the output tokens so that the request cannot cross the budget; a
+request with too little room left is not sent. Instructions state
 what success looks like ("never claim success unless the tool printed STATUS: SUCCESS").
 
 **Skills** are Markdown files with a YAML header (`name`, `description`). The planner loads the one it
@@ -406,15 +414,15 @@ are often read-only in jobs.
 
 ## Site configuration internals
 
-- `env.sh` is the only place that reads `site/site.env`. Everything else reads environment variables.
-  `geth/nextflow.config` turns them into `params.model`, `params.allowed_models`, `params.data_root`,
-  `params.runs_dir` and `params.references`, and configures the `agent` scope.
+- `env.sh` is the only place that reads `site/site.env`. Everything else reads environment variables. The
+  agents read the model settings in `harness/llm.py`; `geth/nextflow.config` turns the folders into
+  `params.data_root`, `params.runs_dir` and `params.references` for the tools' scheduler jobs.
 - `env.fish` does not re-implement `env.sh`: it imports the changes `env.sh` makes in bash
   (`geth/bin/env_export.sh`). Fish completions are in `geth/completions/geth.fish`; update them when a
   command or option changes.
-- The local tools (`executor 'local'`) inherit the driver's environment, so `run_nfcore.sh` and the
-  checks see the site settings. Scheduler jobs do not: `SC_ANALYSE` exports `GETH_REFERENCES` itself,
-  and the containers get `-B` binds for the three Geth folders.
+- The agents' tools run as subprocesses of the stage and inherit its environment, so `run_nfcore.sh` and the
+  checks see the site settings. Scheduler jobs do not: `jobs.nf`'s `SC_ANALYSE` exports `GETH_REFERENCES`
+  itself, and the containers get `-B` binds for the three Geth folders.
 - **The site's task prelude survives a pipeline's own `beforeScript`.** An institutional profile often
   loads the container engine in `process.beforeScript` (Eddie: `module load apptainer`). A pipeline that
   sets `beforeScript` for one process replaces it there (scrnaseq 4.2.0's `CELLRANGER_MULTI`: the job
@@ -428,7 +436,7 @@ are often read-only in jobs.
 ## Tests
 
 ```bash
-python3 geth/tests/test_geth_checks.py -v      # the gates: 40 tests, under a second, no site needed
+python3 geth/tests/test_geth_checks.py -v      # the gates: 60 tests, under a second, no site needed
 python3 geth/tests/test_collect_results.py -v  # result summaries and the report check
 python3 geth/tests/test_lab_build.py -v        # the lab's bookkeeping (arms B and C) and the shell quoting
 python3 geth/tests/test_harness.py -v          # the agent loop and the planner's tools, with a scripted model
@@ -436,7 +444,8 @@ python3 geth/tests/test_harness_run.py -v      # operator, analyst and reporter:
 python3 geth/tests/test_harness_lab.py -v      # the lab's agents: design check, notes and review
 python3 geth/tests/test_project.py -v          # projects: the step check, approval, the runner (stand-in commands)
 nextflow lint geth/jobs.nf geth/lab/jobs.nf
-for f in geth/geth geth/lab/lab.sh geth/bin/*.sh geth/lab/bin/*.sh bench/*.sh bench/lab/*.sh; do bash -n "$f"; done
+for f in env.sh geth/geth geth/lab/lab.sh geth/bin/*.sh geth/lab/bin/*.sh geth/references/*.sh bench/*.sh bench/lab/*.sh; do bash -n "$f"; done
+fish -n env.fish geth/completions/geth.fish
 geth doctor                                    # with a site: also probes the agent sandbox
 ```
 
@@ -471,6 +480,9 @@ launch.
 | `bench/eval_plan.py <run> <dataset>` | Scores a plan against the known truth: `bulk`, `sc`, `airway`, `pbmc`, `airway_de`, and the seven deliveries. Each scorer was checked with a hand-written correct plan (full marks, passes the plan check) and with injected mistakes. |
 | `bench/eval_run.py <run> <dataset> <plan_s> <run_s>` | Plan score, design kept in every launched attempt, success, report check, attempts and refusals. For `airway_de`, the overlap with the baseline and the known dexamethasone genes. |
 | `bench/eval_sc.py <run>` | Expected PBMC populations and markers, CellTypist agreement, QC sanity. |
+| `bench/stage_projects.sh` | Deliveries for projects: yeast RNA-seq and ATAC-seq together, yeast RNA-seq without its reference, human small RNA (a gap). |
+| `bench/bench_project.sh <tag> <repeats> <scenario>...` | Project plans only (`geth legion new`), scored by `eval_project.py` against the right steps of each scenario. |
+| `bench/bench_project_run.sh <tag> <name>:<scenario>...` | Projects end to end, every approval automatic (benchmark data only): where each step ended and the project report's check. |
 
 Results are appended as JSON lines to `$GETH_BENCH_DIR/<tag>.jsonl`. Benchmarks approve plans
 automatically: use public data only.
@@ -506,8 +518,8 @@ run a step themselves: `geth_project.py` (no model) checks and runs them, and th
 4. **Summary**: `SUBMIT_REPORT` writes `report.md`, checked by `check_report.check_against` against the facts of
    every finished step's run, what the steps' reports quoted, and a lab step's result tables.
 
-The coordinator runs as an agent stage (sandboxed, no driver slot), with the step runs mounted read-only
-(`--step_run`). `geth_project_<mode>.log` and `harness_trace_<mode>.jsonl` record each decision; `log.md`
+The coordinator runs as an agent stage (sandboxed, no driver slot), with the project's step runs and lab runs
+mounted read-only (`--step_run`). `geth_project_<mode>.log` and `harness_trace_<mode>.jsonl` record each decision; `log.md`
 records the run in plain words.
 
 ## The lab (experimental, phase 11)
@@ -596,7 +608,8 @@ frozen project (`pipeline_c/`), in one sandboxed job that retries with more memo
 ## Agents in a container (phase 12)
 
 With `GETH_AGENT_SANDBOX=yes`, `sandboxed` in `geth/bin/driver_slots.sh` starts every agent stage through
-`geth/bin/agent_sandbox.sh`; this covers `geth plan`, `geth run` and `geth report`, and every `geth lab` stage.
+`geth/bin/agent_sandbox.sh`; this covers `geth plan`, `geth run` and `geth report`, the coordinator of
+`geth legion`, and every `geth lab` stage.
 The jobs the agents' tools start (nf-core pipelines, toolbox and lab jobs) are launched from inside. The wrapper:
 - mounts, read-write, only the run folder, `NXF_HOME` and `GETH_AGENT_SANDBOX_RW`
 - mounts, read-only, Geth, this run's data folder (the driver's `--data_dir`, or `data_dir.txt`), the
@@ -604,13 +617,13 @@ The jobs the agents' tools start (nf-core pipelines, toolbox and lab jobs) are l
   path the settings use, even behind a symbolic link
 - passes the scheduler's ports, which the container cannot read from the host's `/etc/services`
 - writes every other setting to a private env file (single-quoted values), and passes the API key through
-  `APPTAINERENV_<key variable>` only
+  `APPTAINERENV_<key variable>` only (and the key of a model chosen with `--model`, if it has its own)
 - turns the site's task prelude (`. /etc/profile.d/modules.sh; module load ...`) into a no-op inside; jobs run
   on the worker nodes as usual
 
 Local tools then run inside the container. A tool that needs apptainer itself, such as `LINT_PIPELINE`, must
 be a scheduler job. Every agent stage runs under `timeout` (`stage_limit`): a hung agent must not hold its
-driver slot. The run folder's `.agent_home` records that the driver was sandboxed; `geth status` and
+driver slot. The run folder's `.agent_home` records that the agents were sandboxed; `geth status` and
 `geth lab show` report it.
 
 ## Lessons from Nextflow's agent preview (Geth 1.x: Nextflow 26.10.2, nf-agent 0.2.0)
@@ -646,7 +659,8 @@ taught still shapes the harness:
 
 - Validated with agents on real-size data for four analysis types. The planner of the other pipelines is
   validated on test-size deliveries only.
-- One organism and one experiment per plan.
+- One organism and one experiment per plan. A project (`geth legion`) splits a delivery with several data
+  types into steps, but not several organisms.
 - Only STAR indexes can be registered for reuse so far (`geth/references/register_star_index.sh`); other
   aligners' indexes (Salmon, Bowtie2, BWA, Bismark...) are still built by each run.
 - sarek is tested on livestock germline calling only (no GATK bundle for human, no somatic calling yet);

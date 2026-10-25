@@ -424,7 +424,7 @@ def main(argv=None):
     except ModelError as e:
         print(f"Geth: {e}", flush=True)
         result = None
-    print(f"Model usage: {json.dumps({k: round(v, 1) for k, v in client.usage.items()})}", flush=True)
+    print(f"Model usage: {json.dumps({k: round(v, 4 if k == 'usd' else 1) for k, v in client.usage.items()})}", flush=True)
     print(result or f"The {agent.name} ended without a final answer.", flush=True)
     return 0 if result else 1
 

@@ -4,8 +4,9 @@
 person approves every plan, and deterministic checks surround every agent action.**
 
 Give Geth a folder of sequencing data and a question in plain words. A planner agent reads the
-delivery: file names, README and metadata. It chooses the pipeline, then writes the samplesheet and
-parameters. You review and approve the plan. An operator agent runs the pinned nf-core pipeline, and
+delivery: file names, README and metadata. If something only you know is missing (which samples to
+compare, say), it asks you. It chooses the pipeline, then writes the samplesheet and parameters. You
+review and approve the plan. An operator agent runs the pinned nf-core pipeline, and
 fixes what the error message points to if something fails. A reporter agent then writes a short report,
 whose every number is checked against the results.
 
@@ -82,9 +83,11 @@ See [validation](docs/validation.md).
   so any edit needs a new one.
 - **Plan-diff gate.** Retries can never change samples, files or comparisons. Other changes must be
   named by the previous error.
-- **Checked reports.** Numbers and links that cannot be traced to the results are flagged in the report.
-- **Model allowlist.** Geth refuses models your site has not allowed.
-- **Contained agents (optional).** With `GETH_AGENT_SANDBOX=yes`, the agents' drivers run in a container that
+- **Checked reports.** Numbers and links that cannot be traced to the results are sent back to the
+  reporter once; any left are flagged in the report.
+- **Model allowlist.** Geth refuses models your site has not allowed. A paid model a person chooses for
+  one command (`--model`) must be defined by the site, with its prices and a budget it cannot cross.
+- **Contained agents (optional).** With `GETH_AGENT_SANDBOX=yes`, the agents run in a container that
   sees only the run, its data and the reference catalogue; the API key reaches them through the environment,
   never a file.
 
@@ -136,6 +139,7 @@ python3 geth/tests/test_lab_build.py
 python3 geth/tests/test_harness.py
 python3 geth/tests/test_harness_run.py
 python3 geth/tests/test_harness_lab.py
+python3 geth/tests/test_project.py
 nextflow lint geth/jobs.nf geth/lab/jobs.nf
 ```
 
