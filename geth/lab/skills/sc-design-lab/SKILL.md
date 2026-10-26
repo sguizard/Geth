@@ -35,6 +35,12 @@ Decide each step from the data you inspected, and say why. Keep raw counts for e
 - Leiden at several resolutions; choose the one whose clusters have coherent markers.
 - Annotate with canonical markers and a reference model (e.g. a CellTypist model from the reference catalogue);
   mark clusters where they disagree as uncertain.
+- A reference model only if it matches the species and the tissue. CellTypist's models are human (and mouse): for
+  another species (chicken, zebrafish ...) annotate from markers alone, with the markers the scientist gives first
+  (README, question), and say which clusters stay uncertain.
+- Single-nucleus data (snRNA-seq): fewer genes and counts per nucleus; nuclear transcripts (MALAT1) high;
+  mitochondrial reads should be near zero, so a high mitochondrial percentage means cytoplasmic contamination
+  (a low cut-off, e.g. 5%); ambient RNA is a larger problem than in whole cells.
 
 ## Differential expression between conditions
 - The unit of replication is the biological sample (donor, animal), not the cell. Testing conditions with a
@@ -44,6 +50,10 @@ Decide each step from the data you inspected, and say why. Keep raw counts for e
   (`~ donor + condition`). Skip cell types with too few cells per sample (e.g. under 10-20).
 - Correct for multiple testing (Benjamini-Hochberg) and report effect sizes (log2 fold changes).
 - Cell-level tests remain fine for finding cluster markers.
+- One sample per condition (e.g. a pool of embryos per genotype) gives no replicate: no test between conditions
+  is valid, pseudobulk or not. Design a descriptive comparison instead (per cell type: fold changes, the share
+  of cells expressing a gene, signature scores, proportions), state plainly that it is not a statistical test,
+  and say what replicates would be needed.
 
 ## Composition
 - Changes in cell-type proportions between conditions need sample-level replicates too (e.g. scCODA, propeller).
