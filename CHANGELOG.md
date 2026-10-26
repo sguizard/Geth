@@ -2,14 +2,15 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
-## Unreleased
+## 2.3.0 (2026-10-26), a talkative legion; nuclei and chicken
 
 - **`geth legion` says what it is doing.** In a terminal, every agent stage shows its steps as `geth plan` does,
   one line each with the time: the coordinator (reading the delivery, searching nf-core, checking the steps,
   deciding after a step, writing the report), the planner, the operator, the analyst, the reporter and the lab's
   agents, with the checks' verdicts. While a pipeline runs, its line is refreshed every 30 seconds with the tasks
-  done, running or queued, and the latest. The project's events and the lab build's rounds carry their time.
-  Detached runs stay quiet (their logs have everything).
+  done, running or queued, and the latest. While the model answers, the clock keeps running, and after two
+  minutes the line says how long it has been answering. The project's events and the lab build's rounds carry
+  their time. Detached runs stay quiet (their logs have everything). Tested end to end on a yeast project.
 - **Single-nucleus RNA-seq.** The plan check refuses a single-nucleus delivery (README: "single-nucleus",
   "snRNA-seq", "nuclei") counted without its intronic reads: STARsolo needs `star_feature=GeneFull`, kallisto
   `kb_workflow=nac`; Cell Ranger counts introns. The scrnaseq skill says so, and asks whether cells or nuclei.
