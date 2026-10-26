@@ -134,6 +134,14 @@ class Client:
         if self.prices:
             p_in, p_cached, p_out = self.prices
             self.usage["usd"] += ((prompt - cached) * p_in + cached * p_cached + completion * p_out) / 1e6
+            path = os.environ.get("GETH_MODEL_USAGE_FILE")  # the running cost, read after the stage (driver_slots.sh)
+            if path:
+                try:
+                    with open(path + ".tmp", "w") as fh:
+                        json.dump(self.usage, fh)
+                    os.replace(path + ".tmp", path)
+                except OSError:
+                    pass
 
     def _post(self, path, body):
         data = json.dumps(body).encode()

@@ -45,29 +45,15 @@ lab_stage() {  # lab_stage <run_dir> <mode> <tag> [params...]: one lab stage, on
             --task run_project --run_dir "$d" "${p[@]}" --out "$d/full_c_report.txt" \
             -w "$d/geth_work" -with-trace "$d/geth_trace_$tag.txt" -ansi-log false > "$d/geth_$tag.log" 2>&1)
     else
-        if [ -n "${GETH_MODEL_MODEL:-}" ]; then  # a chosen model: this stage gets what is left of the budget
-            local left
-            left=$(python3 -c 'import sys; print(f"{float(sys.argv[1]) - sum(float(l.split()[1]) for l in open(sys.argv[2])) if __import__("os").path.isfile(sys.argv[2]) else float(sys.argv[1]):.4f}")' \
-                "$lab_budget" "$d/model_spend.txt")
-            if ! python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) > 0.01 else 1)' "$left"; then
-                echo "Budget spent: \$$lab_budget for this command on $GETH_MODEL_MODEL (see $d/model_spend.txt); $tag not started." | tee "$d/geth_$tag.log" >&2
-                rm -f "$d/.geth_$tag.pid"
-                return 1
-            fi
-            export GETH_MODEL_BUDGET_USD=$left
-        fi
+        # a chosen model: this stage gets what is left of the command's total (or of the project's: geth legion run)
+        paid_stage_start "$d" "$tag" "$d/geth_$tag.log" || { rm -f "$d/.geth_$tag.pid"; return 1; }
         local progress=()  # in a terminal, the agent says what it does, one line per step
         [ -t 1 ] && progress=(--progress)
         sandboxed "$d" -- timeout "$(stage_limit "$mode")" env PYTHONPATH="$GETH_HOME/geth" python3 -m harness.lab \
             --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" "${progress[@]}" > "$d/geth_$tag.log" 2>&1
     fi
     rc=$?
-    if [ -n "${GETH_MODEL_MODEL:-}" ] && [ "$mode" != run_c ]; then  # what this stage spent, for the next
-        python3 -c 'import json, sys
-lines = [l for l in open(sys.argv[1], errors="replace") if l.startswith("Model usage:")]
-print(sys.argv[2], json.loads(lines[-1].split(":", 1)[1]).get("usd", 0) if lines else 0, sys.argv[3])' \
-            "$d/geth_$tag.log" "$tag" "$GETH_MODEL_MODEL" >> "$d/model_spend.txt"
-    fi
+    [ "$mode" = run_c ] || paid_stage_end "$d" "$tag" "$d/geth_$tag.log"  # what this stage spent, for the next
     explain_timeout $rc "$mode" "$d/geth_$tag.log"
     rm -f "$d/.geth_$tag.pid"
     return $rc
@@ -82,6 +68,7 @@ show_build() {
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     echo "State    : $(cat "$d/build_state.txt" 2>/dev/null || echo -)"
     [ -f "$d/geth_version.txt" ] && echo "Geth     : $(tail -n 1 "$d/geth_version.txt" | cut -d' ' -f4-) (last stage)"
+    [ -s "$d/model_spend.txt" ] && echo "Model    : $(model_spent "$d/model_spend.txt") (model_spend.txt)"
     echo "Agents   : $([ -d "$d/.agent_home" ] && echo "in the agent sandbox" || echo "not sandboxed") (agent-written code always runs in the lab sandbox)"
     if [ -f "$d/build_spec_c.txt" ]; then
         echo; echo "== pipeline (written by the agent): $(cd "$d/project" 2>/dev/null && ls main.nf bin/*.py 2>/dev/null | tr '\n' ' ')"
@@ -102,6 +89,7 @@ show() {
     prose --labels --whole <<< "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     [ -f "$d/geth_version.txt" ] && echo "Geth     : $(tail -n 1 "$d/geth_version.txt" | cut -d' ' -f4-)"
+    [ -s "$d/model_spend.txt" ] && echo "Model    : $(model_spent "$d/model_spend.txt") (model_spend.txt)"
     for f in steps statistics expected rationale; do
         whole=--whole; [ "$f" = rationale ] && whole=  # design lines keep one line per field set; prose by sentence
         echo; echo "== $f"; grep -v '^# EXPERIMENTAL' "$d/lab_design_$f.txt" | prose --indent 2 $whole
@@ -123,8 +111,11 @@ done
 set -- "${lab_args[@]}"
 if [ -n "$lab_model" ]; then
     [ -n "$lab_budget" ] || { echo "--model $lab_model needs --budget <USD>: the most this command may spend." >&2; exit 1; }
-    use_model "$lab_model" "$lab_budget" || exit 1
+    use_model "$lab_model" || exit 1
+    model_total "$lab_budget"  # counted in the run's model_spend.txt, from its first stage
     echo "Lab agents: $GETH_MODEL_MODEL, at most \$$lab_budget for this command." >&2
+elif [ -n "${GETH_MODEL_MODEL:-}" ] && [ -z "${GETH_MODEL_TOTAL_USD:-}" ]; then  # a chosen model needs a total here
+    echo "The lab with $GETH_MODEL_MODEL needs a total: --model <name> --budget <USD>." >&2; exit 1
 fi
 site=()
 [ -n "${GETH_NF_CONFIG:-}" ] && site=(-c "$GETH_NF_CONFIG")

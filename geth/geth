@@ -2,15 +2,16 @@
 # Geth: plan, approve and run nf-core analyses with LLM agents.
 #
 #   geth plan <data_dir> "<question>" <name>   planner agent writes a plan into runs/<name>
-#             [--answers <file>] [--model <name>] (the planner asks you its questions in the terminal, or
-#                                                 a stand-in answers them from what this file says; --model: a paid
-#                                                 planner model from the site settings, e.g. sol, within its budget)
+#             [--answers <file>]               (the planner asks you its questions in the terminal, or
+#                                              a stand-in answers them from what this file says)
 #   geth plan --from <run> "<question>" <name> follow-up analysis of a finished run (DE, single-cell downstream)
 #   geth show <name>                           print the plan (and its automatic check)
 #   geth approve <name> [--yes]                approve the plan as it is now (edit plan_* files first if needed)
 #   geth run <name> [--detach]                 operator + reporter agents run the approved plan
 #   geth status <name>                         outcome, report check and attempts
 #   geth report <name>                         reporter agent writes the report again from the results (no rerun)
+#   --model <name> [--budget <USD>]            (plan, run, report) the agents use a paid model the site defines,
+#                                              e.g. sol, within its budget per agent stage (--budget: another cap)
 #   geth list                                  all runs and where they stand
 #   geth stop <name>                           stop a planning or a run, and its scheduler jobs (geth run resumes it)
 #   geth doctor                                check the installation and the site configuration
@@ -27,7 +28,7 @@ source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drive
 prose() { python3 "$GETH_HOME/geth/harness/prose.py" "$@"; }  # agents' text, one sentence per line, wrapped
 
 self=$(readlink -f "${BASH_SOURCE[0]}")  # agents() changes folder: call this script back by its full path
-usage() { sed -n '2,20p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,21p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
 
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
@@ -52,6 +53,7 @@ agents() {  # agents <run_dir> <stage> [args]: a stage of Geth's agents (geth/ha
     [ "$stage" = run ] && drivers=1
     acquire_slots "$d" "$stage" "$drivers"
     record_version "$d" "$stage${GETH_LOG_SUFFIX:-}"
+    paid_stage_start "$d" "$stage${GETH_LOG_SUFFIX:-}" "$log" || { rm -f "$d/.geth_$stage.pid"; return 1; }
     local fg=()  # questions in the terminal: the agent must stay in the terminal's foreground to read it
     for a in "$@"; do [ "$a" = terminal ] && fg=(--foreground); done
     local progress=()  # in a terminal, the agents say what they do, one line per step (the log has the details)
@@ -59,9 +61,16 @@ agents() {  # agents <run_dir> <stage> [args]: a stage of Geth's agents (geth/ha
     sandboxed "$d" "${ro[@]}" -- timeout "${fg[@]}" "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
         python3 -m "harness.$stage" --run_dir "$d" "$@" "${progress[@]}" > "$log" 2>&1
     local rc=$?
+    paid_stage_end "$d" "$stage${GETH_LOG_SUFFIX:-}" "$log"
     explain_timeout $rc "$stage" "$log"
     rm -f "$d/.geth_$stage.pid"
     return $rc
+}
+
+chosen_model() {  # chosen_model <name> <budget>: --model for this command (the site defines it), --budget its cap
+    [ -n "$1" ] || { [ -z "$2" ] || { echo "--budget goes with --model <name>." >&2; return 1; }; return 0; }
+    use_model "$1" "$2" || return 1
+    echo "Model for this command: $GETH_MODEL_MODEL (paid: at most \$${GETH_MODEL_BUDGET_USD:-?} per agent stage)" >&2
 }
 
 active() {  # active <run_dir> <mode>: is a Geth driver working on this run?
@@ -135,18 +144,21 @@ legion_usage() {
 geth legion: a project, several analyses towards one question. The coordinator agent proposes the steps and
 you approve them; each pipeline step is an ordinary Geth run, named <project>-<step> (geth show / approve it).
 
-  geth legion new <data_dir> "<question>" <name> [--lab] [--answers <file>] [--model <name>]
+  geth legion new <data_dir> "<question>" <name> [--lab] [--answers <file>] [--model <name> [--budget <USD>]]
                                       the coordinator reads the delivery and proposes the steps
                                       (--lab: allow the EXPERIMENTAL lab, agents writing the analysis code,
                                       for what no pipeline does)
   geth legion show <name>            the steps, where each stands, the coordinator's rationale
   geth legion approve <name> [--yes] approve the steps (or the coordinator's revised steps)
   geth legion approve <name> --lab <step> [--yes]   approve a lab step's design (geth lab show it first)
-  geth legion run <name> [--answers <file>] [--detach] [--overrule]
+  geth legion run <name> [--answers <file>] [--detach] [--overrule] [--model <name> --budget <USD>]
                                       run the next steps; it stops when a step's plan needs your approval
                                       (geth show / geth approve <name>-<step>): run it again to continue.
                                       --overrule: go on with the approved steps although the coordinator
                                       stopped the project (or proposed other steps)
+                                      --model, --budget: every agent this command starts (the steps' planners,
+                                      operators, reporters, lab agents, the coordinator) uses a paid model the
+                                      site defines (e.g. sol), within this total (project's model_spend.txt)
   geth legion list                   all projects and where they stand
   geth legion stop <name>            stop the project and its running step
 USAGE
@@ -158,12 +170,13 @@ legion() {  # legion <subcommand> ...: see legion_usage (a project: several anal
     shift || true
     case "$sub" in
         new)
-            local lab=false answers= model= args=() ask
+            local lab=false answers= model= budget= args=() ask
             while [ $# -gt 0 ]; do
                 case $1 in
                     --lab) lab=true; shift ;;
                     --answers) answers=$(readlink -f "${2:-}"); shift 2 || legion_usage ;;
                     --model) model=${2:-}; shift 2 || legion_usage ;;
+                    --budget) budget=${2:-}; shift 2 || legion_usage ;;
                     *) args+=("$1"); shift ;;
                 esac
             done
@@ -177,7 +190,7 @@ legion() {  # legion <subcommand> ...: see legion_usage (a project: several anal
             esac
             [ -e "$p" ] && { echo "Project '${args[2]}' already exists: choose another name." >&2; exit 1; }
             [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
-            [ -z "$model" ] || use_model "$model" || exit 1
+            chosen_model "$model" "$budget" || exit 1
             mkdir -p "$p"
             printf '%s\n' "$question" > "$p/question.txt"
             printf '%s\n' "$data_dir" > "$p/data_dir.txt"
@@ -221,16 +234,26 @@ legion() {  # legion <subcommand> ...: see legion_usage (a project: several anal
             [ $# -ge 1 ] || legion_usage
             p=$(project_dir_of "$1"); shift
             [ -d "$p" ] || { echo "No project named '$(basename "$p")'." >&2; exit 1; }
-            local detach=no extra=() again=()  # extra: for geth_project.py; again: the options as typed, for --detach
+            local detach=no extra=() again=() model= budget=  # extra: for geth_project.py; again: as typed, for --detach
             while [ $# -gt 0 ]; do
                 case $1 in
                     --detach) detach=yes; shift ;;
+                    --model) model=${2:-}; again+=(--model "$model"); shift 2 || legion_usage ;;
+                    --budget) budget=${2:-}; again+=(--budget "$budget"); shift 2 || legion_usage ;;
                     --answers) extra+=(--answers "$(readlink -f "${2:-}")"); again+=(--answers "$(readlink -f "${2:-}")"); shift 2 || legion_usage ;;
                     --yes) extra+=(--auto-approve); again+=(--yes); shift ;;  # benchmarks only: approve each step's plan as planned
                     --overrule) extra+=(--overrule "$(whoami)"); again+=(--overrule); shift ;;  # you overrule the coordinator's stop
                     *) legion_usage ;;
                 esac
             done
+            if [ -n "$model" ] || [ -n "$budget" ]; then  # every agent of this command, the steps' included, within one total
+                [ -n "$model" ] && [ -n "$budget" ] \
+                    || { echo "geth legion run: --model <name> and --budget <USD> go together (the most this command may spend)." >&2; exit 1; }
+                use_model "$model" || exit 1
+                [ "$detach" = yes ] || {
+                    model_total "$budget" "$p/model_spend.txt"
+                    echo "Every agent of this command: $GETH_MODEL_MODEL, at most \$$budget in all (spending: $p/model_spend.txt)" >&2; }
+            fi
             if [ "$detach" = yes ]; then
                 setsid nohup "$self" legion run "$(basename "$p")" "${again[@]}" > "$p/project_run.out" 2>&1 < /dev/null &
                 echo "Started in the background (pid $!). Follow it with: geth legion show $(basename "$p")   (log: $p/log.md)"
@@ -268,16 +291,15 @@ legion() {  # legion <subcommand> ...: see legion_usage (a project: several anal
 cmd=${1:-}; shift || true
 case "$cmd" in
     plan)
-        upstream_args=() answers= model=
-        args=()  # --answers <file> and --model <name> may come anywhere
+        upstream_args=() answers= model= budget=
+        args=()  # --answers <file>, --model <name> and --budget <USD> may come anywhere
         while [ $# -gt 0 ]; do
             if [ "$1" = --answers ]; then answers=$(readlink -f "${2:-}"); shift 2 || usage
             elif [ "$1" = --model ]; then model=${2:-}; shift 2 || usage
+            elif [ "$1" = --budget ]; then budget=${2:-}; shift 2 || usage
             else args+=("$1"); shift; fi
         done
-        if [ -n "$model" ]; then  # a paid planner model, opt-in per plan: GETH_MODEL_<NAME>_* in the site settings
-            use_model "$model" || exit 1
-        fi
+        chosen_model "$model" "$budget" || exit 1  # a paid model, opt-in per command: GETH_MODEL_<NAME>_* in the site settings
         set -- "${args[@]}"
         [ -z "$answers" ] || [ -f "$answers" ] || { echo "No such answers file: $answers" >&2; exit 1; }
         if [ "${1:-}" = "--from" ]; then
@@ -309,7 +331,6 @@ case "$cmd" in
         elif [ -t 0 ] && [ -t 1 ]; then ask=terminal; echo "The planner may ask you a few questions here."
         else ask=none; fi
         ask=${GETH_PLANNER_ASK:-$ask}  # benchmarks: off (no questions), none, file, terminal
-        [ -n "${GETH_MODEL_MODEL:-}" ] && echo "Planner model: $GETH_MODEL_MODEL (paid: at most \$${GETH_MODEL_BUDGET_USD:-?} for this plan)"
         agents "$d" plan --question "$question" --data_dir "$data_dir" "${upstream_args[@]}" \
             --ask "$ask" ${answers:+--answers "$d/answers.txt"} \
             || { echo "Planning failed: see $d/geth_plan.log" >&2; exit 1; }
@@ -336,11 +357,23 @@ case "$cmd" in
         ;;
     run)
         [ $# -ge 1 ] || usage
-        d=$(run_dir_of "$1")
-        [ -f "$d/APPROVED" ] || { echo "The plan has not been approved: geth approve $1" >&2; exit 1; }
-        if [ "${2:-}" = "--detach" ]; then
+        name=$1; shift
+        d=$(run_dir_of "$name")
+        [ -f "$d/APPROVED" ] || { echo "The plan has not been approved: geth approve $name" >&2; exit 1; }
+        detach=no model= budget= again=()
+        while [ $# -gt 0 ]; do
+            case $1 in
+                --detach) detach=yes; shift ;;
+                --model) model=${2:-}; again+=(--model "$model"); shift 2 || usage ;;
+                --budget) budget=${2:-}; again+=(--budget "$budget"); shift 2 || usage ;;
+                *) usage ;;
+            esac
+        done
+        set -- "$name"
+        chosen_model "$model" "$budget" || exit 1
+        if [ "$detach" = yes ]; then
             # Long runs: survive the end of this shell or session.
-            setsid nohup "$self" run "$1" > "$d/geth_run.out" 2>&1 < /dev/null &
+            setsid nohup "$self" run "$1" "${again[@]}" > "$d/geth_run.out" 2>&1 < /dev/null &
             echo "Started in the background (pid $!). Follow it with: geth status $1   (log: $d/geth_run.out)"
             exit 0
         fi
@@ -349,7 +382,17 @@ case "$cmd" in
         "$self" status "$1"
         ;;
     report)
-        [ $# -eq 1 ] || usage
+        [ $# -ge 1 ] || usage
+        name=$1; shift; model= budget=
+        while [ $# -gt 0 ]; do
+            case $1 in
+                --model) model=${2:-}; shift 2 || usage ;;
+                --budget) budget=${2:-}; shift 2 || usage ;;
+                *) usage ;;
+            esac
+        done
+        set -- "$name"
+        chosen_model "$model" "$budget" || exit 1
         d=$(run_dir_of "$1")
         [ -f "$d/APPROVED" ] && [ -f "$d/outcome.txt" ] || { echo "Run '$1' has not finished: nothing to report." >&2; exit 1; }
         active "$d" run && { echo "Run '$1' is running: wait for it, or geth stop $1." >&2; exit 1; }
@@ -370,6 +413,7 @@ case "$cmd" in
         # agent_sandbox.sh leaves .agent_home in the run folder: say plainly whether the agents were contained
         [ -d "$d/.agent_home" ] && echo "agents: in the agent sandbox (container)" || echo "agents: not sandboxed"
         [ -f "$d/geth_version.txt" ] && { echo "Geth versions (geth_version.txt):"; sed 's/^/  /' "$d/geth_version.txt"; }
+        [ -s "$d/model_spend.txt" ] && echo "Chosen model: $(model_spent "$d/model_spend.txt") (model_spend.txt)"
         latest=$(find "$d" -maxdepth 1 -type d -name 'attempt_*' | sed 's/.*attempt_//' | sort -n | tail -n 1)
         for a in "$d"/attempt_*; do
             [ -d "$a" ] || continue

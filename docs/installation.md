@@ -71,7 +71,7 @@ Use a strong model. Geth's agents plan whole analyses, and the validation result
 your key could also reach paid models, the allowlist keeps Geth on the ones you chose.
 
 A site may also offer a stronger, paid model for one command at a time (`geth plan --model sol`,
-`geth legion new --model sol`, `geth lab ... --model sol --budget 0.50`). Each such model is defined in the
+`geth legion run my_project --model sol --budget 5`, `geth lab ... --model sol --budget 0.50`). Each such model is defined in the
 site file with its prices and a budget, and Geth never sends a request that could cross the budget
 ([configuration](configuration.md#language-model)).
 

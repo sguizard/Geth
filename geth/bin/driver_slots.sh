@@ -100,3 +100,61 @@ use_model() {  # use_model <name> [<budget USD>]: a model a person chose for thi
     export GETH_MODEL_API_KEY_VAR=${GETH_MODEL_API_KEY_VAR:-$GETH_LLM_API_KEY_VAR}
     unset GETH_PLANNER_MODEL  # one chosen model at a time
 }
+
+# What a chosen model costs. Every agent stage on it adds "<run>:<stage> <usd> <model>" to a spend file
+# (GETH_MODEL_SPEND, else the run's own model_spend.txt). A command that starts several stages (geth legion run,
+# geth lab) has a total, GETH_MODEL_TOTAL_USD (its --budget): each stage gets what is left of it, counted in the
+# spend file from the line where the command started (GETH_MODEL_SPEND_FROM), and a stage that would find nothing
+# left is not started. Commands started by it (a project's steps) inherit all of this. The agents' client writes
+# its running usage to GETH_MODEL_USAGE_FILE after every request, so a stage stopped by its time limit is counted.
+model_total() {  # model_total <USD> [<spend file>]: this command's total; without a file, its first stage's run
+    export GETH_MODEL_TOTAL_USD=$1
+    if [ -n "${2:-}" ]; then
+        touch "$2"
+        export GETH_MODEL_SPEND=$2 GETH_MODEL_SPEND_FROM; GETH_MODEL_SPEND_FROM=$(wc -l < "$2")
+    fi
+}
+
+paid_stage_start() {  # paid_stage_start <run_dir> <tag> <log>: 1 when the command's total is spent (stage not started)
+    [ -n "${GETH_MODEL_MODEL:-}" ] || return 0
+    export GETH_MODEL_USAGE_FILE="$1/.model_usage_$2.json"
+    rm -f "$GETH_MODEL_USAGE_FILE"
+    [ -n "${GETH_MODEL_TOTAL_USD:-}" ] || return 0
+    [ -n "${GETH_MODEL_SPEND:-}" ] || model_total "$GETH_MODEL_TOTAL_USD" "$1/model_spend.txt"
+    local left
+    left=$(python3 -c '
+import os, sys
+total, path, start = float(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+lines = open(path).readlines()[start:] if os.path.isfile(path) else []
+print(f"{total - sum(float(l.split()[1]) for l in lines if len(l.split()) > 1):.4f}")' \
+        "$GETH_MODEL_TOTAL_USD" "$GETH_MODEL_SPEND" "${GETH_MODEL_SPEND_FROM:-0}")
+    if ! python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) > 0.01 else 1)' "$left"; then
+        echo "Budget spent: \$$GETH_MODEL_TOTAL_USD for this command on $GETH_MODEL_MODEL (see $GETH_MODEL_SPEND); $2 not started." \
+            | tee -a "$3" >&2
+        return 1
+    fi
+    export GETH_MODEL_BUDGET_USD=$left
+}
+
+paid_stage_end() {  # paid_stage_end <run_dir> <tag> <log>: what the stage spent, into the spend file
+    [ -n "${GETH_MODEL_MODEL:-}" ] || return 0
+    python3 -c '
+import json, os, sys
+usage_file, log, tag, model = sys.argv[1:5]
+try:  # the client running usage: there even when the stage was stopped
+    usd = json.load(open(usage_file)).get("usd", 0)
+except (OSError, ValueError):
+    lines = [l for l in open(log, errors="replace") if l.startswith("Model usage:")] if os.path.isfile(log) else []
+    usd = json.loads(lines[-1].split(":", 1)[1]).get("usd", 0) if lines else 0
+print(tag, f"{float(usd or 0):.4f}", model)' "${GETH_MODEL_USAGE_FILE:-}" "$3" "$(basename "$1"):$2" "$GETH_MODEL_MODEL" \
+        >> "${GETH_MODEL_SPEND:-$1/model_spend.txt}"
+    rm -f "${GETH_MODEL_USAGE_FILE:-}"
+}
+
+model_spent() {  # model_spent <spend file>: "$X.XX on <model> (<n> stages)", or nothing
+    [ -s "$1" ] || return 0
+    python3 -c '
+import sys
+rows = [l.split() for l in open(sys.argv[1]) if len(l.split()) >= 3]
+print(f"${sum(float(r[1]) for r in rows):.2f} on {(chr(44) + chr(32)).join(sorted({r[2] for r in rows}))} ({len(rows)} stages)")' "$1"
+}
