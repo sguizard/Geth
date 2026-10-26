@@ -23,6 +23,7 @@ set -euo pipefail
 runs="$GETH_RUNS_DIR"
 checks="$GETH_HOME/geth/bin/geth_checks.py"
 source "$GETH_HOME/geth/bin/driver_slots.sh"  # GETH_MAX_DRIVERS: Nextflow drivers allowed at once here
+prose() { python3 "$GETH_HOME/geth/harness/prose.py" "$@"; }  # agents' text, one sentence per line, wrapped
 
 self=$(readlink -f "${BASH_SOURCE[0]}")  # agents() changes folder: call this script back by its full path
 usage() { sed -n '2,19p' "$self" | sed 's/^# \{0,1\}//'; exit 1; }
@@ -99,12 +100,12 @@ check() {
 
 show() {
     local d=$1
-    echo "Question : $(cat "$d/question.txt")"
+    prose --labels --whole <<< "Question : $(cat "$d/question.txt")"
     echo "Pipeline : nf-core/$(cat "$d/plan_pipeline.txt")"
     [ -f "$d/plan_model.txt" ] && echo "Planned by: $(cat "$d/plan_model.txt")"
     [ -f "$d/plan_upstream.txt" ] && echo "Upstream : $(cat "$d/plan_upstream.txt")"
     [ -f "$d/plan_profile.txt" ] && echo "Profile  : $(cat "$d/plan_profile.txt")"
-    echo; echo "Rationale:"; sed 's/^/  /' "$d/plan_rationale.txt"
+    echo; echo "Rationale:"; prose --indent 2 < "$d/plan_rationale.txt"
     echo; echo "Samplesheet (plan_samplesheet.csv):"
     sed "s#$GETH_DATA_ROOT/##g" "$d/plan_samplesheet.csv" | column -s, -t | sed 's/^/  /'
     if [ -f "$d/plan_contrasts.csv" ]; then
@@ -116,10 +117,10 @@ show() {
     fi
     echo; echo "Parameters (plan_params.json):"; sed "s#$GETH_DATA_ROOT/##g" "$d/plan_params.json" | sed 's/^/  /'; echo
     if [ -s "$d/plan_questions.md" ]; then
-        echo; echo "Questions and answers (plan_questions.md):"; grep -E '^\*\*|^- answer:' "$d/plan_questions.md" | sed 's/^\*\*\(.*\)\*\*$/  Q: \1/; s/^- answer: /     A: /'
+        echo; echo "Questions and answers (plan_questions.md):"; grep -E '^\*\*|^- answer:' "$d/plan_questions.md" | sed 's/^\*\*\(.*\)\*\*$/  Q: \1/; s/^- answer: /     A: /' | prose
     fi
     echo; echo "Command line Geth will run:"; python3 "$checks" command "$d" | sed "s#$GETH_DATA_ROOT/##g; s/^/  /"
-    echo; check "$d" || true
+    echo; check "$d" | prose --labels || true
 }
 
 project_py=$GETH_HOME/geth/bin/geth_project.py
@@ -362,7 +363,7 @@ case "$cmd" in
     status)
         [ $# -eq 1 ] || usage
         d=$(run_dir_of "$1")
-        [ -f "$d/outcome.txt" ] && cat "$d/outcome.txt" || echo "No outcome yet."
+        [ -f "$d/outcome.txt" ] && prose --labels --whole < "$d/outcome.txt" || echo "No outcome yet."
         [ -f "$d/report_check.txt" ] && cat "$d/report_check.txt"
         # agent_sandbox.sh leaves .agent_home in the run folder: say plainly whether the agents were contained
         [ -d "$d/.agent_home" ] && echo "agents: in the agent sandbox (container)" || echo "agents: not sandboxed"
