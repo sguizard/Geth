@@ -429,6 +429,10 @@ def show(pdir):
     print(wrap(f"Question: {read(os.path.join(pdir, 'question.txt')).strip()}", labels=True, whole=True))
     print(f"Data    : {read(os.path.join(pdir, 'data_dir.txt')).strip()}")
     print(f"Lab     : {'allowed (EXPERIMENTAL)' if (load(os.path.join(pdir, 'options.json'), {}) or {}).get('lab') else 'not allowed'}")
+    versions = read(os.path.join(pdir, "geth_version.txt")).splitlines()
+    if versions:  # "<stage> <date> <time> Geth <release> (commit ...)": the coordinator's last stage
+        stage, day, clock, version = (versions[-1].split(" ", 3) + [""] * 4)[:4]
+        print(f"Geth    : {version} (coordinator, {stage.replace('project_', '')}, {day} {clock[:5]})")
     print("\nSteps:")
     for i, s in enumerate(doc.get("steps", []), start=1):
         kind = s.get("kind")

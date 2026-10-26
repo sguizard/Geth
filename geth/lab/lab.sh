@@ -37,6 +37,7 @@ lab_stage() {  # lab_stage <run_dir> <mode> <tag> [params...]: one lab stage, on
     local d=$1 mode=$2 tag=$3 rc
     shift 3
     acquire_slots "$d" "$tag" 1
+    record_version "$d" "$tag"
     if [ "$mode" = run_c ]; then  # no agent: the frozen arm C pipeline's full run, one scheduler job
         local p=()
         while [ $# -gt 0 ]; do case $1 in --lab_*|--data_file|--full_*) p+=("$1" "$2"); shift 2 ;; *) shift ;; esac; done
@@ -80,6 +81,7 @@ show_build() {
     prose --labels --whole <<< "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     echo "State    : $(cat "$d/build_state.txt" 2>/dev/null || echo -)"
+    [ -f "$d/geth_version.txt" ] && echo "Geth     : $(tail -n 1 "$d/geth_version.txt" | cut -d' ' -f4-) (last stage)"
     echo "Agents   : $([ -d "$d/.agent_home" ] && echo "in the agent sandbox" || echo "not sandboxed") (agent-written code always runs in the lab sandbox)"
     if [ -f "$d/build_spec_c.txt" ]; then
         echo; echo "== pipeline (written by the agent): $(cd "$d/project" 2>/dev/null && ls main.nf bin/*.py 2>/dev/null | tr '\n' ' ')"
@@ -99,6 +101,7 @@ show() {
     [ -f "$d/design_from.txt" ] && { show_build "$d"; return; }
     prose --labels --whole <<< "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
+    [ -f "$d/geth_version.txt" ] && echo "Geth     : $(tail -n 1 "$d/geth_version.txt" | cut -d' ' -f4-)"
     for f in steps statistics expected rationale; do
         whole=--whole; [ "$f" = rationale ] && whole=  # design lines keep one line per field set; prose by sentence
         echo; echo "== $f"; grep -v '^# EXPERIMENTAL' "$d/lab_design_$f.txt" | prose --indent 2 $whole
