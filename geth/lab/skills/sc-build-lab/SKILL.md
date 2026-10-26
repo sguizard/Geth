@@ -21,9 +21,14 @@ description: How to implement a single-cell downstream analysis as sandboxed Pyt
 - Subsetting cells keeps layers; `sc.pp.filter_genes` keeps them in step.
 
 ## QC
-- Mitochondrial genes: `adata.var["mt"] = adata.var_names.str.upper().str.startswith("MT-")`, then
+- Mitochondrial genes: `adata.var["mt"] = adata.var_names.str.upper().str.startswith("MT-")`; if none, the
+  species names them without the prefix (chicken): `adata.var_names.str.upper().isin(["ND1", "ND2", "ND3", "ND4",
+  "ND4L", "ND5", "ND6", "COX1", "COX2", "COX3", "ATP6", "ATP8", "CYTB"])`. Then
   `sc.pp.calculate_qc_metrics(adata, qc_vars=["mt"], percent_top=None, log1p=False, inplace=True)` gives
-  `total_counts`, `n_genes_by_counts`, `pct_counts_mt`. If there are no MT- genes, skip mito filtering.
+  `total_counts`, `n_genes_by_counts`, `pct_counts_mt`. Skip mito filtering only if neither finds a gene.
+- Gene names: count matrices from nf-core/scrnaseq may hold gene ids in `var_names` and symbols in
+  `var["gene_symbol"]`: use the symbols (`adata.var_names = adata.var["gene_symbol"].astype(str)`, then
+  `adata.var_names_make_unique()`); genes without a symbol keep their id.
 - MAD thresholds per sample: `med = s.median(); mad = (s - med).abs().median()`; keep `abs(s - med) <= 5 * mad`
   (counts, genes; log scale is common) and `pct_counts_mt <= med + 3 * mad`, computed within each sample with
   `groupby(sample_col, observed=True)`.
@@ -47,7 +52,10 @@ description: How to implement a single-cell downstream analysis as sandboxed Pyt
 - `sc.tl.leiden(adata, resolution=1.0, flavor="igraph", n_iterations=2, directed=False, key_added="leiden")`.
 - `sc.tl.umap(adata)` only if a figure needs it (`sc.pl.umap(..., show=False)`, then `plt.savefig`).
 
-## Annotation (CellTypist)
+## Annotation (CellTypist: human and mouse only)
+- For another species (chicken ...) do not use the models: name each cluster from its top markers and the
+  scientist's known markers (print their mean expression and share of expressing cells per cluster), and write
+  `obs["cell_type"]` from that, "uncertain" where the markers do not point to one cell type.
 - Input must be log1p of counts normalised to 10,000 per cell, with gene symbols: the normalised `adata.X`
   above is right (keep all genes, not only the variable ones).
 - `model = celltypist.models.Model.load(model="models/Immune_All_Low.pkl")`
