@@ -13,6 +13,7 @@ import re
 import time
 
 from .agent import Tool
+from .prose import MAX_WIDTH, wrap
 
 UNKNOWN = "I don't know: use your recommendation."
 NOBODY = "No one is available to answer: use your recommendation, and say so in the rationale."
@@ -27,16 +28,20 @@ class TerminalAsker:
     def __call__(self, questions):
         answers = []
         with open(self.tty, "r") as tin, open(self.tty, "w") as tout:
+            try:  # the questions are wrapped to the terminal they are asked in (stdout is the log)
+                width = max(60, min(MAX_WIDTH, os.get_terminal_size(tout.fileno()).columns - 1))
+            except OSError:
+                width = MAX_WIDTH
             say = lambda text="": (tout.write(text + "\n"), tout.flush())
             say(f"\n  Geth has {len(questions)} question(s) for you. Enter takes the recommended answer.")
             for i, q in enumerate(questions, 1):
                 options = [str(o) for o in q.get("options") or []]
                 rec = str(q.get("recommended") or "")
-                say(f"\n  [{i}/{len(questions)}] {q.get('question', '')}")
+                say("\n" + wrap(f"[{i}/{len(questions)}] {q.get('question', '')}", indent=2, width=width))
                 for k, o in enumerate(options, 1):
-                    say(f"      {k}. {o}{'   (recommended)' if o == rec else ''}")
+                    say(wrap(f"{k}. {o}{'  (recommended)' if o == rec else ''}", indent=6, width=width, whole=True))
                 if rec and rec not in options:
-                    say(f"      recommended: {rec}")
+                    say(wrap(f"recommended: {rec}", indent=6, width=width, whole=True, labels=True))
                 while True:
                     tout.write("  > ")
                     tout.flush()
@@ -46,7 +51,7 @@ class TerminalAsker:
                         break
                     line = line.strip()
                     if line == "?":
-                        say(f"    why: {q.get('why') or 'no reason given'}")
+                        say(wrap(f"why: {q.get('why') or 'no reason given'}", indent=4, width=width))
                         continue
                     if not line:
                         answer = rec or UNKNOWN

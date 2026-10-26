@@ -14,6 +14,8 @@ import os
 import re
 import time
 
+from .prose import MAX_WIDTH, wrap
+
 
 class Tool:
     def __init__(self, name, description, parameters, func, final=False, check=False):
@@ -116,8 +118,8 @@ class Agent:
             messages.append({"role": "assistant", "content": text,
                              **({"tool_calls": calls} if calls else {})})
             self.trace(event="answer", turn=turn, content=text, tool_calls=calls, usage=dict(self.client.usage))
-            if text.strip():
-                self.log(f"[agent {self.name}] {text.strip()}")
+            if text.strip():  # the model's own text, wrapped for whoever follows the log
+                self.log(wrap(f"[agent {self.name}] {text.strip()}", width=MAX_WIDTH, whole=True))
             if not calls and self.text_answer and len(text.strip()) >= self.text_answer[2]:
                 name, arg = self.text_answer[:2]
                 output = self.call_tool({"function": {"name": name, "arguments": {arg: text}}})[2]

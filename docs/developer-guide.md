@@ -52,6 +52,7 @@ geth/
                            legion, lab
   harness/                 the agents (Python, standard library only):
     agent.py               the loop: tools, skills, final tools, refusal guard, trace
+    prose.py               agents' text for people: one sentence per line, wrapped (display only)
     llm.py                 the model client: chat completions or the Responses API, retries, usage, budgets
     plan.py, tools.py, ask.py   the planner, its tools, and its questions (ASK_USER, the stand-in)
     run.py, report.py      the operator, the single-cell analyst and the reporter (geth run, geth report)
@@ -439,7 +440,7 @@ are often read-only in jobs.
 python3 geth/tests/test_geth_checks.py -v      # the gates: 60 tests, under a second, no site needed
 python3 geth/tests/test_collect_results.py -v  # result summaries and the report check
 python3 geth/tests/test_lab_build.py -v        # the lab's bookkeeping (arms B and C) and the shell quoting
-python3 geth/tests/test_harness.py -v          # the agent loop and the planner's tools, with a scripted model
+python3 geth/tests/test_harness.py -v          # the agent loop, the planner's tools (scripted model), prose
 python3 geth/tests/test_harness_run.py -v      # operator, analyst and reporter: outcome and report fences
 python3 geth/tests/test_harness_lab.py -v      # the lab's agents: design check, notes and review
 python3 geth/tests/test_project.py -v          # projects: the step check, approval, the runner (stand-in commands)
@@ -649,6 +650,8 @@ taught still shapes the harness:
 
 - **Shell:** `set -uo pipefail`. Tools never fail: they print `STATUS: ...` lines.
 - **Python:** standard library only, 3.9+. The toolbox is the exception: it runs in its container.
+- **Agents' text shown to people** goes through `harness/prose.py` (`prose` in the shell scripts): one
+  sentence per line, wrapped to the terminal. Files keep the text as the agent wrote it.
 - **Paths:** absolute, compared as text, resolved to real paths by `env.sh`.
 - **Never** print, log or commit the API key, or put it on a command line.
 - **Git flow:** `master` holds tagged releases (`vX.Y.Z`); work happens in `develop`, with features on

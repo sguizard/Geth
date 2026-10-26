@@ -41,7 +41,9 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(1, os.path.dirname(HERE))
 import geth_checks as gc  # noqa: E402
+from harness.prose import wrap  # noqa: E402  (standard library only; no agent is started)
 
 GETH_HOME = os.environ.get("GETH_HOME", os.path.dirname(os.path.dirname(HERE)))
 GETH = os.path.join(GETH_HOME, "geth", "geth")
@@ -81,8 +83,8 @@ def save(path, data):
 
 def log(pdir, text):
     with open(os.path.join(pdir, "log.md"), "a") as fh:
-        fh.write(f"- {time.strftime('%F %T')} {text}\n")
-    print(text, flush=True)
+        fh.write(wrap(f"- {time.strftime('%F %T')} {text}", width=100) + "\n")
+    print(wrap(text), flush=True)
 
 
 def step_run(pdir, sid):
@@ -424,7 +426,7 @@ def status(pdir, step):
 def show(pdir):
     doc = load(os.path.join(pdir, "steps.json"), {}) or {}
     print(f"Project : {os.path.basename(pdir)}")
-    print(f"Question: {read(os.path.join(pdir, 'question.txt')).strip()}")
+    print(wrap(f"Question: {read(os.path.join(pdir, 'question.txt')).strip()}", labels=True, whole=True))
     print(f"Data    : {read(os.path.join(pdir, 'data_dir.txt')).strip()}")
     print(f"Lab     : {'allowed (EXPERIMENTAL)' if (load(os.path.join(pdir, 'options.json'), {}) or {}).get('lab') else 'not allowed'}")
     print("\nSteps:")
@@ -437,17 +439,24 @@ def show(pdir):
         after = f", after {', '.join(s.get('after') or [])}" if s.get("after") else ""
         run = f"   run: {os.path.basename(step_run(pdir, s['id']))}" if kind in ("pipeline", "lab") else ""
         print(f"  {i}. {s.get('id')} [{what}{after}] {status(pdir, s)}{run}")
-        print(f"     {s.get('question', '')}")
+        print(wrap(s.get("question", ""), indent=5))
         if s.get("suggestion"):
-            print(f"     -> {s['suggestion']}")
+            print(wrap(f"-> {s['suggestion']}", indent=5))
     if doc.get("rationale"):
-        print(f"\nRationale: {doc['rationale']}")
-    print("\n" + (read(os.path.join(pdir, "steps_check.txt")).strip() or "Not checked yet."))
+        print("\nRationale:\n" + wrap(doc["rationale"], indent=2))
+    reviews = load(os.path.join(pdir, "reviews.json"), {}) or {}
+    if reviews:
+        print("\nThe coordinator's decisions:")
+        for sid, r in reviews.items():
+            print(f"  after {sid}: {r.get('action', '?')}\n" + wrap(r.get("reason", ""), indent=4))
+    print("\n" + wrap(read(os.path.join(pdir, "steps_check.txt")).strip() or "Not checked yet.", labels=True))
     record = load(os.path.join(pdir, "APPROVED"))
     print("Approved by " + record["approved_by"] + " on " + record["approved_at"] if approved_doc(pdir, quiet=True)
           else "Not approved: geth legion approve " + os.path.basename(pdir))
     if os.path.isfile(os.path.join(pdir, "steps.proposed.json")):
         print("The coordinator proposes new steps (steps.proposed.json): review them, then geth legion approve.")
+    if os.path.isfile(os.path.join(pdir, "report.md")):
+        print(f"Report: {os.path.join(pdir, 'report.md')} ({read(os.path.join(pdir, 'report_check.txt')).strip() or 'not checked'})")
 
 
 # ---------------------------------------------------------------- the run
