@@ -2,7 +2,7 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
-## Unreleased
+## 2.2.0 (2026-10-26), readable agents
 
 - **Agents' text is readable in the terminal.** The plan's rationale, the questions, the coordinator's
   rationale and decisions, lab designs and reviews, run outcomes and the agents' messages in the logs are shown
