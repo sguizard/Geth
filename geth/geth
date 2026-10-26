@@ -56,8 +56,10 @@ agents() {  # agents <run_dir> <stage> [args]: a stage of Geth's agents (geth/ha
     acquire_slots "$d" "$stage" "$drivers"
     local fg=()  # questions in the terminal: the agent must stay in the terminal's foreground to read it
     for a in "$@"; do [ "$a" = terminal ] && fg=(--foreground); done
+    local progress=()  # in a terminal, the agents say what they do, one line per step (the log has the details)
+    [ -t 1 ] && progress=(--progress)
     sandboxed "$d" "${ro[@]}" -- timeout "${fg[@]}" "$(stage_limit "$stage")" env PYTHONPATH="$GETH_HOME/geth" \
-        python3 -m "harness.$stage" --run_dir "$d" "$@" > "$log" 2>&1
+        python3 -m "harness.$stage" --run_dir "$d" "$@" "${progress[@]}" > "$log" 2>&1
     local rc=$?
     explain_timeout $rc "$stage" "$log"
     rm -f "$d/.geth_$stage.pid"

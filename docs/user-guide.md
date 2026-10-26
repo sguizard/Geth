@@ -183,7 +183,13 @@ sites that use one.
 - The **reporter agent** writes the report from the pipeline's results. Every number in it is checked
   against the results; numbers that cannot be traced go back to the reporter once, to correct, before the
   report is saved.
-- Follow the agents in `$GETH_RUNS_DIR/my_analysis/geth_run.log`.
+- In a terminal (without `--detach`), Geth shows what each agent does, one line per step, with the time.
+  While the pipeline runs, its line is refreshed every 30 seconds with the tasks done, running or queued,
+  and the latest one, for example:
+  ```
+    [0:42] operator: Running nf-core/rnaseq as approved … 87 tasks done, 12 running or queued; latest: STAR_ALIGN (N61311_Dex)
+  ```
+  The details are in `$GETH_RUNS_DIR/my_analysis/geth_run.log`.
 
 If the run was interrupted, for example because the machine rebooted, run `geth run my_analysis` again.
 It resumes where it stopped.
@@ -310,7 +316,9 @@ A step is one of:
   nf-core pipeline would do it if one exists (for example nf-core/smrnaseq for microRNAs), and what the
   finished steps hand over to it. Nothing is improvised.
 
-`geth legion run` plans the next step and stops: `geth show my_project-<step>`, `geth approve
+In a terminal, `geth legion run` shows each event of the project with its time, and every agent at work: the
+planner, the operator (with the pipeline's progress), the reporter and the coordinator. It plans the next step and
+stops: `geth show my_project-<step>`, `geth approve
 my_project-<step>`, then `geth legion run my_project` again. After each step the coordinator reads its report
 and continues, stops, or proposes new steps, which you approve before anything runs. When every step is done,
 it writes `report.md` in the project folder (`$GETH_RUNS_DIR/projects/my_project`): the answer to your

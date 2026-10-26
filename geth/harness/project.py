@@ -17,7 +17,7 @@ import subprocess
 import sys
 
 from .agent import Agent, Tool, string_params
-from .ask import FileAnswerer, Nobody, TerminalAsker, ask_tool
+from .ask import FileAnswerer, Nobody, TerminalAsker, TerminalProgress, ask_tool
 from .llm import ModelError, model_client
 from .tools import GETH_HOME, inspect_reads, list_files, list_references, read_text, scratch
 
@@ -272,6 +272,7 @@ def main(argv=None):
     ap.add_argument("--ask", choices=("terminal", "file", "none", "off"), default="none")
     ap.add_argument("--answers", default="")
     ap.add_argument("--step_run", action="append", default=[], help="(for the sandbox: a step's run folder, read-only)")
+    ap.add_argument("--progress", action="store_true", help="show what the coordinator does, one line per step")
     a = ap.parse_args(argv)
     runs, data_root, references = (os.environ.get(v, "") for v in ("GETH_RUNS_DIR", "GETH_DATA_ROOT", "GETH_REFERENCES"))
     if not (runs and data_root and references):
@@ -319,11 +320,15 @@ def main(argv=None):
                       max_turns=12, trace_path=trace, log=log, text_answer=("SUBMIT_REPORT", "report", 400))
         prompt = SUMMARY_PROMPT.format(question=question, steps=steps_text(pdir, doc))
         done = lambda name, out: out.startswith("REPORT SAVED")
+    if a.progress or a.ask == "terminal":
+        agent.progress = TerminalProgress(who="coordinator")
     try:
         result = agent.run(prompt, done=done)
     except ModelError as e:
         log(f"Geth: {e}")
         result = None
+    if agent.progress:
+        agent.progress.close()
     print(f"Model usage: {json.dumps({k: round(v, 4 if k == 'usd' else 1) for k, v in client.usage.items()})}", flush=True)
     print(result or f"The coordinator ended without a final answer ({a.mode}).", flush=True)
     return 0 if result else 1

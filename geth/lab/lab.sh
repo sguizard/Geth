@@ -55,8 +55,10 @@ lab_stage() {  # lab_stage <run_dir> <mode> <tag> [params...]: one lab stage, on
             fi
             export GETH_MODEL_BUDGET_USD=$left
         fi
+        local progress=()  # in a terminal, the agent says what it does, one line per step
+        [ -t 1 ] && progress=(--progress)
         sandboxed "$d" -- timeout "$(stage_limit "$mode")" env PYTHONPATH="$GETH_HOME/geth" python3 -m harness.lab \
-            --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" > "$d/geth_$tag.log" 2>&1
+            --mode "$mode" --run_dir "$d" --data_dir "$(cat "$d/data_dir.txt")" "$@" "${progress[@]}" > "$d/geth_$tag.log" 2>&1
     fi
     rc=$?
     if [ -n "${GETH_MODEL_MODEL:-}" ] && [ "$mode" != run_c ]; then  # what this stage spent, for the next
@@ -69,7 +71,10 @@ print(sys.argv[2], json.loads(lines[-1].split(":", 1)[1]).get("usd", 0) if lines
     rm -f "$d/.geth_$tag.pid"
     return $rc
 }
-build_state() { echo "$2" > "$1/build_state.txt"; }
+build_state() {  # the build's state, in its folder and, in a terminal, for the person watching
+    echo "$2" > "$1/build_state.txt"
+    if [ -t 1 ]; then echo "[$(date +%H:%M)] lab build: $2"; fi
+}
 show_build() {
     local d=$1 f
     prose --labels --whole <<< "Question : $(cat "$d/question.txt")"

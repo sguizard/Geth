@@ -10,6 +10,7 @@ Every question and answer is kept in the run folder (plan_questions.md), for the
 import json
 import os
 import re
+import threading
 import time
 
 from .agent import Tool
@@ -66,16 +67,39 @@ class TerminalAsker:
 
 
 class TerminalProgress:
-    """What the planner is doing, one line per step, for the person at the terminal (the log has the details)."""
+    """What an agent is doing, one line per step, for the person at the terminal (the log has the details).
 
-    def __init__(self, tty="/dev/tty"):
-        self.out, self.t0, self.waiting = open(tty, "w"), time.time(), False
+    who: the agent's role, shown when several agents take turns (geth run, geth legion run). A long tool (a pipeline
+    run, a scheduler job) keeps one line that is refreshed every 30 seconds with the time and, for a pipeline, its
+    progress (watch(name): a short state, or ""). A check's verdict ends the line of the step that asked for it."""
+
+    LONG = {"RUN_NFCORE", "SC_ANALYSE", "SC_INSPECT", "LAB_INSPECT", "TEST_STEP", "TEST_PIPELINE", "LINT_PIPELINE"}
+    VERDICT = {"CHECK_PLAN", "SUBMIT_PLAN", "CHECK_STEPS", "SUBMIT_STEPS", "DECIDE", "SUBMIT_REPORT", "SUBMIT_OUTCOME",
+               "RUN_NFCORE", "SC_ANALYSE", "SAVE_ANNOTATIONS", "CHECK_DESIGN", "SUBMIT_DESIGN", "WRITE_STEP", "TEST_STEP",
+               "SAVE_SPEC", "WRITE_FILE", "LINT_PIPELINE", "TEST_PIPELINE", "SAVE_PIPELINE", "SUBMIT_NOTES", "SUBMIT_REVIEW"}
+
+    def __init__(self, tty="/dev/tty", who="", watch=None, every=30):
+        try:
+            import signal  # a stage may run in the background of the terminal: its lines must not stop it
+            signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+        except (ValueError, OSError, AttributeError):
+            pass
+        try:
+            self.out = open(tty, "w")
+        except OSError:  # no terminal after all: say nothing
+            self.out = None
+        self.t0, self.waiting, self.who, self.watch, self.every = time.time(), False, who, watch, every
+        self.pending, self.stop, self.lock = "", None, threading.Lock()
 
     def _line(self, text, end="\n"):
+        if self.out is None:
+            return
         s = int(time.time() - self.t0)
-        self.out.write(f"\r\033[K  [{s // 60}:{s % 60:02d}] {text}{end}")
-        self.out.flush()
-        self.waiting = end != "\n"
+        clock = f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+        with self.lock:
+            self.out.write(f"\r\033[K  [{clock}] {self.who + ': ' if self.who else ''}{text}{end}")
+            self.out.flush()
+            self.waiting = end != "\n"
 
     def thinking(self):
         self._line("thinking…", end="")
@@ -85,7 +109,9 @@ class TerminalProgress:
             args = json.loads(raw) if isinstance(raw, str) else (raw or {})
         except json.JSONDecodeError:
             args = {}
+        args = args if isinstance(args, dict) else {}
         base = lambda k: os.path.basename(str(args.get(k, "")).rstrip("/")) or str(args.get(k, ""))
+        changed = [k.split("_")[0] for k in ("samplesheet_csv", "params_json", "contrasts_csv", "profile") if args.get(k)]
         text = {"LIST_FILES": lambda: f"Listing {base('dir')}/",
                 "READ_TEXT": lambda: f"Reading {base('path')}",
                 "INSPECT_READS": lambda: f"Measuring the reads of {base('path')}",
@@ -97,26 +123,99 @@ class TerminalProgress:
                 "SC_INSPECT": lambda: f"Inspecting the cells of {base('h5ad')} (a scheduler job)",
                 "CHECK_PLAN": lambda: "Checking the plan",
                 "SUBMIT_PLAN": lambda: "Submitting the plan",
-                "ASK_USER": lambda: "Asking you"}.get(name, lambda: name)()
+                "ASK_USER": lambda: "Asking you",
+                # the coordinator (geth legion)
+                "LIST_CAPABILITIES": lambda: "Reading what Geth can run",
+                "SEARCH_NFCORE": lambda: f"Searching nf-core for '{args.get('words', '')}'",
+                "FIND_GENOME": lambda: f"Looking up the {args.get('species', '')} genome in Ensembl",
+                "CHECK_STEPS": lambda: "Checking the steps",
+                "SUBMIT_STEPS": lambda: "Submitting the steps",
+                "READ_STEP": lambda: f"Reading step {args.get('step', '')}'s run",
+                "DECIDE": lambda: "Deciding what happens next",
+                # the operator, the analyst and the reporter (geth run)
+                "RUN_NFCORE": lambda: f"Running nf-core/{str(args.get('pipeline', '')).replace('nf-core/', '')} "
+                                      + (f"with a new {' and '.join(changed)}" if changed else "as approved"),
+                "SC_ANALYSE": lambda: "Running the single-cell analysis (a scheduler job)",
+                "SAVE_ANNOTATIONS": lambda: "Saving the cluster annotations",
+                "SUBMIT_OUTCOME": lambda: "Reporting the outcome",
+                "COLLECT_RESULTS": lambda: "Collecting the results",
+                "SUBMIT_REPORT": lambda: "Submitting the report",
+                # the lab
+                "LAB_LIST_FILES": lambda: f"Listing {base('dir')}/",
+                "LAB_READ_TEXT": lambda: f"Reading {base('path')}",
+                "LAB_INSPECT": lambda: f"Inspecting {base('h5ad')} (a scheduler job)",
+                "CHECK_DESIGN": lambda: "Checking the design",
+                "SUBMIT_DESIGN": lambda: "Submitting the design",
+                "WRITE_STEP": lambda: f"Writing step {args.get('name', '')}",
+                "TEST_STEP": lambda: f"Testing step {args.get('name', '')} on the subset (a scheduler job)",
+                "READ_BUILD": lambda: f"Reading {args.get('what', 'the build')}",
+                "SAVE_SPEC": lambda: "Saving the spec",
+                "WRITE_FILE": lambda: f"Writing {args.get('path_name', '')}",
+                "LINT_PIPELINE": lambda: "Linting the pipeline (a scheduler job)",
+                "TEST_PIPELINE": lambda: "Testing the pipeline on the subset (a scheduler job)",
+                "READ_PROJECT": lambda: f"Reading {args.get('what', 'the project')}",
+                "SAVE_PIPELINE": lambda: "Saving the pipeline",
+                "SUBMIT_NOTES": lambda: "Handing over to the reviewer",
+                "SUBMIT_REVIEW": lambda: f"Giving the verdict: {args.get('verdict', '')}"}.get(name, lambda: name)()
         self.pending = text
-        if name in ("CHECK_PLAN", "SUBMIT_PLAN"):
+        if name in self.VERDICT:
             self._line(text + " …", end="")  # completed by after()
+            if name in self.LONG:
+                self._tick(name)
         else:
             self._line(text)
 
+    def _tick(self, name):
+        """Refresh the waiting line of a long tool until after() ends it."""
+        self.stop = threading.Event()
+
+        def run(stop=self.stop):
+            while not stop.wait(self.every):
+                state = ""
+                try:
+                    state = self.watch(name) if self.watch else ""
+                except Exception:  # the progress line must never break the stage
+                    pass
+                self._line(f"{self.pending} … {state}".rstrip(), end="")
+        threading.Thread(target=run, daemon=True).start()
+
+    @staticmethod
+    def verdict(name, output):
+        lines = [l.strip() for l in (output or "").strip().splitlines() if l.strip()]
+        first = lines[0] if lines else "(no output)"
+        status = next((l for l in lines if l.startswith("STATUS:")), "")
+        problems = [l[2:] for l in lines if l.startswith("- ")]
+        short = lambda t: t if len(t) <= 100 else t[:97] + "…"
+        for check in ("PLAN CHECK: ", "STEP CHECK: ", "DESIGN CHECK: ", "SPEC CHECK: ", "PIPELINE CHECK: "):
+            if first.startswith(check):
+                if first.startswith(check + "OK"):
+                    return {"SUBMIT_PLAN": "OK, plan saved", "SUBMIT_STEPS": "OK, steps saved",
+                            "SUBMIT_DESIGN": "OK, design saved"}.get(name, "OK")
+                return short(first.replace(check, "") + (f": {problems[0]}" if problems else ""))
+        if status:
+            if status.startswith("STATUS: SUCCESS"):
+                return "success"
+            error = next((l for l in lines if re.search(r"ERROR|Error|error", l) and not l.startswith("---")), "")
+            return short(status.replace("STATUS: ", "").lower() + (f": {error}" if error else ""))
+        if first.startswith(("REPORT SAVED. ", "NOT SAVED. ")):
+            rest = first.split(". ", 1)[1].replace("REPORT CHECK: ", "")
+            return short(("saved, " if first.startswith("REPORT") else "sent back to correct, ") + rest)
+        if first.startswith("DECISION SAVED: "):
+            return first.replace("DECISION SAVED: ", "")
+        return short(first)
+
     def after(self, name, output):
-        if name not in ("CHECK_PLAN", "SUBMIT_PLAN"):
+        if self.stop:
+            self.stop.set()
+            self.stop = None
+        if name not in self.VERDICT:
             return
-        first = output.splitlines()[0] if output else ""
-        if first.startswith("PLAN CHECK: OK"):
-            verdict = "OK" if name == "CHECK_PLAN" else "OK, plan saved"
-        else:
-            problems = [l[2:] for l in output.splitlines() if l.startswith("- ")]
-            verdict = f"{first.replace('PLAN CHECK: ', '')}" + (f": {problems[0][:90]}" if problems else "")
-        self._line(f"{self.pending} → {verdict}")
+        self._line(f"{self.pending} → {self.verdict(name, output)}")
 
     def close(self):
-        if self.waiting:
+        if self.stop:
+            self.stop.set()
+        if self.out is not None and self.waiting:
             self.out.write("\r\033[K")
             self.out.flush()
 
