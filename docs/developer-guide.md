@@ -123,6 +123,7 @@ person.
 | `geth_<stage>.log`, `harness_trace_<stage>.jsonl`, `.harness/` | the agents | log; every model answer and tool call (never the key); scratch files |
 | `geth_work/`, `.harness/jobs/` | Nextflow | the tools' scheduler jobs: work folder, one launch folder per job |
 | `.geth_<stage>.pid` | `geth` | present while a stage works on the run (`geth list`, `geth stop`): host, pid, driver slots |
+| `geth_version.txt` | `record_version` (`driver_slots.sh`) | one line per agent stage: stage, date, Geth release and commit ("with local changes" if the clone differed); also in project and lab folders |
 
 Because the folder holds the whole state, `geth run` resumes after an interruption: Nextflow `-resume`
 in `nfcore/`, attempt numbering continues, and the gate state persists.

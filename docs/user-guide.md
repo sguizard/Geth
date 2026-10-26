@@ -351,7 +351,10 @@ report says so. Without `--lab`, such a step stays a gap.
 - `geth list` shows every analysis and its state: planned, approved, running, succeeded or failed.
 - `geth stop my_analysis` stops a planning or a run (see [step 5](#step-5-run)).
 - `geth report my_analysis` writes the report of a finished run again, from its results.
-- `geth version` prints the version of Geth you are using: worth quoting when you report a problem.
+- `geth version` (or `geth --version`) prints the version of Geth you are using, with its commit: worth
+  quoting when you report a problem. Each analysis also keeps the version that planned, ran and reported it
+  (`geth_version.txt` in its folder): `geth show` says which Geth planned it, and `geth status` lists them all.
+  "with local changes" means the code differed from that commit.
 - **To change an analysis that already ran,** plan again under a new name. That keeps the history of
   what was run clear.
 - **Disk space.** The `work/` folder inside a run holds the pipeline's intermediate files. It is large:
