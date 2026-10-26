@@ -17,6 +17,7 @@ If the folder's text files do not tell you these, ask the scientist (ASK_USER, w
   Cell Ranger and Cell Ranger multi detect the chemistry (`protocol=auto`): do not ask for it then.
 - Whether several samples share a library (On-Chip Multiplexing, CellPlex/CMO, Flex) and, if so, which barcode is which sample.
 - Which libraries and lanes belong to which sample, and the expected number of cells.
+- Whether the libraries hold whole cells or **nuclei** (single-nucleus RNA-seq), if the delivery does not say.
 
 ## Samplesheet (CSV, header required)
 Columns: `sample,fastq_1,fastq_2,expected_cells`
@@ -33,6 +34,11 @@ Columns: `sample,fastq_1,fastq_2,expected_cells`
   - If the delivery does not state the chemistry, say so in the rationale and ask the person to confirm it
     before approval, or use `aligner=cellranger` with `protocol=auto`. A wrong chemistry gives almost no cells.
 - `aligner`: `star` (STARsolo; robust, recommended here), `simpleaf` (default), `kallisto`, `cellranger` (needs licence-free container, slow).
+- **Single-nucleus libraries** (snRNA-seq, "nuclei"): nuclei hold mostly unspliced pre-mRNA, so the intronic
+  reads must be counted, or most reads and nuclei are lost. With `aligner=star` set `star_feature=GeneFull`;
+  `aligner=cellranger` counts introns by default (and detects the chemistry, `protocol=auto`);
+  `aligner=kallisto` needs `kb_workflow=nac`. Do not use `simpleaf` for nuclei. The plan check refuses a
+  single-nucleus delivery counted otherwise. CellBender works on nuclei too.
 - Custom reference: `fasta` and `gtf`, absolute paths. Do not set `genome` at the same time.
 - **CellBender** (ambient RNA removal) is recommended for real data: keep it on (`skip_cellbender=false`, the
   default). Geth sends it to a GPU automatically when the site has one (on CPUs it is slower but works).

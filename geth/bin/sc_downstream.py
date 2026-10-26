@@ -42,13 +42,19 @@ DEFAULTS = {
 }
 
 
+# Mitochondrial genes of species whose names carry no MT- prefix (chicken: ND1, COX1, CYTB ...).
+MITO_NO_PREFIX = {"ND1", "ND2", "ND3", "ND4", "ND4L", "ND5", "ND6", "COX1", "COX2", "COX3", "ATP6", "ATP8", "CYTB", "CYB"}
+
+
 def load(path):
     adata = sc.read_h5ad(path)
     symbols = adata.var["gene_symbol"] if "gene_symbol" in adata.var else adata.var_names
     adata.var["gene_id"] = adata.var_names
     adata.var_names = [str(s) for s in symbols]
     adata.var_names_make_unique()
-    adata.var["mt"] = adata.var_names.str.upper().str.startswith("MT-")
+    upper = adata.var_names.str.upper()
+    mt = np.asarray(upper.str.startswith("MT-"))
+    adata.var["mt"] = mt if mt.any() else np.asarray(upper.isin(MITO_NO_PREFIX))
     adata.var["ribo"] = adata.var_names.str.upper().str.match(r"^RP[SL]")
     adata.var["hb"] = adata.var_names.str.upper().str.match(r"^HB(?!P)")
     sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "ribo", "hb"], inplace=True, log1p=True, percent_top=None)
@@ -203,27 +209,31 @@ def run(path, design_path, outdir):
     panel = [g for g in d["markers.panel"] if g in a.raw.var_names]
     diag["markers_panel_missing"] = [g for g in d["markers.panel"] if g not in a.raw.var_names]
 
-    # CellTypist on log1p(10k)-normalised counts, as the models expect.
-    import anndata
-    import celltypist
-    ct = anndata.AnnData(X=a.layers["counts"].copy(), obs=a.obs[["cluster"]].copy(), var=a.var[[]].copy())
-    sc.pp.normalize_total(ct, target_sum=1e4)
-    sc.pp.log1p(ct)
-    pred = celltypist.annotate(ct, model=d["annotation.model"], majority_voting=bool(d["annotation.majority_voting"]),
-                               over_clustering="cluster")
-    labels = pred.predicted_labels
-    a.obs["celltypist_label"] = labels["predicted_labels"].astype(str).values
-    if "majority_voting" in labels:
-        a.obs["celltypist_majority"] = labels["majority_voting"].astype(str).values
+    model = d.get("annotation.model")
+    if model:  # CellTypist on log1p(10k)-normalised counts, as the models expect
+        import anndata
+        import celltypist
+        ct = anndata.AnnData(X=a.layers["counts"].copy(), obs=a.obs[["cluster"]].copy(), var=a.var[[]].copy())
+        sc.pp.normalize_total(ct, target_sum=1e4)
+        sc.pp.log1p(ct)
+        pred = celltypist.annotate(ct, model=model, majority_voting=bool(d["annotation.majority_voting"]),
+                                   over_clustering="cluster")
+        labels = pred.predicted_labels
+        a.obs["celltypist_label"] = labels["predicted_labels"].astype(str).values
+        if "majority_voting" in labels:
+            a.obs["celltypist_majority"] = labels["majority_voting"].astype(str).values
+    # (no model: a species or tissue CellTypist does not cover; the clusters are named from their markers)
 
     clusters = []
     agree_cells = 0
     for cl in sorted(a.obs["cluster"].unique(), key=lambda x: int(x)):
         cells = a.obs["cluster"] == cl
-        sub = a.obs.loc[cells, "celltypist_label"]
-        top_label = sub.value_counts().index[0]
-        agreement = float((sub == top_label).mean())
-        agree_cells += int((sub == top_label).sum())
+        top_label, agreement = None, None
+        if model:
+            sub = a.obs.loc[cells, "celltypist_label"]
+            top_label = sub.value_counts().index[0]
+            agreement = float((sub == top_label).mean())
+            agree_cells += int((sub == top_label).sum())
         top = [{"gene": str(rgg["names"][cl][i]), "log2fc": round(float(rgg["logfoldchanges"][cl][i]), 2),
                 "padj": float(f"{rgg['pvals_adj'][cl][i]:.2g}")} for i in range(int(d["markers.n_genes"]))]
         expr = a.raw[cells, panel].X if panel else None
@@ -232,11 +242,12 @@ def run(path, design_path, outdir):
             col = expr[:, j].toarray().ravel() if hasattr(expr, "toarray") else np.asarray(expr[:, j]).ravel()
             panel_stats[g] = {"mean": round(float(col.mean()), 2), "pct_expressing": round(float((col > 0).mean() * 100), 1)}
         clusters.append({"cluster": cl, "cells": int(cells.sum()), "top_markers": top, "panel": panel_stats,
-                         "celltypist_label": top_label, "celltypist_agreement": round(agreement, 3),
+                         "celltypist_label": top_label,
+                         "celltypist_agreement": round(agreement, 3) if model else None,
                          "pct_counts_mt_median": round(float(a.obs.loc[cells, "pct_counts_mt"].median()), 2),
                          "n_genes_median": int(a.obs.loc[cells, "n_genes_by_counts"].median())})
     diag["clusters"] = clusters
-    diag["celltypist_cluster_agreement"] = round(agree_cells / a.n_obs, 4)
+    diag["celltypist_cluster_agreement"] = round(agree_cells / a.n_obs, 4) if model else None
     flags = []
     if diag["cells_kept_fraction"] < FLAG_MIN_KEPT:
         worst = max(diag["qc_steps"], key=lambda s: s["removed"])
@@ -247,16 +258,18 @@ def run(path, design_path, outdir):
         flags.append(f"doublet rate {dbl['rate'] * 100:.1f}% vs expected {dbl['expected_rate'] * 100:.1f}% "
                      f"(threshold {dbl['threshold']}, {dbl['threshold_source']})")
     for c in clusters:
-        if c["celltypist_agreement"] < FLAG_MIN_AGREEMENT:
+        if model and c["celltypist_agreement"] < FLAG_MIN_AGREEMENT:
             flags.append(f"cluster {c['cluster']} CellTypist agreement {c['celltypist_agreement'] * 100:.0f}% "
                          f"< {FLAG_MIN_AGREEMENT * 100:.0f}% (mixed population?)")
         if c["cells"] < FLAG_MIN_CLUSTER_CELLS:
             flags.append(f"cluster {c['cluster']} has only {c['cells']} cells")
     diag["flags"] = flags
-    comp = a.obs["celltypist_label"].value_counts()
-    diag["celltypist_composition"] = {str(k): int(v) for k, v in comp.items()}
+    if model:
+        comp = a.obs["celltypist_label"].value_counts()
+        diag["celltypist_composition"] = {str(k): int(v) for k, v in comp.items()}
 
-    sc.pl.umap(a, color=["cluster", "celltypist_label"], save="_clusters.png", show=False, legend_loc="on data", legend_fontsize=6)
+    sc.pl.umap(a, color=["cluster", "celltypist_label"] if model else ["cluster"], save="_clusters.png", show=False,
+               legend_loc="on data", legend_fontsize=6)
     sc.pl.violin(a, ["n_genes_by_counts", "total_counts", "pct_counts_mt"], jitter=0.3, multi_panel=True, save="_qc.png", show=False)
     a.write_h5ad(os.path.join(outdir, "processed.h5ad"), compression="gzip")
     json.dump(diag, open(os.path.join(outdir, "diagnostics.json"), "w"), indent=2)
@@ -275,12 +288,17 @@ def summary(diag):
                                      for r, v in diag["leiden"].items()),
               f"Chosen resolution: {diag['design']['leiden.chosen']}",
               f"CellTypist ({os.path.basename(str(diag['design']['annotation.model']))}): "
-              f"{diag['celltypist_cluster_agreement'] * 100:.1f}% of cells carry their cluster's majority label", ""]
+              f"{diag['celltypist_cluster_agreement'] * 100:.1f}% of cells carry their cluster's majority label"
+              if diag.get("celltypist_cluster_agreement") is not None else
+              "CellTypist: no model (none for this species or tissue): name each cluster from its markers and the panel", ""]
     panel = list(diag["clusters"][0]["panel"]) if diag["clusters"] else []
-    lines += ["| Cluster | cells | CellTypist majority label | agreement | top markers | " + " | ".join(panel) + " |",
-              "|---|---|---|---|---|" + "---|" * len(panel)]
+    model = diag.get("celltypist_cluster_agreement") is not None
+    ct_head = "CellTypist majority label | agreement | " if model else ""
+    lines += ["| Cluster | cells | " + ct_head + "top markers | " + " | ".join(panel) + " |",
+              "|---|---|" + ("---|---|" if model else "") + "---|" + "---|" * len(panel)]
     for c in diag["clusters"]:
-        lines.append(f"| {c['cluster']} | {c['cells']:,} | {c['celltypist_label']} | {c['celltypist_agreement'] * 100:.0f}% | "
+        ct = f"{c['celltypist_label']} | {c['celltypist_agreement'] * 100:.0f}% | " if model else ""
+        lines.append(f"| {c['cluster']} | {c['cells']:,} | {ct}"
                      + ", ".join(m["gene"] for m in c["top_markers"][:5]) + " | "
                      + " | ".join(f"{c['panel'][g]['mean']:.2f} ({c['panel'][g]['pct_expressing']:.0f}%)" for g in panel) + " |")
     if panel:

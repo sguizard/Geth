@@ -262,7 +262,7 @@ The toolbox prints **FLAGS**:
 
 - fewer than 85% of cells kept
 - a doublet rate outside a third to three times the expected rate
-- a cluster with less than 60% CellTypist agreement
+- a cluster with less than 60% CellTypist agreement (when the design has a model)
 - a cluster with fewer than 10 cells
 
 The analyst must address each flag or explain why it needs no change. It then annotates every cluster,
@@ -403,7 +403,9 @@ outdated one (nanoseq, eager).
   6. neighbours and UMAP
   7. Leiden clustering at each resolution
   8. markers
-  9. CellTypist annotation, optionally with majority voting
+  9. CellTypist annotation, optionally with majority voting; none when the design has no model (a species
+     CellTypist does not cover: the analyst names clusters from the markers). Mitochondrial genes are those
+     named `MT-*`, or, for species without the prefix (chicken), `ND1`…`CYTB`
 
   It writes `processed.h5ad`, `diagnostics.json`, figures and a text summary with FLAGS.
 

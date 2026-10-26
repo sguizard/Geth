@@ -494,6 +494,8 @@ def sc_downstream(run_dir):
     with open(path) as fh:
         d = json.load(fh)
     out = os.path.dirname(path)
+    model = d.get("celltypist_cluster_agreement") is not None
+    panel = list(d["clusters"][0].get("panel", {})) if d.get("clusters") and not model else []
     parts = [f"Final analysis: `{out}` (input `{d['input']}`)",
              "### Cells\n" + table(["Step", "Cells removed", "Cells kept"],
                                    [["input", "", count(d["cells_input"])]]
@@ -506,15 +508,22 @@ def sc_downstream(run_dir):
              "### Clustering\n" + table(["Leiden resolution", "Clusters", "Smallest cluster (cells)"],
                                         [[r, v["clusters"], v["smallest_cluster"]] for r, v in d["leiden"].items()])
              + f"\n\nChosen resolution: {d['design']['leiden.chosen']}. "
-             f"{pct(100 * d['celltypist_cluster_agreement'])}% of cells carry their cluster's majority CellTypist label "
-             f"(model `{os.path.basename(str(d['design']['annotation.model']))}`).",
-             "### Clusters\n" + table(["Cluster", "Cells", "CellTypist majority label", "Agreement (%)", "Top markers"],
-                                      [[c["cluster"], count(c["cells"]), c["celltypist_label"],
-                                        pct(100 * c["celltypist_agreement"], 0),
-                                        ", ".join(m["gene"] for m in c["top_markers"][:5])] for c in d["clusters"]]),
-             "### CellTypist composition (per-cell labels)\n" + table(
-                 ["Cell type", "Cells", "Share (%)"],
-                 [[k, count(v), pct(100 * v / d["cells_kept"])] for k, v in list(d["celltypist_composition"].items())[:15]])]
+             + (f"{pct(100 * d['celltypist_cluster_agreement'])}% of cells carry their cluster's majority CellTypist label "
+                f"(model `{os.path.basename(str(d['design']['annotation.model']))}`)."
+                if model else "No CellTypist model (none for this species or tissue): clusters are named from their markers."),
+             "### Clusters\n" + (table(["Cluster", "Cells", "CellTypist majority label", "Agreement (%)", "Top markers"],
+                                       [[c["cluster"], count(c["cells"]), c["celltypist_label"],
+                                         pct(100 * c["celltypist_agreement"], 0),
+                                         ", ".join(m["gene"] for m in c["top_markers"][:5])] for c in d["clusters"]])
+                                 if model else
+                                 table(["Cluster", "Cells", "Top markers"] + panel,
+                                       [[c["cluster"], count(c["cells"]), ", ".join(m["gene"] for m in c["top_markers"][:5])]
+                                        + [f"{c['panel'][g]['mean']:.2f} ({c['panel'][g]['pct_expressing']:.0f}%)" for g in panel]
+                                        for c in d["clusters"]]))]
+    if model:
+        parts.append("### CellTypist composition (per-cell labels)\n" + table(
+            ["Cell type", "Cells", "Share (%)"],
+            [[k, count(v), pct(100 * v / d["cells_kept"])] for k, v in list(d["celltypist_composition"].items())[:15]]))
     annotations = os.path.join(run_dir, "annotations.txt")
     if os.path.isfile(annotations):
         with open(annotations) as fh:

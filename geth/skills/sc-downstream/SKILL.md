@@ -37,8 +37,14 @@ report's "Cells per sample after CellBender" table says how many real cells to e
 - Markers: `markers.method=wilcoxon`, `markers.n_genes` (10), `markers.panel` = canonical markers of the
   populations expected in this tissue (comma-separated gene symbols), e.g. PBMC:
   `CD3E,CD4,IL7R,CD8A,NKG7,GNLY,MS4A1,CD79A,CD14,LYZ,FCGR3A,FCER1A,CLEC10A,LILRA4,PPBP`.
-- Annotation: `annotation.model` = a CellTypist model from LIST_REFERENCES matching tissue and species
+- Annotation: `annotation.model` = a CellTypist model from LIST_REFERENCES matching tissue **and species**
   (immune cells: `Immune_All_Low.pkl` fine-grained, `Immune_All_High.pkl` broad); `annotation.majority_voting=true`.
+  CellTypist has models for human and mouse only. For another species (chicken, zebrafish ...) or a tissue no
+  model covers, **leave `annotation.model` out**: the clusters are then named from their markers, so put the
+  tissue's known markers in `markers.panel` (up to 40; those the scientist gives first). The plan check refuses a
+  model of another species than the cells'.
+- Single-nucleus data: no mitochondrial reads are expected in nuclei; a high `pct_counts_mt` means cytoplasmic
+  contamination, so keep `qc.max_pct_mt` low (e.g. 5) unless the inspection shows otherwise.
 
 ## Revision (analyst, at most once)
 After the first analysis you see the diagnostics, ending with FLAGS computed by Geth (cells kept < 85%,
@@ -53,5 +59,6 @@ Add `justification=` citing the diagnostic, for example:
 If the diagnostics look sound, do not revise.
 
 ## Annotating clusters (analyst's final answer)
-For each cluster give `cluster=label`, using the canonical markers first and CellTypist as support; say
-"uncertain" when they disagree. Never invent populations that neither markers nor CellTypist support.
+For each cluster give `cluster=label`, using the canonical markers first and CellTypist as support (if the
+design has a model); say "uncertain" when they disagree, or when the markers do not point to one cell type.
+Never invent populations that neither markers nor CellTypist support.

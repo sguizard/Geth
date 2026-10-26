@@ -38,6 +38,8 @@ Say, in plain words:
 - **pairing or batches**: e.g. "each donor gave one treated and one untreated sample"
 - **the organism**, and anything unusual: library kit, strandedness, 10x chemistry version (e.g. GEM-X
   3' v4, Next GEM 3' v3.1), spike-ins
+- **single-nucleus libraries**: say "single-nucleus" (or snRNA-seq) if the libraries hold nuclei rather
+  than whole cells: their intronic reads must be counted
 - **multiplexed single-cell libraries**: if several samples share one 10x library (On-Chip Multiplexing,
   CellPlex, Flex), say so, and give the table of which barcode (OB1, CMO301, BC001, ...) is which sample
 
@@ -279,7 +281,7 @@ proposes an **analysis design** from a fixed menu:
 - doublet detection
 - normalisation and clustering resolutions
 - a panel of marker genes to display
-- a CellTypist annotation model from the reference catalogue
+- a CellTypist annotation model from the reference catalogue, if one fits your species and tissue
 
 Review the thresholds: does the design keep a sensible fraction of your cells? Review also the marker
 panel and the annotation model.
@@ -290,7 +292,10 @@ justification. It then names each cluster from its markers. A cluster where mark
 disagree is labelled "uncertain".
 
 The annotation model must match your tissue and species. Available models are listed at
-<https://www.celltypist.org/models>; ask for one to be added to the catalogue if needed.
+<https://www.celltypist.org/models>; ask for one to be added to the catalogue if needed. CellTypist covers
+human and mouse only: for another species (chicken, for example) the design has no model, and the clusters are
+named from their markers alone. Give your known markers in the README or the question, so that the planner
+puts them in the marker panel.
 
 ## The legion: several analyses towards one question
 

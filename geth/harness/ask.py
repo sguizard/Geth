@@ -96,13 +96,26 @@ class TerminalProgress:
             return
         s = int(time.time() - self.t0)
         clock = f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+        line = f"  [{clock}] {self.who + ': ' if self.who else ''}{text}"
+        if end != "\n":  # a line rewritten in place must fit the window: a wrapped one would leave its first rows
+            try:
+                width = os.get_terminal_size(self.out.fileno()).columns - 1
+            except (OSError, ValueError):
+                width = 0
+            if 20 < width < len(line):
+                line = line[:width - 1] + "…"
         with self.lock:
-            self.out.write(f"\r\033[K  [{clock}] {self.who + ': ' if self.who else ''}{text}{end}")
+            self.out.write(f"\r\033[K{line}{end}")
             self.out.flush()
             self.waiting = end != "\n"
 
     def thinking(self):
-        self._line("thinking…", end="")
+        """Waiting for the model: the line keeps its clock running, and says so when the wait is long."""
+        self._stop()
+        self.pending, started = "thinking…", time.time()
+        self._line(self.pending, end="")
+        self._tick(None, lambda: "thinking…" + (f" (the model has been answering for {int(time.time() - started) // 60} min)"
+                                                 if time.time() - started >= 120 else ""))
 
     def before(self, name, raw):
         try:
@@ -157,6 +170,7 @@ class TerminalProgress:
                 "SAVE_PIPELINE": lambda: "Saving the pipeline",
                 "SUBMIT_NOTES": lambda: "Handing over to the reviewer",
                 "SUBMIT_REVIEW": lambda: f"Giving the verdict: {args.get('verdict', '')}"}.get(name, lambda: name)()
+        self._stop()
         self.pending = text
         if name in self.VERDICT:
             self._line(text + " …", end="")  # completed by after()
@@ -165,19 +179,24 @@ class TerminalProgress:
         else:
             self._line(text)
 
-    def _tick(self, name):
-        """Refresh the waiting line of a long tool until after() ends it."""
+    def _tick(self, name, render=None):
+        """Refresh the waiting line (a long tool, or the model's answer) until the next step ends it."""
         self.stop = threading.Event()
 
         def run(stop=self.stop):
             while not stop.wait(self.every):
-                state = ""
                 try:
-                    state = self.watch(name) if self.watch else ""
+                    text = render() if render else f"{self.pending} … {self.watch(name) if self.watch else ''}".rstrip()
                 except Exception:  # the progress line must never break the stage
-                    pass
-                self._line(f"{self.pending} … {state}".rstrip(), end="")
+                    text = self.pending
+                if not stop.is_set():
+                    self._line(text, end="")
         threading.Thread(target=run, daemon=True).start()
+
+    def _stop(self):
+        if self.stop:
+            self.stop.set()
+            self.stop = None
 
     @staticmethod
     def verdict(name, output):
@@ -202,19 +221,18 @@ class TerminalProgress:
             return short(("saved, " if first.startswith("REPORT") else "sent back to correct, ") + rest)
         if first.startswith("DECISION SAVED: "):
             return first.replace("DECISION SAVED: ", "")
+        if first.startswith(("OUTCOME SAVED", "NOTES SAVED", "ANNOTATIONS SAVED")):
+            return "saved"
         return short(first)
 
     def after(self, name, output):
-        if self.stop:
-            self.stop.set()
-            self.stop = None
+        self._stop()
         if name not in self.VERDICT:
             return
         self._line(f"{self.pending} → {self.verdict(name, output)}")
 
     def close(self):
-        if self.stop:
-            self.stop.set()
+        self._stop()
         if self.out is not None and self.waiting:
             self.out.write("\r\033[K")
             self.out.flush()
