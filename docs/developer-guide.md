@@ -293,10 +293,14 @@ The loop (`agent.py`) keeps the agents honest about what it cannot check itself:
 
 The model client (`llm.py`) speaks OpenAI-compatible chat completions, or the Responses API that GPT-6
 models need for tools with reasoning. It retries, and counts tokens, cost and time. A model a person chooses
-for one command (`--model <name>`: `geth plan`, `geth legion new`, `geth lab`; `model_client()` reads
-`GETH_MODEL_*`, set by `use_model` in `driver_slots.sh`) needs its prices and a budget. Before each request,
-`_room()` estimates its input cost and caps the output tokens so that the request cannot cross the budget; a
-request with too little room left is not sent. Instructions state
+for one command (`--model <name>` on `geth plan`, `run`, `report`, `legion new`, `legion run` and `lab`;
+`model_client()` reads `GETH_MODEL_*`, set by `use_model` in `driver_slots.sh`) needs its prices and a budget.
+Before each request, `_room()` estimates its input cost and caps the output tokens so that the request cannot
+cross the budget; a request with too little room left is not sent. A command that starts several stages has a
+total (`--budget`, `model_total`): `paid_stage_start` gives each stage what is left, and refuses the stage that
+would find nothing; `paid_stage_end` adds what it spent to the spend file (the client writes its running usage to
+`GETH_MODEL_USAGE_FILE`, so a stopped stage is counted too). Commands started by `geth legion run` inherit the
+total; the runner pauses the project when it is spent (`BudgetSpent`, exit 4) and leaves what it stopped to do. Instructions state
 what success looks like ("never claim success unless the tool printed STATUS: SUCCESS").
 
 **Skills** are Markdown files with a YAML header (`name`, `description`). The planner loads the one it

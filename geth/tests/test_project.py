@@ -122,7 +122,13 @@ class Project(unittest.TestCase):
     def fake_geth(self, *args, quiet=False, env=None):
         """The geth commands, as far as the runner sees them: folders and files."""
         self.calls.append(args)
-        if args[0] == "plan":
+        if args[0] == "plan" and getattr(self, "spend_on_plan", None):  # a paid planner that runs out of budget
+            run = os.path.join(gp.RUNS, args[-1])
+            os.makedirs(run)
+            open(os.path.join(run, "geth_plan.log"), "w").write("Geth: budget reached: this stage has spent ...\n")
+            with open(os.environ["GETH_MODEL_SPEND"], "a") as fh:
+                fh.write(f"{args[-1]}:plan {self.spend_on_plan} sol\n")
+        elif args[0] == "plan":
             run = os.path.join(gp.RUNS, args[-1])
             os.makedirs(run)
             open(os.path.join(run, "plan_pipeline.txt"), "w").write("x\n")
@@ -188,6 +194,31 @@ class Project(unittest.TestCase):
         self.assertEqual(gp.status(self.p, CELLS), "done")
         self.assertIn("tester overruled the coordinator's revise after count", gp.read(os.path.join(self.p, "log.md")))
 
+
+    def test_a_spent_budget_pauses_the_project_without_failing_a_step(self):
+        spend = os.path.join(self.p, "model_spend.txt")
+        saved = {k: os.environ.get(k) for k in ("GETH_MODEL_MODEL", "GETH_MODEL_TOTAL_USD", "GETH_MODEL_SPEND",
+                                                "GETH_MODEL_SPEND_FROM")}
+        os.environ.update(GETH_MODEL_MODEL="sol", GETH_MODEL_TOTAL_USD="0.50", GETH_MODEL_SPEND=spend,
+                          GETH_MODEL_SPEND_FROM="0")
+        try:
+            self.start(COUNT, CELLS)
+            self.spend_on_plan = "0.4995"  # the planner's next request would have crossed the total
+            self.assertEqual(gp.run(self.p), 4)
+            self.assertEqual(gp.status(self.p, COUNT), "todo")  # planned again next time, not a failed plan
+            self.assertIn("budget for this command is spent (planning step count)", gp.read(os.path.join(self.p, "log.md")))
+            calls = len(self.calls)
+            self.assertEqual(gp.run(self.p), 4)  # nothing left: no agent is started at all
+            self.assertEqual(len(self.calls), calls)
+            os.environ.update(GETH_MODEL_SPEND_FROM="1")  # a new command, with its own total
+            self.spend_on_plan = None
+            self.assertEqual(gp.run(self.p), 2)  # planned, waiting for the person
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
     def test_a_lab_step_starts_from_the_count_matrix_and_waits_for_its_design_approval(self):
         gp.save(os.path.join(self.p, "options.json"), {"lab": True})

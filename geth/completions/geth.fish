@@ -100,7 +100,10 @@ complete -c geth -n '__geth_legion_at run 1' -l detach -d 'Keep running after yo
 # geth plan <data_dir> "<question>" <name>   |   geth plan --from <run> "<question>" <name>
 complete -c geth -n '__geth_at plan 0' -a '(__fish_complete_directories (commandline -ct) "data folder")'
 complete -c geth -n '__geth_at plan 0' -l from -d 'Follow-up analysis of a finished run'
-complete -c geth -n '__fish_seen_subcommand_from plan' -l model -d 'Paid planner model from the site settings (e.g. sol)' -x
+for c in plan run report
+    complete -c geth -n "__fish_seen_subcommand_from $c; and not __fish_seen_subcommand_from legion lab" -l model -d 'Paid model from the site settings (e.g. sol)' -x
+    complete -c geth -n "__fish_seen_subcommand_from $c; and not __fish_seen_subcommand_from legion lab" -l budget -d 'Its cap per agent stage (USD)' -x
+end
 complete -c geth -n '__fish_seen_subcommand_from plan' -l answers -d 'Answers file for the planner' -r
 complete -c geth -n __geth_plan_from -a '(__geth_runs succeeded)'
 
@@ -134,6 +137,9 @@ complete -c geth -n '__fish_seen_subcommand_from lab' -l budget -d 'The most thi
 
 # geth legion: options of new, approve and run
 complete -c geth -n '__fish_seen_subcommand_from legion; and __fish_seen_subcommand_from new' -l model -d 'Coordinator model from the site settings' -x
+complete -c geth -n '__fish_seen_subcommand_from legion; and __fish_seen_subcommand_from new' -l budget -d 'Its cap (USD)' -x
+complete -c geth -n '__geth_legion_at run 1' -l model -d 'Every agent of this command on a paid model (with --budget)' -x
+complete -c geth -n '__geth_legion_at run 1' -l budget -d 'The most this command may spend, steps included (USD)' -x
 complete -c geth -n '__fish_seen_subcommand_from legion; and __fish_seen_subcommand_from new run' -l answers -d 'Answers file for the agents' -r
 complete -c geth -n '__geth_legion_at approve 1' -l yes -d 'Approve without the prompt'
 complete -c geth -n '__geth_legion_at approve 1' -l lab -d "Approve a lab step's design (its step id)" -x
