@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -210,6 +211,39 @@ class Progress(unittest.TestCase):
                 self.assertIn(expected, text)
         finally:
             os.remove(out.name)
+
+
+    def test_every_agent_says_what_it_does_and_long_tools_keep_one_refreshed_line(self):
+        out = tempfile.NamedTemporaryFile("w", delete=False)
+        out.close()
+        try:
+            p = TerminalProgress(tty=out.name, who="operator", watch=lambda name: "12 tasks done", every=0.05)
+            p.before("RUN_NFCORE", {"pipeline": "rnaseq"})
+            time.sleep(0.2)                                   # the waiting line is refreshed with the pipeline's state
+            p.after("RUN_NFCORE", "PIPELINE: nf-core/rnaseq 3.27.0\nSTATUS: FAILED (exit 1)\n--- error report ---\n"
+                                  "ERROR ~ Error executing process > 'STAR_ALIGN (a)'")
+            p.before("RUN_NFCORE", {"pipeline": "rnaseq", "params_json": "{}"})
+            p.after("RUN_NFCORE", "PIPELINE: nf-core/rnaseq\nSTATUS: SUCCESS\nOUTDIR: /r")
+            p.close()
+            text = open(out.name).read()
+            for expected in ("operator: Running nf-core/rnaseq as approved … 12 tasks done",
+                             "Running nf-core/rnaseq as approved → failed (exit 1): ERROR ~ Error executing process",
+                             "Running nf-core/rnaseq with a new params → success"):
+                self.assertIn(expected, text)
+        finally:
+            os.remove(out.name)
+
+    def test_verdicts_of_the_coordinator_reporter_and_lab(self):
+        v = TerminalProgress.verdict
+        self.assertEqual(v("SUBMIT_STEPS", "STEP CHECK: OK\nstep 2 downloads 0.4 GB"), "OK, steps saved")
+        self.assertEqual(v("CHECK_STEPS", "STEP CHECK: 1 problem(s)\n- step 1: no reads"), "1 problem(s): step 1: no reads")
+        self.assertEqual(v("DECIDE", "DECISION SAVED: stop"), "stop")
+        self.assertEqual(v("SUBMIT_REPORT", "REPORT SAVED. REPORT CHECK: 23/23 numbers traced to the results"),
+                         "saved, 23/23 numbers traced to the results")
+        self.assertTrue(v("SUBMIT_REPORT", "NOT SAVED. REPORT CHECK: 2 untraced\nCorrect").startswith("sent back"))
+        self.assertEqual(v("TEST_STEP", "STATUS: SUCCESS\ncells: 3000"), "success")
+        self.assertEqual(v("SUBMIT_OUTCOME", "REFUSED: the last launched attempt succeeded"),
+                         "REFUSED: the last launched attempt succeeded")
 
 
 class Budget(unittest.TestCase):

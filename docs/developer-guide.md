@@ -652,6 +652,11 @@ taught still shapes the harness:
 - **Python:** standard library only, 3.9+. The toolbox is the exception: it runs in its container.
 - **Agents' text shown to people** goes through `harness/prose.py` (`prose` in the shell scripts): one
   sentence per line, wrapped to the terminal. Files keep the text as the agent wrote it.
+- **Progress in the terminal.** When the command's output is a terminal, `agents()` (and the lab's `lab_stage`)
+  pass `--progress`: the stage gives its agent a `TerminalProgress` (`harness/ask.py`), which writes one line per
+  tool call to `/dev/tty` (the stage's stdout is its log), the check verdicts, and for long tools a line refreshed
+  every 30 seconds (`run.pipeline_progress()`: tasks from the attempt's Nextflow log and trace). Give a new tool a
+  label there.
 - **Paths:** absolute, compared as text, resolved to real paths by `env.sh`.
 - **Never** print, log or commit the API key, or put it on a command line.
 - **Git flow:** `master` holds tagged releases (`vX.Y.Z`); work happens in `develop`, with features on
