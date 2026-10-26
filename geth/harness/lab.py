@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 from .agent import Agent, Tool, load_skills, string_params
+from .ask import TerminalProgress
 from .llm import ModelError, model_client
 from .tools import GETH_HOME, list_references, scratch
 
@@ -351,6 +352,7 @@ def main(argv=None):
     ap.add_argument("--lab_skill", default="true")
     ap.add_argument("--build_round", type=int, default=1)
     ap.add_argument("--data_file", default="")
+    ap.add_argument("--progress", action="store_true", help="show what the agent does, one line per step, in the terminal")
     for k in ("lab_java_home", "lab_nxf_launcher", "lab_nxf_framework"):
         ap.add_argument(f"--{k}", default="")
     a = ap.parse_args(argv)
@@ -419,11 +421,15 @@ def main(argv=None):
                       trace_path=trace, log=log)
         prompt = REVIEW_PROMPT.format(question=question, design=design_text(d))
         done = lambda name, out: out.startswith("VERDICT:")
+    if a.progress:
+        agent.progress = TerminalProgress(who=f"lab {agent.name}")
     try:
         result = agent.run(prompt, done=done)
     except ModelError as e:
         print(f"Geth: {e}", flush=True)
         result = None
+    if agent.progress:
+        agent.progress.close()
     print(f"Model usage: {json.dumps({k: round(v, 4 if k == 'usd' else 1) for k, v in client.usage.items()})}", flush=True)
     print(result or f"The {agent.name} ended without a final answer.", flush=True)
     return 0 if result else 1

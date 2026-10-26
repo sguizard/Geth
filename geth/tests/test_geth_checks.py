@@ -597,6 +597,27 @@ class SingleCellDesign(unittest.TestCase):
         self.assertEqual(problems(paths["2-min-blunt", "filtered"]), [])
         self.assertEqual(problems(paths["A", "cellbender_filter"]), [])  # a library's own run is valid
 
+    def test_no_model_for_a_species_celltypist_does_not_cover(self):
+        # the chicken lung and eye delivery (2026-10-26): CellTypist has human and mouse models only
+        chick_ref = f"{REFS}/gallus_gallus_sc_test"
+        run = f"{ROOT}/runs/chick_sn"
+        h5ad = f"{run}/results/star/mtx_conversions/E12/E12_filtered_matrix.h5ad"
+        for path, text in ((f"{chick_ref}/README.txt", "Species: Gallus gallus (chicken)\n"),
+                           (f"{chick_ref}/genome.fa.gz", "placeholder"), (h5ad, "placeholder"),
+                           (f"{os.path.dirname(MODEL)}/README.txt", "Species: Homo sapiens (human)\n"),
+                           (f"{run}/plan_params.json", json.dumps({"fasta": f"{chick_ref}/genome.fa.gz"}))):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "w").write(text)
+        try:
+            sheet = f"sample,h5ad\nE12,{h5ad}\n"
+            no_model = "\n".join(l for l in SC_DESIGN.splitlines() if not l.startswith("annotation.model"))
+            self.assertEqual(gc.check_plan("sc_downstream", sheet, no_model)[0], [])
+            problems = gc.check_plan("sc_downstream", sheet, SC_DESIGN)[0]
+            self.assertTrue(any("model for Homo sapiens, but the cells are Gallus gallus" in p for p in problems), problems)
+            self.assertEqual(gc.check_plan("sc_downstream", SC_SHEET, SC_DESIGN)[0], [])  # human cells: fine
+        finally:
+            os.remove(f"{os.path.dirname(MODEL)}/README.txt")
+
     def test_menu_ranges_and_consistency(self):
         bad = SC_DESIGN.replace("qc.max_pct_mt=20", "qc.max_pct_mt=150").replace("leiden.chosen=0.8", "leiden.chosen=2.0")
         bad += "\nhvg.flavor=seurat_v3\nqc.max_mito=10\nannotation.model=/tmp/model.pkl"
@@ -794,6 +815,53 @@ class Multiplexed10x(unittest.TestCase):
                           gc.gate(bulk.dir, "rnaseq", MISTRAL_SHEET, MISTRAL_PARAMS, BARCODES))
         finally:
             bulk.close()
+
+class SingleNucleus(unittest.TestCase):
+    """Single-nucleus libraries (the chicken lung and eye delivery, 2026-10-26): intronic reads must be counted."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.nuc = f"{ROOT}/data/nuclei_delivery"
+        cls.r1, cls.r2 = (f"{cls.nuc}/E12-Lung_S1_L001_R{i}_001.fastq.gz" for i in (1, 2))
+        for path in (cls.r1, cls.r2):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with gzip.open(path, "wt") as fh:
+                fh.write("@r\nACGT\n+\nIIII\n")
+        open(f"{cls.nuc}/README.txt", "w").write("Embryonic chicken lungs, 10x Chromium snRNAseq. The nuclei "
+                                                  "concentration was slightly low.\n")
+        cls.sheet = f"sample,fastq_1,fastq_2,expected_cells\nE12-Lung,{cls.r1},{cls.r2},\n"
+        cls.data_root, gc.DATA_ROOT = gc.DATA_ROOT, f"{ROOT}/data"
+
+    @classmethod
+    def tearDownClass(cls):
+        gc.DATA_ROOT = cls.data_root
+
+    def problems(self, **params):
+        base = {"protocol": "10XV3", "fasta": f"{CHICK}/genome.fa.gz", "gtf": f"{CHICK}/genes.gtf.gz"}
+        return [p for p in gc.check_plan("scrnaseq", self.sheet, json.dumps(dict(base, **params)))[0]
+                if "single-nucleus" in p]
+
+    def test_spliced_only_counting_is_refused(self):
+        for params in ({"aligner": "star"}, {"aligner": "star", "star_feature": "Gene"}, {}, {"aligner": "simpleaf"},
+                       {"aligner": "kallisto"}):
+            text = "\n".join(self.problems(**params))
+            self.assertIn("single-nucleus libraries (nuclei_delivery/README.txt: nuclei, snRNAseq)", text, params)
+        self.assertIn("Set star_feature=GeneFull", self.problems(aligner="star")[0])
+        self.assertIn("Set kb_workflow=nac", self.problems(aligner="kallisto")[0])
+
+    def test_pre_mrna_counting_passes(self):
+        for params in ({"aligner": "star", "star_feature": "GeneFull"}, {"aligner": "cellranger", "protocol": "auto"},
+                       {"aligner": "kallisto", "kb_workflow": "nac"}):
+            self.assertEqual(self.problems(**params), [], params)
+
+    def test_whole_cells_are_not_concerned(self):
+        open(f"{self.nuc}/README.txt", "w").write("PBMC, 10x Chromium single-cell RNA-seq, 3' v3.1.\n")
+        try:
+            self.assertEqual(self.problems(aligner="star"), [])
+        finally:
+            open(f"{self.nuc}/README.txt", "w").write("Embryonic chicken lungs, 10x Chromium snRNAseq. The nuclei "
+                                                      "concentration was slightly low.\n")
+
 
 class SitePrelude(unittest.TestCase):
     """scrnaseq 4.2.0 sets its own beforeScript for CELLRANGER_MULTI, which replaced Eddie's module load of

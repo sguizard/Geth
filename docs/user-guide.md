@@ -38,6 +38,8 @@ Say, in plain words:
 - **pairing or batches**: e.g. "each donor gave one treated and one untreated sample"
 - **the organism**, and anything unusual: library kit, strandedness, 10x chemistry version (e.g. GEM-X
   3' v4, Next GEM 3' v3.1), spike-ins
+- **single-nucleus libraries**: say "single-nucleus" (or snRNA-seq) if the libraries hold nuclei rather
+  than whole cells: their intronic reads must be counted
 - **multiplexed single-cell libraries**: if several samples share one 10x library (On-Chip Multiplexing,
   CellPlex, Flex), say so, and give the table of which barcode (OB1, CMO301, BC001, ...) is which sample
 
@@ -183,7 +185,13 @@ sites that use one.
 - The **reporter agent** writes the report from the pipeline's results. Every number in it is checked
   against the results; numbers that cannot be traced go back to the reporter once, to correct, before the
   report is saved.
-- Follow the agents in `$GETH_RUNS_DIR/my_analysis/geth_run.log`.
+- In a terminal (without `--detach`), Geth shows what each agent does, one line per step, with the time.
+  While the pipeline runs, its line is refreshed every 30 seconds with the tasks done, running or queued,
+  and the latest one, for example:
+  ```
+    [0:42] operator: Running nf-core/rnaseq as approved … 87 tasks done, 12 running or queued; latest: STAR_ALIGN (N61311_Dex)
+  ```
+  The details are in `$GETH_RUNS_DIR/my_analysis/geth_run.log`.
 
 If the run was interrupted, for example because the machine rebooted, run `geth run my_analysis` again.
 It resumes where it stopped.
@@ -273,7 +281,7 @@ proposes an **analysis design** from a fixed menu:
 - doublet detection
 - normalisation and clustering resolutions
 - a panel of marker genes to display
-- a CellTypist annotation model from the reference catalogue
+- a CellTypist annotation model from the reference catalogue, if one fits your species and tissue
 
 Review the thresholds: does the design keep a sensible fraction of your cells? Review also the marker
 panel and the annotation model.
@@ -284,7 +292,10 @@ justification. It then names each cluster from its markers. A cluster where mark
 disagree is labelled "uncertain".
 
 The annotation model must match your tissue and species. Available models are listed at
-<https://www.celltypist.org/models>; ask for one to be added to the catalogue if needed.
+<https://www.celltypist.org/models>; ask for one to be added to the catalogue if needed. CellTypist covers
+human and mouse only: for another species (chicken, for example) the design has no model, and the clusters are
+named from their markers alone. Give your known markers in the README or the question, so that the planner
+puts them in the marker panel.
 
 ## The legion: several analyses towards one question
 
@@ -310,7 +321,9 @@ A step is one of:
   nf-core pipeline would do it if one exists (for example nf-core/smrnaseq for microRNAs), and what the
   finished steps hand over to it. Nothing is improvised.
 
-`geth legion run` plans the next step and stops: `geth show my_project-<step>`, `geth approve
+In a terminal, `geth legion run` shows each event of the project with its time, and every agent at work: the
+planner, the operator (with the pipeline's progress), the reporter and the coordinator. It plans the next step and
+stops: `geth show my_project-<step>`, `geth approve
 my_project-<step>`, then `geth legion run my_project` again. After each step the coordinator reads its report
 and continues, stops, or proposes new steps, which you approve before anything runs. When every step is done,
 it writes `report.md` in the project folder (`$GETH_RUNS_DIR/projects/my_project`): the answer to your

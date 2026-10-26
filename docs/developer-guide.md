@@ -262,7 +262,7 @@ The toolbox prints **FLAGS**:
 
 - fewer than 85% of cells kept
 - a doublet rate outside a third to three times the expected rate
-- a cluster with less than 60% CellTypist agreement
+- a cluster with less than 60% CellTypist agreement (when the design has a model)
 - a cluster with fewer than 10 cells
 
 The analyst must address each flag or explain why it needs no change. It then annotates every cluster,
@@ -403,7 +403,9 @@ outdated one (nanoseq, eager).
   6. neighbours and UMAP
   7. Leiden clustering at each resolution
   8. markers
-  9. CellTypist annotation, optionally with majority voting
+  9. CellTypist annotation, optionally with majority voting; none when the design has no model (a species
+     CellTypist does not cover: the analyst names clusters from the markers). Mitochondrial genes are those
+     named `MT-*`, or, for species without the prefix (chicken), `ND1`…`CYTB`
 
   It writes `processed.h5ad`, `diagnostics.json`, figures and a text summary with FLAGS.
 
@@ -652,6 +654,11 @@ taught still shapes the harness:
 - **Python:** standard library only, 3.9+. The toolbox is the exception: it runs in its container.
 - **Agents' text shown to people** goes through `harness/prose.py` (`prose` in the shell scripts): one
   sentence per line, wrapped to the terminal. Files keep the text as the agent wrote it.
+- **Progress in the terminal.** When the command's output is a terminal, `agents()` (and the lab's `lab_stage`)
+  pass `--progress`: the stage gives its agent a `TerminalProgress` (`harness/ask.py`), which writes one line per
+  tool call to `/dev/tty` (the stage's stdout is its log), the check verdicts, and for long tools a line refreshed
+  every 30 seconds (`run.pipeline_progress()`: tasks from the attempt's Nextflow log and trace). Give a new tool a
+  label there.
 - **Paths:** absolute, compared as text, resolved to real paths by `env.sh`.
 - **Never** print, log or commit the API key, or put it on a command line.
 - **Git flow:** `master` holds tagged releases (`vX.Y.Z`); work happens in `develop`, with features on

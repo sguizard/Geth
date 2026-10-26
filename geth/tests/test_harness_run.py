@@ -206,5 +206,31 @@ class RunHarness(unittest.TestCase):
         self.assertIn("run_dir must be under", str(e.exception))
 
 
+class PipelineProgress(unittest.TestCase):
+    """The operator's waiting line during a pipeline: tasks done, running or queued, the latest submitted."""
+
+    def test_counts_this_attempts_tasks(self):
+        d = tempfile.mkdtemp()
+        try:
+            a = os.path.join(d, "attempt_2")
+            os.makedirs(a)
+            os.makedirs(os.path.join(d, "attempt_1"))
+            self.assertEqual(run.pipeline_progress(d), "checking the attempt")
+            open(os.path.join(a, "params.json"), "w").write("{}")
+            open(os.path.join(a, "nextflow.log"), "w").write("N E X T F L O W\n")
+            self.assertTrue(run.pipeline_progress(d).startswith("starting the pipeline"))
+            with open(os.path.join(a, "nextflow.log"), "a") as fh:
+                fh.write("[aa/1] Cached process > NFCORE_RNASEQ:GUNZIP_GTF (x.gtf.gz)\n"
+                         "[bb/2] Submitted process > NFCORE_RNASEQ:RNASEQ:FASTQC (s1)\n"
+                         "[cc/3] Submitted process > NFCORE_RNASEQ:RNASEQ:ALIGN:STAR_ALIGN (s1)\n")
+            info = os.path.join(d, "results", "pipeline_info")
+            os.makedirs(info)
+            open(os.path.join(info, "execution_trace_x.txt"), "w").write(
+                "task_id\thash\tnative_id\tname\tstatus\n1\taa/1\t-\tGUNZIP_GTF\tCACHED\n2\tbb/2\t9\tFASTQC\tCOMPLETED\n")
+            self.assertEqual(run.pipeline_progress(d), "2 tasks done, 1 running or queued; latest: STAR_ALIGN (s1)")
+        finally:
+            shutil.rmtree(d)
+
+
 if __name__ == "__main__":
     unittest.main()

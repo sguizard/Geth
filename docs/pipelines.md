@@ -22,9 +22,9 @@ For every pipeline it has:
 | Pipeline | Release | Use it for | Status |
 |---|---|---|---|
 | [rnaseq](https://nf-co.re/rnaseq/3.27.0) | 3.27.0 | Bulk RNA-seq: QC, alignment, gene counts | validated with agents |
-| [scrnaseq](https://nf-co.re/scrnaseq/4.2.0) | 4.2.0 | Droplet single-cell RNA-seq (10x Chromium): count matrices, CellBender; multiplexed libraries (OCM, CellPlex, Flex) with Cell Ranger multi | validated with agents; multiplexed: see [validation](validation.md) |
+| [scrnaseq](https://nf-co.re/scrnaseq/4.2.0) | 4.2.0 | Droplet single-cell and single-nucleus RNA-seq (10x Chromium): count matrices (introns counted for nuclei), CellBender; multiplexed libraries (OCM, CellPlex, Flex) with Cell Ranger multi | validated with agents; multiplexed: see [validation](validation.md) |
 | [differentialabundance](https://nf-co.re/differentialabundance/2.0.0) | 2.0.0 | Differential expression on a finished rnaseq run | validated with agents |
-| sc_downstream (Geth's toolbox) | 1.0.0 | Single-cell QC filtering, doublets, clustering, markers, CellTypist annotation, on a finished scrnaseq run | validated with agents |
+| sc_downstream (Geth's toolbox) | 1.0.0 | Single-cell QC filtering, doublets, clustering, markers, CellTypist annotation (human, mouse; other species: markers only), on a finished scrnaseq run | validated with agents |
 | [isoseq](https://nf-co.re/isoseq/3.0.1) | 3.0.1 | PacBio Iso-Seq full-length transcripts | validated with agents on test deliveries |
 | [ampliseq](https://nf-co.re/ampliseq/3.0.0) | 3.0.0 | Amplicon / metabarcoding (16S, 18S, ITS, COI) | validated with agents on test deliveries |
 | [chipseq](https://nf-co.re/chipseq/2.1.0) | 2.1.0 | ChIP-seq peak calling | validated with agents on test deliveries |
@@ -50,7 +50,7 @@ Beyond that:
 | Pipeline | Reference | Worth stating in the README |
 |---|---|---|
 | rnaseq | genome FASTA + GTF (catalogue or folder); a registered STAR index is reused | conditions and replicates, lanes or re-sequenced libraries, strandedness if known |
-| scrnaseq | genome FASTA + GTF; a registered STAR index is reused (STAR aligner) | 10x chemistry (v2, v3, GEM-X v4 ...), the expected number of cells; for multiplexed libraries (several samples per library: OCM, CellPlex, Flex), which barcode is which sample |
+| scrnaseq | genome FASTA + GTF; a registered STAR index is reused (STAR aligner) | 10x chemistry (v2, v3, GEM-X v4 ...), whole cells or nuclei, the expected number of cells; for multiplexed libraries (several samples per library: OCM, CellPlex, Flex), which barcode is which sample |
 | differentialabundance | the upstream rnaseq run | the comparisons you want, pairing (donor) or batches |
 | sc_downstream | a CellTypist model in the catalogue, for your tissue and species | tissue, expected cell types |
 | isoseq | genome FASTA (+ GTF for some aligners) and the primers | what the files are (subreads, CCS, full-length), the primer set |

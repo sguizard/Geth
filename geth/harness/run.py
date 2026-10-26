@@ -20,6 +20,7 @@ import subprocess
 import sys
 
 from .agent import Agent, Tool, load_skills, string_params
+from .ask import TerminalProgress
 from .llm import ModelError, model_client
 from .tools import GETH_HOME, pipeline_options, sc_job, scratch
 
@@ -55,15 +56,16 @@ ANALYST = '''You are Geth's single-cell analyst. You run a downstream analysis d
 approved, with the SC_ANALYSE tool, then interpret the diagnostics.
 First call SC_ANALYSE with the approved design lines exactly as given. Read the diagnostics: cells kept
 per QC step, doublet rate, clusters per resolution, and for each cluster its size, top markers, the
-canonical marker panel and the CellTypist label with its agreement.
+canonical marker panel and, when the design has a CellTypist model, the CellTypist label with its agreement.
 You may call SC_ANALYSE once more, only if a diagnostic shows a real problem, changing only tunable keys
 (QC thresholds, doublet rate/threshold, HVG number, neighbours, Leiden resolutions/chosen) and adding a
 line justification=... that cites the diagnostic. If STATUS: REFUSED, do not insist: report.
 The diagnostics end with FLAGS computed by Geth: for each flag, either revise the design to address it
 or state in your final answer why it needs no change. Do not describe the results as better than the
 diagnostics show.
-Then annotate every cluster of the final analysis from its markers, supported by CellTypist; write
-"uncertain" when markers and CellTypist disagree, and save the annotations with SAVE_ANNOTATIONS
+Then annotate every cluster of the final analysis from its markers, supported by CellTypist if the design
+has a model; write "uncertain" when markers and CellTypist disagree, or, without a model, when the markers do
+not point to one cell type. Save the annotations with SAVE_ANNOTATIONS
 (one line per cluster: "cluster <id>: <cell type> (<key markers>)"). Never claim success unless the
 tool printed STATUS: SUCCESS.'''
 
@@ -150,6 +152,34 @@ def run_nfcore_tool(run_dir, calls):
     return Tool("RUN_NFCORE", "Launch the approved nf-core run (one gated, resumable attempt) and print a short "
                 "status digest: STATUS: SUCCESS, FAILED (with the error) or REFUSED (a change that was not allowed). "
                 "With only the pipeline, it runs the approved plan as approved.", params, run, check=True)
+
+
+def pipeline_progress(run_dir):
+    """The running attempt in a few words, for the person watching: tasks done, running or queued, the latest."""
+    attempts = sorted(glob.glob(os.path.join(run_dir, "attempt_*")), key=lambda p: int(p.rsplit("_", 1)[1]))
+    log = os.path.join(attempts[-1], "nextflow.log") if attempts else ""
+    if not log or not os.path.isfile(log):
+        return "checking the attempt"
+    submitted, latest = 0, ""
+    with open(log, errors="replace") as fh:
+        for line in fh:
+            if "Submitted process >" in line or "Cached process >" in line:
+                submitted, latest = submitted + 1, line.split(">", 1)[1].strip()
+    if not submitted:
+        return "starting the pipeline (downloading it and its containers the first time)"
+    start = os.path.getmtime(os.path.join(attempts[-1], "params.json")) if os.path.isfile(
+        os.path.join(attempts[-1], "params.json")) else 0
+    done = failed = 0
+    for trace in glob.glob(os.path.join(run_dir, "results", "pipeline_info", "execution_trace_*.txt")):
+        if os.path.getmtime(trace) >= start:  # this attempt's trace (Nextflow adds a line per finished task)
+            with open(trace, errors="replace") as fh:
+                for line in fh:
+                    status = (line.rstrip("\n").split("\t") + [""] * 5)[4]
+                    done += status in ("COMPLETED", "CACHED")
+                    failed += status == "FAILED"
+    name = latest.split(":")[-1]
+    return (f"{done} tasks done, {max(submitted - done - failed, 0)} running or queued"
+            + (f", {failed} failed" if failed else "") + f"; latest: {name}")
 
 
 def completed(attempt):
@@ -284,6 +314,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--run_dir", required=True)
     ap.add_argument("--report_only", action="store_true", help="write the report again from a finished run's results")
+    ap.add_argument("--progress", action="store_true", help="show what the agents do, one line per step, in the terminal")
     a = ap.parse_args(argv)
     runs = os.environ.get("GETH_RUNS_DIR", "")
     if not runs or not a.run_dir.startswith(runs.rstrip("/") + "/"):
@@ -317,6 +348,9 @@ def main(argv=None):
                                                  submit_outcome_tool(a.run_dir, outcome, calls)],
                           client, max_turns=10, trace_path=trace, log=log)
             prompt = OPERATOR_PROMPT.format(**{k: plan[k] or "''" for k in ("pipeline", "sheet", "params", "sheet2", "profile")})
+        if a.progress:
+            agent.progress = TerminalProgress(who=agent.name, watch=lambda name: pipeline_progress(a.run_dir)
+                                              if name == "RUN_NFCORE" else "")
         try:  # a gate refusal is a check's refusal: the same one again and again ends the loop
             agent.run(prompt, done=lambda name, out: out.startswith("OUTCOME SAVED") or "STATUS: SUCCESS" in out)
         except ModelError as e:
@@ -333,6 +367,10 @@ def main(argv=None):
                                             submit_report_tool(a.run_dir, plan["pipeline"], lambda: outcome.get("attempts", 0))],
                      client, max_turns=6, trace_path=trace, log=log, text_answer=("SUBMIT_REPORT", "report", 400))
     sheet2_part = f"second sheet:\n{plan['sheet2']}\n" if plan["sheet2"] else ""
+    if a.progress:
+        if not a.report_only and agent.progress:
+            agent.progress.close()
+        reporter.progress = TerminalProgress(who="reporter")
     try:
         result = reporter.run(REPORTER_PROMPT.format(question=plan["question"], pipeline=plan["pipeline"], sheet=plan["sheet"],
                                                      params=plan["params"], sheet2_part=sheet2_part, rationale=plan["rationale"],
@@ -341,6 +379,8 @@ def main(argv=None):
     except ModelError as e:
         log(f"Geth: {e}")
         result = None
+    if reporter.progress:
+        reporter.progress.close()
     if result is None:  # no report from the reporter: say so in the report, not nothing
         write(a.run_dir, "report.md", f"# Report\n\nThe reporting agent did not write a report (see geth_{'report' if a.report_only else 'run'}.log). "
               f"The run's outcome:\n\n```\n{read(a.run_dir, 'outcome.txt')}```\n")

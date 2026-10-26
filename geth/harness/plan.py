@@ -98,6 +98,7 @@ def main(argv=None):
     ap.add_argument("--ask", choices=("terminal", "file", "none", "off"), default="off",
                     help="who answers the planner's questions; off: no questions at all (the R2 planner)")
     ap.add_argument("--answers", default="", help="answers file (--ask file): what the scientist knows, in plain words")
+    ap.add_argument("--progress", action="store_true", help="show what the planner does, one line per step, in the terminal")
     a = ap.parse_args(argv)
     runs, data_root, references = (os.environ.get(v, "") for v in ("GETH_RUNS_DIR", "GETH_DATA_ROOT", "GETH_REFERENCES"))
     if not (runs and data_root and references):
@@ -133,11 +134,11 @@ def main(argv=None):
         open(transcript, "w").close()
         asker = {"terminal": TerminalAsker, "none": Nobody}.get(a.ask)
         asker = FileAnswerer(a.answers, site) if a.ask == "file" else asker()
-        if a.ask == "terminal":
-            progress = TerminalProgress()
         tools += [pipeline_options(), ask_tool(asker, transcript), inspect_reads(data_root)]
         instruction += QUESTIONS
         hint = "If you cannot fix it from the data, ask the scientist with ASK_USER (for example which file to use)."
+    if a.ask == "terminal" or a.progress:
+        progress = TerminalProgress(who="planner")
     skills = load_skills(os.path.join(GETH_HOME, "geth", "skills"))
     if not single_cell:
         skills.pop("sc-downstream", None)

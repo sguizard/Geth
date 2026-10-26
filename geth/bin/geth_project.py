@@ -84,7 +84,7 @@ def save(path, data):
 def log(pdir, text):
     with open(os.path.join(pdir, "log.md"), "a") as fh:
         fh.write(wrap(f"- {time.strftime('%F %T')} {text}", width=100) + "\n")
-    print(wrap(text), flush=True)
+    print(wrap(f"[{time.strftime('%H:%M')}] {text}"), flush=True)
 
 
 def step_run(pdir, sid):
@@ -518,6 +518,7 @@ def run(pdir, answers="", auto=False):
     doc = approved_doc(pdir)
     name, question = os.path.basename(pdir), read(os.path.join(pdir, "question.txt")).strip()
     steps = {s["id"]: s for s in doc["steps"]}
+    print(f"Project {name}: " + "; ".join(f"{s['id']} ({status(pdir, s)})" for s in doc["steps"]), flush=True)
     stopped = False
     for step in doc["steps"]:
         sid, kind, run_name = step["id"], step["kind"], os.path.basename(step_run(pdir, step["id"]))
