@@ -2,6 +2,14 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## Unreleased
+
+- **Each analysis records which Geth made it.** Every agent stage adds a line to `geth_version.txt` in its run,
+  project or lab folder: the stage, the time, Geth's release and commit, and "with local changes" when the code
+  differed from that commit. `geth show` says which Geth planned the run, `geth status` lists every stage,
+  `geth legion show` and `geth lab show` give the latest.
+- `geth --version` (and `-V`) works like `geth version`, which now also says when the code has local changes.
+
 ## 2.3.0 (2026-10-26), a talkative legion; nuclei and chicken
 
 - **`geth legion` says what it is doing.** In a terminal, every agent stage shows its steps as `geth plan` does,

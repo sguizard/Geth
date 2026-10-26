@@ -78,6 +78,7 @@ complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a report
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a stop -d 'Stop a planning or a run'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a doctor -d 'Check the installation'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a version -d "Print Geth's version"
+complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -l version -s V -d "Print Geth's version"
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a lab -d 'EXPERIMENTAL agent-designed analyses'
 complete -c geth -n "not __fish_seen_subcommand_from $__geth_commands" -a legion -d 'A project: several analyses towards one question'
 
