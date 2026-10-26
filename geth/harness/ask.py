@@ -96,8 +96,16 @@ class TerminalProgress:
             return
         s = int(time.time() - self.t0)
         clock = f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+        line = f"  [{clock}] {self.who + ': ' if self.who else ''}{text}"
+        if end != "\n":  # a line rewritten in place must fit the window: a wrapped one would leave its first rows
+            try:
+                width = os.get_terminal_size(self.out.fileno()).columns - 1
+            except (OSError, ValueError):
+                width = 0
+            if 20 < width < len(line):
+                line = line[:width - 1] + "…"
         with self.lock:
-            self.out.write(f"\r\033[K  [{clock}] {self.who + ': ' if self.who else ''}{text}{end}")
+            self.out.write(f"\r\033[K{line}{end}")
             self.out.flush()
             self.waiting = end != "\n"
 
