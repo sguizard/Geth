@@ -2,6 +2,15 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 2.2.0 (2026-10-26), readable agents
+
+- **Agents' text is readable in the terminal.** The plan's rationale, the questions, the coordinator's
+  rationale and decisions, lab designs and reviews, run outcomes and the agents' messages in the logs are shown
+  one sentence per line, wrapped to the terminal (at most 100 columns, `GETH_TEXT_WIDTH`), instead of one long
+  line. Lists keep their markers, and tables are left as they are. The files keep the agents' text as written.
+- `geth legion show` lists the coordinator's decisions after each step, with their reasons, and the project
+  report when there is one.
+
 ## 2.1.2 (2026-10-25)
 
 - **The documentation matches the code again.** Projects (`geth legion`) are in the introduction, installation

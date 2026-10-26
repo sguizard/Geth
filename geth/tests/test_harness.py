@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from harness.agent import Agent, Tool, load_skills, string_params  # noqa: E402
 from harness.ask import UNKNOWN, FileAnswerer, Nobody, TerminalProgress, ask_tool  # noqa: E402
 from harness.llm import from_output, to_input  # noqa: E402
+from harness.prose import sentences, wrap  # noqa: E402
 from harness.tools import list_files, pipeline_options, read_text  # noqa: E402
 
 
@@ -259,6 +260,33 @@ class ResponsesApi(unittest.TestCase):
         self.assertEqual(items[5], {"role": "assistant", "content": "Done."})
         text, _ = from_output([{"type": "message", "content": [{"type": "output_text", "text": "Plan ready."}]}])
         self.assertEqual(text, {"content": "Plan ready."})
+
+
+class Prose(unittest.TestCase):
+    """Agents' text for people: one sentence per line, wrapped; tables and code untouched."""
+
+    def test_sentences_not_split_at_abbreviations_initials_or_file_names(self):
+        text = ("Paired by donor (e.g. N61311) vs. untreated, as Dr. J. Smith did (Fig. 2). SRR1039513.fastq.gz was "
+                "left out (Ensembl release 116). 8 samples remain! Is that right?")
+        self.assertEqual(sentences(text), ["Paired by donor (e.g. N61311) vs. untreated, as Dr. J. Smith did (Fig. 2).",
+                                           "SRR1039513.fastq.gz was left out (Ensembl release 116).",
+                                           "8 samples remain!", "Is that right?"])
+
+    def test_wrap_keeps_width_markers_and_tables(self):
+        text = ("A first sentence that is long enough to need wrapping at forty columns. Short one.\n"
+                "- an item that also needs wrapping at forty columns wide\n\n| a | b |\nQ: Which? Why?")
+        out = wrap(text, indent=2, width=40).splitlines()
+        self.assertTrue(all(len(line) <= 40 for line in out if not line.startswith("  |")))
+        self.assertEqual(out[0], "  A first sentence that is long enough")
+        self.assertTrue(out[1].startswith("    to need"))                   # a sentence's continuation is indented
+        self.assertIn("  Short one.", out)                                  # each sentence on its own line
+        self.assertIn("  - an item that also needs wrapping at", out)
+        self.assertIn("      forty columns wide", out)                       # aligned under the item's text, plus 2
+        self.assertIn("", out)
+        self.assertIn("  | a | b |", out)                                    # tables as they are
+        self.assertEqual(out[-2:], ["  Q: Which?", "     Why?"])
+        self.assertEqual(wrap("key_of_outcome: a b c d e f", width=20, labels=True, whole=True).splitlines()[1][:16],
+                         " " * 16)                                          # labels: text aligned after "key: "
 
 
 if __name__ == "__main__":

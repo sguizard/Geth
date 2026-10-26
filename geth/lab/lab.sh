@@ -28,6 +28,7 @@ source "$GETH_HOME/geth/bin/driver_slots.sh"
 
 usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 banner() { echo "*** Geth lab: EXPERIMENTAL, not for real analyses ***" >&2; }
+prose() { python3 "$GETH_HOME/geth/harness/prose.py" "$@"; }  # agents' text, wrapped for reading
 run_dir_of() {
     [[ "${1:-}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Run names may only use letters, digits, '.', '_' and '-'." >&2; exit 1; }
     echo "$lab/$1"
@@ -71,7 +72,7 @@ print(sys.argv[2], json.loads(lines[-1].split(":", 1)[1]).get("usd", 0) if lines
 build_state() { echo "$2" > "$1/build_state.txt"; }
 show_build() {
     local d=$1 f
-    echo "Question : $(cat "$d/question.txt")"
+    prose --labels --whole <<< "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     echo "State    : $(cat "$d/build_state.txt" 2>/dev/null || echo -)"
     echo "Agents   : $([ -d "$d/.agent_home" ] && echo "in the agent sandbox" || echo "not sandboxed") (agent-written code always runs in the lab sandbox)"
@@ -81,20 +82,21 @@ show_build() {
     else
         echo; echo "== spec (step | cpus | memory GB | minutes)"; sed 's/^/  /' "$d/build_spec.txt" 2>/dev/null || echo "  none yet"
     fi
-    for f in "$d"/review_[0-9].txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
-    for f in "$d"/engineer_notes_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; sed 's/^/  /' "$f"; }; done
+    for f in "$d"/review_[0-9].txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; prose --indent 2 --whole < "$f"; }; done
+    for f in "$d"/engineer_notes_*.txt; do [ -f "$f" ] && { echo; echo "== $(basename "$f" .txt)"; prose --indent 2 --whole < "$f"; }; done
     if [ -d "$d/results" ]; then
         echo; echo "== results ($d/results)"
         (cd "$d/results" && find . -type f ! -name step_log.txt ! -name exit_code.txt ! -name summary.txt -printf '  %P\t%s bytes\n' | sort)
     fi
 }
 show() {
-    local d=$1
+    local d=$1 f whole
     [ -f "$d/design_from.txt" ] && { show_build "$d"; return; }
-    echo "Question : $(cat "$d/question.txt")"
+    prose --labels --whole <<< "Question : $(cat "$d/question.txt")"
     echo "Arm      : $(cat "$d/lab_arm.txt")"
     for f in steps statistics expected rationale; do
-        echo; echo "== $f"; grep -v '^# EXPERIMENTAL' "$d/lab_design_$f.txt" | sed 's/^/  /'
+        whole=--whole; [ "$f" = rationale ] && whole=  # design lines keep one line per field set; prose by sentence
+        echo; echo "== $f"; grep -v '^# EXPERIMENTAL' "$d/lab_design_$f.txt" | prose --indent 2 $whole
     done
     echo; cat "$d/lab_design_check.txt"
 }
