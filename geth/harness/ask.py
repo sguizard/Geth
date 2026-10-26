@@ -221,6 +221,8 @@ class TerminalProgress:
             return short(("saved, " if first.startswith("REPORT") else "sent back to correct, ") + rest)
         if first.startswith("DECISION SAVED: "):
             return first.replace("DECISION SAVED: ", "")
+        if first.startswith(("OUTCOME SAVED", "NOTES SAVED", "ANNOTATIONS SAVED")):
+            return "saved"
         return short(first)
 
     def after(self, name, output):

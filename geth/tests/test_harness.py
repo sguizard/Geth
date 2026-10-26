@@ -253,6 +253,7 @@ class Progress(unittest.TestCase):
         self.assertEqual(v("SUBMIT_STEPS", "STEP CHECK: OK\nstep 2 downloads 0.4 GB"), "OK, steps saved")
         self.assertEqual(v("CHECK_STEPS", "STEP CHECK: 1 problem(s)\n- step 1: no reads"), "1 problem(s): step 1: no reads")
         self.assertEqual(v("DECIDE", "DECISION SAVED: stop"), "stop")
+        self.assertEqual(v("SUBMIT_OUTCOME", "OUTCOME SAVED"), "saved")
         self.assertEqual(v("SUBMIT_REPORT", "REPORT SAVED. REPORT CHECK: 23/23 numbers traced to the results"),
                          "saved, 23/23 numbers traced to the results")
         self.assertTrue(v("SUBMIT_REPORT", "NOT SAVED. REPORT CHECK: 2 untraced\nCorrect").startswith("sent back"))
