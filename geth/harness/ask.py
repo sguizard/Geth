@@ -102,7 +102,12 @@ class TerminalProgress:
             self.waiting = end != "\n"
 
     def thinking(self):
-        self._line("thinking…", end="")
+        """Waiting for the model: the line keeps its clock running, and says so when the wait is long."""
+        self._stop()
+        self.pending, started = "thinking…", time.time()
+        self._line(self.pending, end="")
+        self._tick(None, lambda: "thinking…" + (f" (the model has been answering for {int(time.time() - started) // 60} min)"
+                                                 if time.time() - started >= 120 else ""))
 
     def before(self, name, raw):
         try:
@@ -157,6 +162,7 @@ class TerminalProgress:
                 "SAVE_PIPELINE": lambda: "Saving the pipeline",
                 "SUBMIT_NOTES": lambda: "Handing over to the reviewer",
                 "SUBMIT_REVIEW": lambda: f"Giving the verdict: {args.get('verdict', '')}"}.get(name, lambda: name)()
+        self._stop()
         self.pending = text
         if name in self.VERDICT:
             self._line(text + " …", end="")  # completed by after()
@@ -165,19 +171,24 @@ class TerminalProgress:
         else:
             self._line(text)
 
-    def _tick(self, name):
-        """Refresh the waiting line of a long tool until after() ends it."""
+    def _tick(self, name, render=None):
+        """Refresh the waiting line (a long tool, or the model's answer) until the next step ends it."""
         self.stop = threading.Event()
 
         def run(stop=self.stop):
             while not stop.wait(self.every):
-                state = ""
                 try:
-                    state = self.watch(name) if self.watch else ""
+                    text = render() if render else f"{self.pending} … {self.watch(name) if self.watch else ''}".rstrip()
                 except Exception:  # the progress line must never break the stage
-                    pass
-                self._line(f"{self.pending} … {state}".rstrip(), end="")
+                    text = self.pending
+                if not stop.is_set():
+                    self._line(text, end="")
         threading.Thread(target=run, daemon=True).start()
+
+    def _stop(self):
+        if self.stop:
+            self.stop.set()
+            self.stop = None
 
     @staticmethod
     def verdict(name, output):
@@ -205,16 +216,13 @@ class TerminalProgress:
         return short(first)
 
     def after(self, name, output):
-        if self.stop:
-            self.stop.set()
-            self.stop = None
+        self._stop()
         if name not in self.VERDICT:
             return
         self._line(f"{self.pending} → {self.verdict(name, output)}")
 
     def close(self):
-        if self.stop:
-            self.stop.set()
+        self._stop()
         if self.out is not None and self.waiting:
             self.out.write("\r\033[K")
             self.out.flush()

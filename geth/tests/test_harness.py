@@ -233,6 +233,21 @@ class Progress(unittest.TestCase):
         finally:
             os.remove(out.name)
 
+    def test_a_long_wait_for_the_model_keeps_the_clock_running(self):
+        out = tempfile.NamedTemporaryFile("w", delete=False)
+        out.close()
+        try:
+            p = TerminalProgress(tty=out.name, who="coordinator", every=0.05)
+            p.thinking()
+            time.sleep(0.2)
+            p.before("READ_TEXT", {"path": "/d/README.txt"})
+            p.close()
+            text = open(out.name).read()
+            self.assertGreaterEqual(text.count("coordinator: thinking…"), 3)   # refreshed while waiting
+            self.assertTrue(text.rstrip().endswith("coordinator: Reading README.txt"))  # the refresh stopped
+        finally:
+            os.remove(out.name)
+
     def test_verdicts_of_the_coordinator_reporter_and_lab(self):
         v = TerminalProgress.verdict
         self.assertEqual(v("SUBMIT_STEPS", "STEP CHECK: OK\nstep 2 downloads 0.4 GB"), "OK, steps saved")
