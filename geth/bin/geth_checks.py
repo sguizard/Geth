@@ -117,7 +117,7 @@ SC_MENU = {
     "markers.method": ("choice", ("wilcoxon", "t-test", "logreg"), None, False),
     "markers.n_genes": ("int", 3, 50, False),
     "markers.panel": ("list_str", 1, 40, True),
-    "annotation.model": ("model", None, None, True),
+    "annotation.model": ("model", None, None, False),  # none for a species or tissue without a CellTypist model
     "annotation.majority_voting": ("bool", None, None, False),
     "justification": ("str", None, None, False),
 }
@@ -951,6 +951,12 @@ def check_sc_design(sheet_text, params_text):
         if lo in design and hi in design and design[lo] >= design[hi]:
             problems.append(f"'{lo}' must be smaller than '{hi}'")
     header, rows = parse_sheet(sheet_text)
+    if design.get("annotation.model") and rows:
+        model_species, data_species = catalogue_species(design["annotation.model"]), h5ad_species(rows[0].get("h5ad", ""))
+        if model_species and data_species and model_species != data_species:
+            problems.append(f"annotation.model is a CellTypist model for {model_species.capitalize()}, but the cells are "
+                            f"{data_species.capitalize()} (the upstream run's reference): leave annotation.model out, "
+                            "and the clusters are named from their markers (put the tissue's known markers in markers.panel)")
     if header != ["sample", "h5ad"]:
         problems.append(f"samplesheet must have the columns sample,h5ad (got {','.join(header)})")
     if len(rows) != 1:
@@ -969,6 +975,31 @@ def check_sc_design(sheet_text, params_text):
     return problems, design
 
 
+def catalogue_species(path):
+    """The species of a reference catalogue entry ('Species:' in its README), as 'genus species', or ''."""
+    if not (REFERENCES and str(path).startswith(REFERENCES + "/")):
+        return ""
+    entry = os.path.join(REFERENCES, str(path)[len(REFERENCES) + 1:].split("/")[0])
+    try:
+        text = open(os.path.join(entry, "README.txt"), errors="replace").read()
+    except OSError:
+        return ""
+    m = re.search(r"^Species:\s*([A-Za-z]+)\s+([a-z]+)", text, re.M)
+    return f"{m.group(1).lower()} {m.group(2)}" if m else ""
+
+
+def h5ad_species(h5ad):
+    """The species of a count matrix from a Geth run: that of the run's reference genome in the catalogue, or ''."""
+    if "/results/" not in str(h5ad):
+        return ""
+    params = os.path.join(str(h5ad).split("/results/")[0], "plan_params.json")
+    try:
+        p = json.load(open(params))
+    except (OSError, ValueError):
+        return ""
+    return catalogue_species(p.get("fasta", "")) or catalogue_species(p.get("gtf", ""))
+
+
 def check_plan(pipeline, sheet_text, params_text, contrasts_text=None, profile=None, upstream=None):
     if pipeline not in REGISTRY:
         return [f"pipeline must be one of {sorted(REGISTRY)} (got '{pipeline}')"], {}
@@ -984,6 +1015,7 @@ def check_plan(pipeline, sheet_text, params_text, contrasts_text=None, profile=N
         problems += check_fastq_sheet(pipeline, sheet_text, params)
         if pipeline == "scrnaseq":
             problems += check_multiplexing(sheet_text, params, contrasts_text)
+            problems += check_single_nucleus(sheet_text, params)
         elif (contrasts_text or "").strip():
             problems.append(f"nf-core/{pipeline} takes no contrasts")
     return problems, params
@@ -1039,6 +1071,40 @@ def multiplexing_evidence(texts):
         if found:
             hits.append(f"{name}: {', '.join(found[:4])}")
     return hits
+
+
+# Single-nucleus libraries: nuclei hold mostly unspliced pre-mRNA, so the intronic reads must be counted.
+NUCLEI = re.compile(r"single[- ]nucle(?:us|i)|\bsn-?RNA-?seq|\bsnRNAseq|\bnuclei\b", re.I)
+# How each aligner of nf-core/scrnaseq 4.2.0 counts pre-mRNA (Cell Ranger 7 and later count introns by default).
+PRE_MRNA = {"star": ("star_feature", "GeneFull"), "kallisto": ("kb_workflow", "nac"),
+            "cellranger": None, "cellrangermulti": None}
+
+
+def nuclei_evidence(texts):
+    hits = []
+    for name, text, _ in texts:
+        found = sorted({m.group(0) for m in NUCLEI.finditer(text)}, key=str.lower)
+        if found:
+            hits.append(f"{name}: {', '.join(found[:3])}")
+    return hits
+
+
+def check_single_nucleus(sheet_text, params):
+    """nf-core/scrnaseq on single-nucleus libraries: a count of spliced reads only would lose most of each nucleus's
+    reads (and cells). STARsolo must count GeneFull, kallisto the nac workflow; Cell Ranger counts introns."""
+    _, rows = parse_sheet(sheet_text)
+    evidence = nuclei_evidence(delivery_texts(rows))
+    aligner = params.get("aligner", "simpleaf")
+    if not evidence or aligner not in PRE_MRNA and aligner not in ("simpleaf",):
+        return []
+    need = PRE_MRNA.get(aligner)
+    if aligner in PRE_MRNA and (need is None or str(params.get(need[0], "")).strip() == need[1]):
+        return []
+    how = f"set {need[0]}={need[1]}" if need else "use aligner=star with star_feature=GeneFull"
+    return [f"the delivery describes single-nucleus libraries ({'; '.join(evidence[:3])}): nuclei hold mostly "
+            f"unspliced pre-mRNA, so intronic reads must be counted, or most reads and nuclei are lost. {how[0].upper() + how[1:]} "
+            "(or aligner=cellranger, which counts introns, or aligner=kallisto with kb_workflow=nac). If these are "
+            "whole cells after all, say so in the rationale and ask the scientist"]
 
 
 def check_multiplexing(sheet_text, params, barcodes_text):

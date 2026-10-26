@@ -10,6 +10,13 @@ Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/vali
   agents, with the checks' verdicts. While a pipeline runs, its line is refreshed every 30 seconds with the tasks
   done, running or queued, and the latest. The project's events and the lab build's rounds carry their time.
   Detached runs stay quiet (their logs have everything).
+- **Single-nucleus RNA-seq.** The plan check refuses a single-nucleus delivery (README: "single-nucleus",
+  "snRNA-seq", "nuclei") counted without its intronic reads: STARsolo needs `star_feature=GeneFull`, kallisto
+  `kb_workflow=nac`; Cell Ranger counts introns. The scrnaseq skill says so, and asks whether cells or nuclei.
+- **Species without a CellTypist model** (chicken): the single-cell design may leave out `annotation.model`; the
+  analyst then names clusters from their markers. A model of another species than the cells' (from the upstream
+  run's reference) is refused. The toolbox finds the mitochondrial genes of species without the `MT-` prefix
+  (`ND1`, `COX1`, `CYTB` ...), which it missed: their QC read 0%.
 
 ## 2.2.0 (2026-10-26), readable agents
 

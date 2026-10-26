@@ -3,6 +3,7 @@
 
 Run: python3 geth/tests/test_collect_results.py -v      (no site configuration or data needed)
 """
+import json
 import os
 import shutil
 import subprocess
@@ -20,6 +21,41 @@ EAGER_STATS = (
     "FastQC (pre-Trimming)_mqc-generalstats-fastqc_pre_trimming-total_sequences\tEmpty_mqc-generalstats-x-y\n"
     "JK2782\t1160.0\t38.38\t\t\n"
     "JK2782_L008_R1_001\t\t\t10000.0\t\n")
+
+
+class SingleCellSummary(unittest.TestCase):
+    """The toolbox's results, with or without a CellTypist model (none for chicken)."""
+
+    def diagnostics(self, model):
+        cluster = {"cluster": "0", "cells": 812, "top_markers": [{"gene": g, "log2fc": 3.1, "padj": 1e-20}
+                                                                 for g in ("SFTPC", "NKX2-1", "CLYBL", "MET", "EGF")],
+                   "panel": {"NTN1": {"mean": 1.25, "pct_expressing": 61.0}, "PAX2": {"mean": 0.1, "pct_expressing": 4.0}},
+                   "celltypist_label": "Epithelial" if model else None, "celltypist_agreement": 0.9 if model else None}
+        d = {"input": "/x/E12_filtered_matrix.h5ad", "cells_input": 1000, "cells_kept": 900, "cells_kept_fraction": 0.9,
+             "genes_kept": 15000, "qc_steps": [{"filter": "min_genes", "removed": 100, "kept": 900}],
+             "doublets": {"detected": 10, "rate": 0.011}, "leiden": {"0.5": {"clusters": 1, "smallest_cluster": 812}},
+             "design": {"leiden.chosen": 0.5, "annotation.model": "/refs/m.pkl" if model else None},
+             "clusters": [cluster], "flags": [], "celltypist_cluster_agreement": 0.9 if model else None}
+        if model:
+            d["celltypist_composition"] = {"Epithelial": 812}
+        return d
+
+    def test_with_and_without_a_model(self):
+        run = tempfile.mkdtemp(prefix="geth_sc_")
+        try:
+            os.makedirs(os.path.join(run, "analysis_1"))
+            for model in (True, False):
+                json.dump(self.diagnostics(model), open(os.path.join(run, "analysis_1", "diagnostics.json"), "w"))
+                text = cr.collect(run, "sc_downstream")
+                if model:
+                    self.assertIn("CellTypist majority label", text)
+                    self.assertIn("CellTypist composition", text)
+                else:
+                    self.assertIn("No CellTypist model", text)
+                    self.assertNotIn("CellTypist composition", text)
+                    self.assertIn("| 0 | 812 | SFTPC, NKX2-1, CLYBL, MET, EGF | 1.25 (61%) | 0.10 (4%) |", text)
+        finally:
+            shutil.rmtree(run)
 
 
 class GenericSummary(unittest.TestCase):
