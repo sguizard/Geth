@@ -2,7 +2,7 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
-## Unreleased
+## 2.3.1 (2026-10-26)
 
 - **Each analysis records which Geth made it.** Every agent stage adds a line to `geth_version.txt` in its run,
   project or lab folder: the stage, the time, Geth's release and commit, and "with local changes" when the code
