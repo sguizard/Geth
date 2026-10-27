@@ -222,12 +222,17 @@ class PipelineProgress(unittest.TestCase):
             with open(os.path.join(a, "nextflow.log"), "a") as fh:
                 fh.write("[aa/1] Cached process > NFCORE_RNASEQ:GUNZIP_GTF (x.gtf.gz)\n"
                          "[bb/2] Submitted process > NFCORE_RNASEQ:RNASEQ:FASTQC (s1)\n"
-                         "[cc/3] Submitted process > NFCORE_RNASEQ:RNASEQ:ALIGN:STAR_ALIGN (s1)\n")
+                         "[cc/3] Submitted process > NFCORE_RNASEQ:RNASEQ:ALIGN:STAR_ALIGN (s1)\n"
+                         "[dd/4] Submitted process > NFCORE_RNASEQ:RNASEQ:SALMON_QUANT (s1)\n"
+                         "[dd/4] NOTE: Process `SALMON_QUANT (s1)` terminated with an error exit status (140)\n"
+                         "[ee/5] Re-submitted process > NFCORE_RNASEQ:RNASEQ:SALMON_QUANT (s1)\n")
             info = os.path.join(d, "results", "pipeline_info")
             os.makedirs(info)
             open(os.path.join(info, "execution_trace_x.txt"), "w").write(
-                "task_id\thash\tnative_id\tname\tstatus\n1\taa/1\t-\tGUNZIP_GTF\tCACHED\n2\tbb/2\t9\tFASTQC\tCOMPLETED\n")
-            self.assertEqual(run.pipeline_progress(d), "2 tasks done, 1 running or queued; latest: STAR_ALIGN (s1)")
+                "task_id\thash\tnative_id\tname\tstatus\n1\taa/1\t-\tGUNZIP_GTF\tCACHED\n2\tbb/2\t9\tFASTQC\tCOMPLETED\n"
+                "4\tdd/4\t10\tSALMON_QUANT\tFAILED\n")
+            # a failed task that is retried still runs (the chicken run, 2026-10-27: "0 running" while CellBender ran)
+            self.assertEqual(run.pipeline_progress(d), "2 tasks done, 2 running or queued, 1 failed attempt (nf-core retries them); latest: SALMON_QUANT (s1)")
         finally:
             shutil.rmtree(d)
 
