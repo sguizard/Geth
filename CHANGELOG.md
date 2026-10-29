@@ -2,7 +2,7 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
-## Unreleased
+## 2.4.0 (2026-10-29), a paid model everywhere
 
 - **A paid model everywhere.** `--model <name>` (a model the site defines, e.g. sol) now works on `geth run` and
   `geth report` too, and on `geth legion run` with `--budget <USD>`: every agent that command starts (the steps'
@@ -13,6 +13,8 @@ Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/vali
   run it again with a new budget.
 - The coordinator knows that the single-cell toolbox analyses one count matrix per run (one sample, or all of a
   step's samples together), and that a lab step starts from the combined matrix with each cell's sample.
+- The progress line counts a task that nf-core retries as running (it showed "0 running" while two CellBender
+  retries ran), and calls failures "failed attempts".
 
 ## 2.3.1 (2026-10-26)
 
