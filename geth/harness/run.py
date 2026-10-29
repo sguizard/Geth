@@ -163,7 +163,7 @@ def pipeline_progress(run_dir):
     submitted, latest = 0, ""
     with open(log, errors="replace") as fh:
         for line in fh:
-            if "Submitted process >" in line or "Cached process >" in line:
+            if any(k in line for k in ("Submitted process >", "Re-submitted process >", "Cached process >")):
                 submitted, latest = submitted + 1, line.split(">", 1)[1].strip()
     if not submitted:
         return "starting the pipeline (downloading it and its containers the first time)"
@@ -179,7 +179,7 @@ def pipeline_progress(run_dir):
                     failed += status == "FAILED"
     name = latest.split(":")[-1]
     return (f"{done} tasks done, {max(submitted - done - failed, 0)} running or queued"
-            + (f", {failed} failed" if failed else "") + f"; latest: {name}")
+            + (f", {failed} failed attempt{'s' if failed > 1 else ''} (nf-core retries them)" if failed else "") + f"; latest: {name}")
 
 
 def completed(attempt):

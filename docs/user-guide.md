@@ -92,8 +92,9 @@ geth plan /path/to/my_data \
   (v2: 26 bp; v3 and GEM-X v4: 28 bp), a read length that does not match the reads, an RRBS motif.
 - For a poorly documented delivery, a stronger (paid) planner model can be switched on for one plan, if your
   site defines it: `geth plan ... --model sol`. It plans within a cost cap set by the site (Sol: usually about
-  5 cents a plan, at most 50 cents), and `geth show` says which model planned and what it cost. Without
-  `--model`, the site's free model plans.
+  5 cents a plan, at most 50 cents; `--budget <USD>` sets another cap), and `geth show` says which model planned
+  and what it cost. Without `--model`, the site's free model plans. `geth run` and `geth report` take
+  `--model` too (the operator and the reporter), and `geth status` shows what it cost.
 - If Geth prints `Waiting for a free slot: 2 Nextflow driver(s) running ...`, other analyses are using the
   machine's share (your site sets how many may run at once, `GETH_MAX_DRIVERS`). Geth starts by itself as soon
   as one finishes; you can leave it waiting.
@@ -335,8 +336,12 @@ Good to know about projects:
 - `geth legion run my_project --detach` runs it in the background; follow it with `geth legion show my_project`
   (the log is `log.md` in the project folder).
 - `--answers notes.txt` (with `new` and `run`) lets a stand-in answer the agents' questions from your notes, as
-  in [step 2](#step-2-ask-for-a-plan); `geth legion new ... --model sol` uses a paid coordinator model, if your
-  site defines one.
+  in [step 2](#step-2-ask-for-a-plan).
+- A paid model, if your site defines one: `geth legion new ... --model sol` for the coordinator's proposal, and
+  `geth legion run my_project --model sol --budget 5` for every agent that command starts (the steps' planners,
+  operators and reporters, the lab's agents, the coordinator's reviews and report), within $5 in all.
+  `geth legion show` says what the project has spent (`model_spend.txt`). When the total is spent, the project
+  pauses: run it again with a new `--budget` (or without `--model`) and it goes on where it stopped.
 - If the coordinator stops the project (for example because a step's data look too thin) and you disagree,
   `geth legion run my_project --overrule` goes on with the approved steps. Your name is recorded in the log.
 

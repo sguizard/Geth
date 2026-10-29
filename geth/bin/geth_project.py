@@ -115,7 +115,11 @@ def capabilities(lab):
     lines = ["Kind pipeline, on sequencing data (no analysis step before it; 'data' = its folder in the delivery):"]
     lines += [f"- {p}: {desc.get(p, '')}" for p in raw]
     lines += ["", "Kind pipeline, follow-ups (after = the one finished step they build on):"]
-    lines += [f"- {p}: after a {gc.REGISTRY[p]['follows']} step. {desc.get(p, '')}" for p in follow]
+    lines += [f"- {p}: after a {gc.REGISTRY[p]['follows']} step. {desc.get(p, '')}"
+              + (" It analyses ONE count matrix per run: one sample, or the step's combined matrix of all its samples "
+                 "analysed together. It cannot analyse several samples or experiments separately, nor compare them: "
+                 "that needs the lab (if allowed) or is a gap." if gc.REGISTRY[p].get("toolbox") else "")
+              for p in follow]
     lines += ["", "Kind reference: download a genome and its annotation from Ensembl into the reference catalogue, when "
               "LIST_REFERENCES has no entry for the species a pipeline step needs (fields species, assembly, release: "
               "from FIND_GENOME). That pipeline step lists it in after.",
@@ -125,7 +129,8 @@ def capabilities(lab):
     if lab:
         lines += ["", "Kind lab (EXPERIMENTAL, allowed in this project): agents design and write a single-cell analysis "
                   "of a count matrix (.h5ad) and test it in a sandbox. After a scrnaseq or sc_downstream step, or with "
-                  "no after when the delivery is a folder with one .h5ad file. Use it only for what no pipeline does."]
+                  "no after when the delivery is a folder with one .h5ad file. Use it only for what no pipeline does. It starts from the combined matrix of all the samples of a scrnaseq "
+                  "step (counts, with each cell's sample), so it can treat samples or experiments separately."]
     else:
         lines += ["", "The lab (agents writing analysis code) is not allowed in this project: what would need it is a gap."]
     return "\n".join(lines)
@@ -433,6 +438,10 @@ def show(pdir):
     if versions:  # "<stage> <date> <time> Geth <release> (commit ...)": the coordinator's last stage
         stage, day, clock, version = (versions[-1].split(" ", 3) + [""] * 4)[:4]
         print(f"Geth    : {version} (coordinator, {stage.replace('project_', '')}, {day} {clock[:5]})")
+    spend = [l.split() for l in read(os.path.join(pdir, "model_spend.txt")).splitlines() if len(l.split()) >= 3]
+    if spend:  # a paid model chosen with --model: what the project's commands spent on it, steps included
+        print(f"Model   : ${sum(float(r[1]) for r in spend):.2f} on {', '.join(sorted({r[2] for r in spend}))} "
+              f"({len(spend)} agent stages; model_spend.txt)")
     print("\nSteps:")
     for i, s in enumerate(doc.get("steps", []), start=1):
         kind = s.get("kind")
@@ -518,7 +527,44 @@ def overrule(pdir, who):
             os.replace(os.path.join(pdir, f), os.path.join(pdir, f + ".before-overrule"))
 
 
+class BudgetSpent(Exception):
+    """The paid model's total for this command (geth legion run --model ... --budget) is spent: the project pauses."""
+
+
+def budget_left():
+    """What is left of this command's total for a chosen model (driver_slots.sh: GETH_MODEL_TOTAL_USD, counted in
+    GETH_MODEL_SPEND from GETH_MODEL_SPEND_FROM), or None without one."""
+    total = os.environ.get("GETH_MODEL_TOTAL_USD")
+    if not (os.environ.get("GETH_MODEL_MODEL") and total):
+        return None
+    path, start = os.environ.get("GETH_MODEL_SPEND", ""), int(os.environ.get("GETH_MODEL_SPEND_FROM") or 0)
+    lines = open(path).readlines()[start:] if path and os.path.isfile(path) else []
+    return float(total) - sum(float(l.split()[1]) for l in lines if len(l.split()) > 1)
+
+
+def need_budget(what):
+    left = budget_left()
+    if left is not None and left <= 0.01:
+        raise BudgetSpent(what)
+
+
+def stopped_by_budget(*logs):
+    """A stage that the budget stopped: refused at its start, or its next request would have crossed it."""
+    return any("Budget spent:" in read(path) or "budget reached:" in read(path) for path in logs)
+
+
 def run(pdir, answers="", auto=False):
+    try:
+        return run_steps(pdir, answers, auto)
+    except BudgetSpent as e:
+        name = os.path.basename(pdir)
+        log(pdir, f"the paid model's budget for this command is spent ({e}): the project pauses here, and nothing "
+            f"stopped by it counts as failed. To go on: geth legion run {name} --model <name> --budget <USD> "
+            f"(or without --model, on the site's model)")
+        return 4
+
+
+def run_steps(pdir, answers, auto):
     doc = approved_doc(pdir)
     name, question = os.path.basename(pdir), read(os.path.join(pdir, "question.txt")).strip()
     steps = {s["id"]: s for s in doc["steps"]}
@@ -540,10 +586,14 @@ def run(pdir, answers="", auto=False):
             if state == "todo":
                 upstream = [a for a in step.get("after") or [] if steps[a]["kind"] == "pipeline"]
                 where = ["--from", os.path.basename(step_run(pdir, upstream[0]))] if upstream else [step.get("data") or read(os.path.join(pdir, "data_dir.txt")).strip()]
+                need_budget(f"planning step {sid}")
                 log(pdir, f"step {sid}: planning {run_name}")
                 geth("plan", *where, f"{step['question']} (Step '{sid}' of the project: {question})", run_name,
                      *(["--answers", answers] if answers else []))
                 state = status(pdir, step)
+                if state == "plan failed" and stopped_by_budget(os.path.join(step_run(pdir, sid), "geth_plan.log")):
+                    shutil.rmtree(step_run(pdir, sid))  # not a failed plan: planned again next time
+                    raise BudgetSpent(f"planning step {sid}")
             if state == "waiting for approval":
                 if not auto:
                     log(pdir, f"step {sid}: planned, waiting for you: geth show {run_name}; geth approve {run_name}; "
@@ -552,8 +602,16 @@ def run(pdir, answers="", auto=False):
                 geth("approve", run_name, "--yes", quiet=True)
                 state = status(pdir, step)
             if state == "approved":
+                need_budget(f"running step {sid}")
                 log(pdir, f"step {sid}: running {run_name}")
                 geth("run", run_name)
+                run_log = os.path.join(step_run(pdir, sid), "geth_run.log")
+                if status(pdir, step) == "failed" and stopped_by_budget(run_log):  # resumed next time, not failed
+                    os.replace(os.path.join(step_run(pdir, sid), "outcome.txt"),
+                               os.path.join(step_run(pdir, sid), "outcome.budget-stopped.txt"))
+                    raise BudgetSpent(f"running step {sid}")
+                if stopped_by_budget(run_log):  # the pipeline succeeded, the report did not get written
+                    raise BudgetSpent(f"reporting step {sid} (then: geth report {run_name} --model <name> --budget <USD>)")
         if kind == "lab":
             state = lab_step(pdir, step, steps, auto)
             if state in ("waiting", "running"):
@@ -563,15 +621,23 @@ def run(pdir, answers="", auto=False):
         if state in ("done", "failed", "plan failed"):
             if not reviewed:  # newly finished: say so, and let the coordinator decide what follows
                 log(pdir, f"step {sid}: {state}")
+                need_budget(f"the coordinator's review after step {sid}")
             action = review(pdir, step)
+            if not reviewed and sid not in (load(os.path.join(pdir, "reviews.json"), {}) or {}) and stopped_by_budget(
+                    *glob.glob(os.path.join(pdir, f"geth_project_review_{sid}.log"))):
+                raise BudgetSpent(f"the coordinator's review after step {sid}")
             if action == "revise":
                 log(pdir, f"the coordinator proposes new steps after {sid}: geth legion show {name}; "
                     f"geth legion approve {name}; then geth legion run {name}")
                 return 3
             stopped = action == "stop"
     if not os.path.isfile(os.path.join(pdir, "report.md")):
+        need_budget("the project report")
         log(pdir, "all steps processed: writing the project report")
         coordinate(pdir, "summary")
+        if not os.path.isfile(os.path.join(pdir, "report.md")) and stopped_by_budget(
+                os.path.join(pdir, "geth_project_summary.log")):
+            raise BudgetSpent("the project report")
     print(read(os.path.join(pdir, "report_check.txt")).strip(), flush=True)
     return 0
 
@@ -632,9 +698,13 @@ def lab_step(pdir, step, steps, auto):
     folder = os.path.join(pdir, f"lab_{step['id']}")
     if state == "todo":
         folder = lab_input(pdir, step, steps)
+        need_budget(f"the lab's design of step {step['id']}")
         log(pdir, f"step {step['id']}: the lab designs the analysis ({os.path.basename(design)}, EXPERIMENTAL)")
         geth("lab", "design", folder, step["question"], os.path.basename(design), env=lab_env(folder))
         state = status(pdir, step)
+        if state == "plan failed" and stopped_by_budget(os.path.join(design, "geth_design.log")):
+            shutil.rmtree(design)  # designed again next time
+            raise BudgetSpent(f"the lab's design of step {step['id']}")
     if state == "waiting for approval":
         if not auto:
             log(pdir, f"step {step['id']}: the lab's design waits for you: geth lab show {os.path.basename(design)}; "
@@ -643,8 +713,12 @@ def lab_step(pdir, step, steps, auto):
         approve_lab(pdir, step["id"], "benchmark (automatic)")
         state = status(pdir, step)
     if state == "approved":
+        need_budget(f"the lab's build of step {step['id']}")
         log(pdir, f"step {step['id']}: the lab builds and runs it ({name}, EXPERIMENTAL)")
         geth("lab", "build", os.path.basename(design), name, env=lab_env(folder))
+        if status(pdir, step) == "failed" and stopped_by_budget(*glob.glob(os.path.join(build, "geth_*.log"))):
+            shutil.move(build, build + f".budget-stopped.{time.strftime('%Y%m%d-%H%M%S')}")  # built again next time
+            raise BudgetSpent(f"the lab's build of step {step['id']}")
     return status(pdir, step)
 
 

@@ -2,6 +2,20 @@
 
 Releases are tagged on `master` (`vX.Y.Z`). Validation details are in [docs/validation.md](docs/validation.md).
 
+## 2.4.0 (2026-10-29), a paid model everywhere
+
+- **A paid model everywhere.** `--model <name>` (a model the site defines, e.g. sol) now works on `geth run` and
+  `geth report` too, and on `geth legion run` with `--budget <USD>`: every agent that command starts (the steps'
+  planners, operators and reporters, the lab's agents, the coordinator's reviews and report) uses it, within that
+  total. `geth plan` and `geth legion new` take `--budget` (another cap than the site's). Every stage's cost goes to
+  `model_spend.txt`, counted even when the stage is stopped; `geth status`, `geth legion show` and `geth lab show`
+  say what was spent. When a project's total is spent, it pauses (exit 4) and nothing it stopped counts as failed:
+  run it again with a new budget.
+- The coordinator knows that the single-cell toolbox analyses one count matrix per run (one sample, or all of a
+  step's samples together), and that a lab step starts from the combined matrix with each cell's sample.
+- The progress line counts a task that nf-core retries as running (it showed "0 running" while two CellBender
+  retries ran), and calls failures "failed attempts".
+
 ## 2.3.1 (2026-10-26)
 
 - **Each analysis records which Geth made it.** Every agent stage adds a line to `geth_version.txt` in its run,
